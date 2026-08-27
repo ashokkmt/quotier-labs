@@ -9,9 +9,11 @@ package di
 import (
 	"github.com/google/wire"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
+	"quotierlabs/backend/infrastructure/sqlite"
 )
 
 // Injectors from wire.go:
@@ -22,20 +24,47 @@ func InitializeApp() (*App, error) {
 		return nil, err
 	}
 	idGenerator := id.NewULIDGenerator()
+	db, err := ProvideDB()
+	if err != nil {
+		return nil, err
+	}
+	txManager := sqlite.NewGormTxManager(db)
+	companyRepository := sqlite.NewCompanyRepository(db)
+	customerRepository := sqlite.NewCustomerRepository(db)
+	sectionDefinitionRepository := sqlite.NewSectionDefinitionRepository(db)
+	templateRepository := sqlite.NewTemplateRepository(db)
+	quotationRepository := sqlite.NewQuotationRepository(db)
+	numberSequenceRepository := sqlite.NewNumberSequenceRepository(db)
 	app := &App{
-		Logger: logger,
-		IDGen:  idGenerator,
+		Logger:      logger,
+		IDGenerator: idGenerator,
+		TxManager:   txManager,
+		Companies:   companyRepository,
+		Customers:   customerRepository,
+		Sections:    sectionDefinitionRepository,
+		Templates:   templateRepository,
+		Quotations:  quotationRepository,
+		Sequences:   numberSequenceRepository,
 	}
 	return app, nil
 }
 
 // wire.go:
 
-// InfrastructureSet provides all infrastructure dependencies
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger)
+func ProvideDB() (*gorm.DB, error) {
+	return sqlite.NewDB("quotierlabs.db")
+}
 
-// App represents the DI composition root.
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository)
+
 type App struct {
-	Logger *zap.Logger
-	IDGen  domain.IDGenerator
+	Logger      *zap.Logger
+	IDGenerator domain.IDGenerator
+	TxManager   domain.TxManager
+	Companies   domain.CompanyRepository
+	Customers   domain.CustomerRepository
+	Sections    domain.SectionDefinitionRepository
+	Templates   domain.TemplateRepository
+	Quotations  domain.QuotationRepository
+	Sequences   domain.NumberSequenceRepository
 }

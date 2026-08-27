@@ -6,21 +6,41 @@ package di
 import (
 	"github.com/google/wire"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+	
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
+	"quotierlabs/backend/infrastructure/sqlite"
 )
 
-// InfrastructureSet provides all infrastructure dependencies
+func ProvideDB() (*gorm.DB, error) {
+	return sqlite.NewDB("quotierlabs.db")
+}
+
 var InfrastructureSet = wire.NewSet(
 	id.NewULIDGenerator,
 	logging.NewLogger,
+	ProvideDB,
+	sqlite.NewGormTxManager,
+	sqlite.NewCompanyRepository,
+	sqlite.NewCustomerRepository,
+	sqlite.NewSectionDefinitionRepository,
+	sqlite.NewTemplateRepository,
+	sqlite.NewQuotationRepository,
+	sqlite.NewNumberSequenceRepository,
 )
 
-// App represents the DI composition root.
 type App struct {
-	Logger *zap.Logger
-	IDGen  domain.IDGenerator
+	Logger       *zap.Logger
+	IDGenerator  domain.IDGenerator
+	TxManager    domain.TxManager
+	Companies    domain.CompanyRepository
+	Customers    domain.CustomerRepository
+	Sections     domain.SectionDefinitionRepository
+	Templates    domain.TemplateRepository
+	Quotations   domain.QuotationRepository
+	Sequences    domain.NumberSequenceRepository
 }
 
 func InitializeApp() (*App, error) {
@@ -28,5 +48,5 @@ func InitializeApp() (*App, error) {
 		InfrastructureSet,
 		wire.Struct(new(App), "*"),
 	)
-	return &App{}, nil
+	return nil, nil
 }
