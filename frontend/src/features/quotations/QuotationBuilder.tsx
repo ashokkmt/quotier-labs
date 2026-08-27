@@ -16,7 +16,7 @@ import { useNavigationGuard } from "../../shared/hooks/useNavigationGuard"
 import { SnapshotCommand } from "./commands/base"
 import { UndoRedoControls } from "./components/UndoRedoControls"
 import { SaveIndicator } from "./components/SaveIndicator"
-import { RecalculateQuotation } from "../../../wailsjs/go/wails/QuotationHandler"
+import { RecalculateQuotation, FinalizeQuotation, UpdateQuotationStatus } from "../../../wailsjs/go/wails/QuotationHandler"
 
 export function QuotationBuilder({ quotationId, onBack }: { quotationId: string, onBack: () => void }) {
   const [quotation, setQuotation] = useState<any>(null)
@@ -70,7 +70,32 @@ export function QuotationBuilder({ quotationId, onBack }: { quotationId: string,
     await handleRecalculate()
   }
 
+  
+  const handleFinalize = async () => {
+    if (!confirm("Are you sure you want to finalize this quotation? It will become read-only and immutable.")) return
+    try {
+      await executeSave(document) // ensure latest is saved
+      const res = await FinalizeQuotation(quotationId)
+      setQuotation(res)
+      setReadOnly(true)
+      toast({ title: "Quotation Finalized" })
+    } catch (err: any) {
+      toast({ title: "Failed to finalize", description: err.toString(), variant: "destructive" })
+    }
+  }
+
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      const res = await UpdateQuotationStatus(quotationId, newStatus)
+      setQuotation(res)
+      toast({ title: `Status updated to ${newStatus}` })
+    } catch (err: any) {
+      toast({ title: "Failed to update status", description: err.toString(), variant: "destructive" })
+    }
+  }
+
   const { saveState, lastSaved, forceSave } = useAutosave(document, dirty, executeSave, () => setDirty(false), 800)
+
 
 
   
@@ -116,6 +141,8 @@ export function QuotationBuilder({ quotationId, onBack }: { quotationId: string,
         onCustomerChange={handleCustomerChange}
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={<UndoRedoControls onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} />}
+        onFinalize={handleFinalize}
+        onStatusChange={handleStatusChange}
       />
       
       <div className="flex-1 overflow-y-auto p-6 flex gap-6">

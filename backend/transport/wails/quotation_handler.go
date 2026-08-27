@@ -6,6 +6,7 @@ import (
 
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/quotation"
+	"quotierlabs/backend/domain"
 )
 
 type QuotationHandler struct {
@@ -74,4 +75,37 @@ func (h *QuotationHandler) RecalculateQuotation(id string) (*quotation.Calculati
 		return nil, err
 	}
 	return h.quotationSvc.RecalculateQuotation(h.ctx, compID, id)
+}
+
+func (h *QuotationHandler) FinalizeQuotation(id string) (*quotation.QuotationDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	return h.quotationSvc.FinalizeQuotation(h.ctx, compID, id)
+}
+
+func (h *QuotationHandler) UpdateQuotationStatus(id string, status string) (*quotation.QuotationDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	return h.quotationSvc.UpdateQuotationStatus(h.ctx, compID, id, status)
+}
+
+func (h *QuotationHandler) DuplicateQuotation(id string) (*quotation.QuotationDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	return h.quotationSvc.DuplicateQuotation(h.ctx, compID, id)
+}
+
+func (h *QuotationHandler) ListQuotations(filter domain.QuotationListFilter) ([]quotation.QuotationDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	// We need a ListQuotations method in the service
+	return h.quotationSvc.ListQuotations(h.ctx, compID, filter)
 }

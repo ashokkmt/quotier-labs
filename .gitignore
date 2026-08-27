@@ -44,5 +44,6 @@ quotierlabs
 temp/
 
 plans/
-test.md
+test*.md
+logs.txt
 AGENTS.md

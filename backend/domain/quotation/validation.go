@@ -10,17 +10,10 @@ var (
 	ErrInvalidDocument = errors.New("invalid quotation document")
 )
 
-const (
-	StatusDraft     = "DRAFT"
-	StatusFinalized = "FINALIZED"
-	StatusSent      = "SENT"
-	StatusAccepted  = "ACCEPTED"
-	StatusRejected  = "REJECTED"
-	StatusExpired   = "EXPIRED"
-)
+
 
 func ValidateQuotation(q *domain.Quotation) error {
-	switch q.Status {
+	switch Status(q.Status) {
 	case StatusDraft, StatusFinalized, StatusSent, StatusAccepted, StatusRejected, StatusExpired:
 		// Valid
 	default:

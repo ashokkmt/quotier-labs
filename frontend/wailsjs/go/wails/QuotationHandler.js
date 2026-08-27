@@ -6,8 +6,20 @@ export function CreateQuotationDraft(arg1) {
   return window['go']['wails']['QuotationHandler']['CreateQuotationDraft'](arg1);
 }
 
+export function DuplicateQuotation(arg1) {
+  return window['go']['wails']['QuotationHandler']['DuplicateQuotation'](arg1);
+}
+
+export function FinalizeQuotation(arg1) {
+  return window['go']['wails']['QuotationHandler']['FinalizeQuotation'](arg1);
+}
+
 export function GetQuotation(arg1) {
   return window['go']['wails']['QuotationHandler']['GetQuotation'](arg1);
+}
+
+export function ListQuotations(arg1) {
+  return window['go']['wails']['QuotationHandler']['ListQuotations'](arg1);
 }
 
 export function RecalculateQuotation(arg1) {
@@ -24,4 +36,8 @@ export function Startup(arg1) {
 
 export function UpdateQuotationCustomer(arg1) {
   return window['go']['wails']['QuotationHandler']['UpdateQuotationCustomer'](arg1);
+}
+
+export function UpdateQuotationStatus(arg1, arg2) {
+  return window['go']['wails']['QuotationHandler']['UpdateQuotationStatus'](arg1, arg2);
 }

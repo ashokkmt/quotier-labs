@@ -1,6 +1,6 @@
 import { ArrowLeft, Save, Loader2, Eye, Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "./components/StatusBadge"
 import { CustomerCombobox } from "../../shared/components/CustomerCombobox"
 
 export function BuilderHeader({ 
@@ -12,7 +12,9 @@ export function BuilderHeader({
   onToggleReadOnly,
   onCustomerChange,
   saveIndicator,
-  undoRedoControls
+  undoRedoControls,
+  onFinalize,
+  onStatusChange
 }: any) {
   if (!quotation) return null
 
@@ -28,7 +30,7 @@ export function BuilderHeader({
         {undoRedoControls}
         {saveIndicator}
             <h2 className="font-bold text-lg">{quotation.number || "Draft"}</h2>
-            <Badge variant={quotation.status === 'DRAFT' ? 'secondary' : 'default'}>{quotation.status}</Badge>
+            <StatusBadge status={quotation.status} />
           </div>
         </div>
         <div className="h-6 w-px bg-border ml-2" />
@@ -52,12 +54,34 @@ export function BuilderHeader({
             <><Eye className="w-4 h-4 mr-2" /> Preview</>
           )}
         </Button>
+        
         {!readOnly && (
-          <Button variant="default" size="sm" onClick={onSave} disabled={saving}>
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            Save Draft
+          <>
+            <Button variant="default" size="sm" onClick={onSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Save Draft
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onFinalize}>
+              Finalize
+            </Button>
+          </>
+        )}
+        {readOnly && quotation.status === 'FINALIZED' && (
+          <Button variant="secondary" size="sm" onClick={() => onStatusChange('SENT')}>
+            Mark Sent
           </Button>
         )}
+        {readOnly && quotation.status === 'SENT' && (
+          <>
+            <Button variant="default" size="sm" onClick={() => onStatusChange('ACCEPTED')}>
+              Mark Accepted
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => onStatusChange('REJECTED')}>
+              Mark Rejected
+            </Button>
+          </>
+        )}
+
       </div>
     </div>
   )

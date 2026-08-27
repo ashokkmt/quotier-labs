@@ -292,6 +292,27 @@ export namespace customer {
 
 }
 
+export namespace domain {
+	
+	export class QuotationListFilter {
+	    Limit: number;
+	    Offset: number;
+	    Status?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationListFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Limit = source["Limit"];
+	        this.Offset = source["Offset"];
+	        this.Status = source["Status"];
+	    }
+	}
+
+}
+
 export namespace quotation {
 	
 	export class CalculationResultDTO {

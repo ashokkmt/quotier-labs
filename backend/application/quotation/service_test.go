@@ -69,7 +69,7 @@ func TestQuotationService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create draft: %v", err)
 	}
-	if q.Status != domain_quotation.StatusDraft {
+	if q.Status != string(domain_quotation.StatusDraft) {
 		t.Fatalf("expected draft status")
 	}
 	if q.Number == "" {
@@ -151,5 +151,76 @@ func TestRecalculateQuotation(t *testing.T) {
 	}
 	if res.CGSTTotal != 900 {
 		t.Errorf("expected cgst 900, got %v", res.CGSTTotal)
+	}
+}
+
+func TestFinalizeAndStatusTransitions(t *testing.T) {
+	db := setupTestDB(t)
+	db.Exec("INSERT INTO companies (id, name, currency, state, created_at, updated_at, version) VALUES ('comp-3', 'Test Comp', 'INR', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO customers (id, company_id, name, state, created_at, updated_at, version) VALUES ('cust-4', 'comp-3', 'Test Cust', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-3', 'BuiltinTmpl', 1, '{\"rows\":[]}', 1, 1, ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('seq-3', 'comp-3', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", time.Now().UTC().Year(), time.Now(), time.Now())
+
+	repo := infra_sqlite.NewQuotationRepository(db)
+	templateRepo := infra_sqlite.NewTemplateRepository(db)
+	customerRepo := infra_sqlite.NewCustomerRepository(db)
+	companyRepo := infra_sqlite.NewCompanyRepository(db)
+	seqRepo := infra_sqlite.NewNumberSequenceRepository(db)
+	sectionRepo := infra_sqlite.NewSectionDefinitionRepository(db)
+	resolver := domain_quotation.NewTemplateResolver(sectionRepo)
+	txManager := infra_sqlite.NewGormTxManager(db)
+	idGen := infra_id.NewULIDGenerator()
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen)
+	ctx := context.Background()
+
+	// 1. Create Draft
+	q, err := svc.CreateQuotationDraft(ctx, "comp-3", quotation.QuotationCreateDTO{
+		TemplateID: "tmpl-3",
+		CustomerID: "cust-4",
+	})
+	if err != nil {
+		t.Fatalf("failed to create draft: %v", err)
+	}
+
+	// 2. Finalize
+	qFin, err := svc.FinalizeQuotation(ctx, "comp-3", q.ID)
+	if err != nil {
+		t.Fatalf("failed to finalize: %v", err)
+	}
+	if qFin.Status != "FINALIZED" {
+		t.Errorf("expected FINALIZED, got %s", qFin.Status)
+	}
+	
+	qDom, _ := repo.GetByID(ctx, q.ID, "comp-3")
+	if qDom.CompanySnapshot == nil || qDom.CustomerSnapshot == nil || qDom.TemplateSnapshot == nil {
+		t.Errorf("snapshots were not created")
+	}
+
+
+	// 3. Invalid Transition
+	_, err = svc.UpdateQuotationStatus(ctx, "comp-3", q.ID, "DRAFT")
+	if err == nil {
+		t.Errorf("expected error when transitioning FINALIZED to DRAFT")
+	}
+
+	// 4. Valid Transition to SENT
+	qSent, err := svc.UpdateQuotationStatus(ctx, "comp-3", q.ID, "SENT")
+	if err != nil {
+		t.Fatalf("failed to transition to SENT: %v", err)
+	}
+	if qSent.Status != "SENT" {
+		t.Errorf("expected SENT, got %s", qSent.Status)
+	}
+
+	// 5. Duplicate
+	qDup, err := svc.DuplicateQuotation(ctx, "comp-3", q.ID)
+	if err != nil {
+		t.Fatalf("failed to duplicate: %v", err)
+	}
+	if qDup.Status != "DRAFT" {
+		t.Errorf("expected duplicated quotation to be DRAFT, got %s", qDup.Status)
+	}
+	if qDup.ID == q.ID {
+		t.Errorf("duplicate has same ID as original")
 	}
 }

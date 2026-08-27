@@ -133,7 +133,7 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 		TemplateID:       input.TemplateID,
 		CustomerID:       input.CustomerID,
 		Number: formattedSeq,
-		Status:           domain_quotation.StatusDraft,
+		Status:        string(domain_quotation.StatusDraft),
 		Document:         docJSON,
 		CompanySnapshot:  &compSnapStr,
 		CustomerSnapshot: &custSnapStr,
@@ -176,7 +176,7 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 	if q.CompanyID != companyID {
 		return nil, domain.ErrNotFound
 	}
-	if q.Status != domain_quotation.StatusDraft {
+	if q.Status != string(domain_quotation.StatusDraft) {
 		return nil, ErrQuotationNotDraft
 	}
 
@@ -213,7 +213,7 @@ func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string,
 	if q.CompanyID != companyID {
 		return nil, domain.ErrNotFound
 	}
-	if q.Status != domain_quotation.StatusDraft {
+	if q.Status != string(domain_quotation.StatusDraft) {
 		return nil, ErrQuotationNotDraft
 	}
 
@@ -254,4 +254,16 @@ func (s *Service) GetQuotation(ctx context.Context, companyID, id string) (*Quot
 	}
 	dto := mapToDTO(q)
 	return &dto, nil
+}
+
+func (s *Service) ListQuotations(ctx context.Context, companyID string, filter domain.QuotationListFilter) ([]QuotationDTO, error) {
+	qs, err := s.repo.List(ctx, companyID, filter)
+	if err != nil {
+		return nil, err
+	}
+	dtos := make([]QuotationDTO, len(qs))
+	for i, q := range qs {
+		dtos[i] = mapToDTO(&q)
+	}
+	return dtos, nil
 }
