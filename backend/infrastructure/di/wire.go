@@ -20,6 +20,8 @@ import (
 	domain_quotation "quotierlabs/backend/domain/quotation"
 	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/transport/wails"
+	"quotierlabs/backend/application/document"
+	"quotierlabs/backend/infrastructure/pdf"
 )
 
 func ProvideDB() (*gorm.DB, error) {
@@ -37,6 +39,7 @@ var InfrastructureSet = wire.NewSet(
 	sqlite.NewTemplateRepository,
 	sqlite.NewQuotationRepository,
 	sqlite.NewNumberSequenceRepository,
+	pdf.NewGenerator,
 )
 
 var ApplicationSet = wire.NewSet(
@@ -47,6 +50,7 @@ var ApplicationSet = wire.NewSet(
 	template.NewService,
 	quotation.NewService,
 	domain_quotation.NewTemplateResolver,
+	document.NewService,
 )
 
 var TransportSet = wire.NewSet(
@@ -55,6 +59,7 @@ var TransportSet = wire.NewSet(
 	wails.NewSectionHandler,
 	wails.NewTemplateHandler,
 	wails.NewQuotationHandler,
+	wails.NewDocumentHandler,
 )
 
 type App struct {
@@ -75,6 +80,7 @@ type App struct {
 	SectionHandler *wails.SectionHandler
 	TemplateHandler *wails.TemplateHandler
 	QuotationHandler *wails.QuotationHandler
+	DocumentHandler *wails.DocumentHandler
 }
 
 func InitializeApp() (*App, error) {

@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
+	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/onboarding"
 	quotation2 "quotierlabs/backend/application/quotation"
 	"quotierlabs/backend/application/section"
@@ -20,6 +21,7 @@ import (
 	"quotierlabs/backend/domain/quotation"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
+	"quotierlabs/backend/infrastructure/pdf"
 	"quotierlabs/backend/infrastructure/sqlite"
 	"quotierlabs/backend/transport/wails"
 )
@@ -55,6 +57,9 @@ func InitializeApp() (*App, error) {
 	templateResolver := quotation.NewTemplateResolver(sectionDefinitionRepository)
 	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, templateResolver, txManager, idGenerator)
 	quotationHandler := wails.NewQuotationHandler(service, quotationService)
+	pdfGenerator := pdf.NewGenerator()
+	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator)
+	documentHandler := wails.NewDocumentHandler(documentService)
 	app := &App{
 		Logger:           logger,
 		IDGenerator:      idGenerator,
@@ -72,6 +77,7 @@ func InitializeApp() (*App, error) {
 		SectionHandler:   sectionHandler,
 		TemplateHandler:  templateHandler,
 		QuotationHandler: quotationHandler,
+		DocumentHandler:  documentHandler,
 	}
 	return app, nil
 }
@@ -82,11 +88,11 @@ func ProvideDB() (*gorm.DB, error) {
 	return sqlite.NewDB("quotierlabs.db")
 }
 
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository)
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, pdf.NewGenerator)
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler)
+var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -106,4 +112,5 @@ type App struct {
 	SectionHandler   *wails.SectionHandler
 	TemplateHandler  *wails.TemplateHandler
 	QuotationHandler *wails.QuotationHandler
+	DocumentHandler  *wails.DocumentHandler
 }

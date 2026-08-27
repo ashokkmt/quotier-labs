@@ -8,6 +8,7 @@ import {
 } from "../../../wailsjs/go/wails/QuotationHandler"
 import { BuilderHeader } from "./BuilderHeader"
 import { DocumentCanvas } from "./DocumentCanvas"
+import { Preview } from "./components/Preview"
 import { CalculationDisplay } from "./CalculationDisplay"
 import { useUndoRedo } from "./hooks/useUndoRedo"
 import { useAutosave } from "./hooks/useAutosave"
@@ -147,15 +148,25 @@ export function QuotationBuilder({ quotationId, onBack }: { quotationId: string,
       
       <div className="flex-1 overflow-y-auto p-6 flex gap-6">
         <div className="flex-1">
-        <DocumentCanvas 
-          document={document} 
-          onChange={(newDoc: any) => applyCommand(new SnapshotCommand(document, newDoc, "Edit"))}
-          readOnly={readOnly}
-        />
+        {readOnly ? (
+          <Preview 
+            companyId={quotation.company_id} 
+            quotationId={quotation.id} 
+            version={lastSaved ? lastSaved.getTime() : Date.now()} 
+          />
+        ) : (
+          <DocumentCanvas 
+            document={document} 
+            onChange={(newDoc: any) => applyCommand(new SnapshotCommand(document, newDoc, "Edit"))}
+            readOnly={false}
+          />
+        )}
         </div>
-        <div className="w-[300px] hidden lg:block">
-          <CalculationDisplay result={calculationResult} />
-        </div>
+        {!readOnly && (
+          <div className="w-[300px] hidden lg:block">
+            <CalculationDisplay result={calculationResult} />
+          </div>
+        )}
       </div>
     </div>
   )
