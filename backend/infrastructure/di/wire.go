@@ -13,6 +13,7 @@ import (
 	"quotierlabs/backend/infrastructure/logging"
 	"quotierlabs/backend/infrastructure/sqlite"
 	"quotierlabs/backend/application/company"
+	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/transport/wails"
 )
@@ -37,10 +38,12 @@ var InfrastructureSet = wire.NewSet(
 var ApplicationSet = wire.NewSet(
 	company.NewService,
 	onboarding.NewService,
+	customer.NewService,
 )
 
 var TransportSet = wire.NewSet(
 	wails.NewCompanyHandler,
+	wails.NewCustomerHandler,
 )
 
 type App struct {
@@ -57,6 +60,7 @@ type App struct {
 	CompanyService *company.Service
 	OnboardService *onboarding.Service
 	CompanyHandler *wails.CompanyHandler
+	CustomerHandler *wails.CustomerHandler
 }
 
 func InitializeApp() (*App, error) {

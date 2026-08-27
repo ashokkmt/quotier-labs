@@ -29,6 +29,7 @@ func (a *DesktopApp) startup(ctx context.Context) {
 	
 	// Start Wails handlers
 	a.diApp.CompanyHandler.Startup(ctx)
+	a.diApp.CustomerHandler.Startup(ctx)
 }
 
 func main() {
@@ -51,6 +52,7 @@ func main() {
 		Bind: []interface{}{
 			app,
 			diApp.CompanyHandler,
+			diApp.CustomerHandler,
 		},
 	})
 

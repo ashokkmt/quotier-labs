@@ -5,6 +5,7 @@ import { AppLayout } from './layouts/AppLayout'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { OnboardingWizard } from './features/onboarding/components/OnboardingWizard'
 import { PlaceholderPage } from './features/PlaceholderPage'
+import { CustomerList } from './features/customers/CustomerList'
 
 import '@fontsource/dm-sans/400.css'
 import '@fontsource/dm-sans/500.css'
@@ -39,7 +40,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'customers',
-        element: <PlaceholderPage title="Customers" />,
+        element: <CustomerList />,
       },
       {
         path: 'company',
