@@ -8,6 +8,8 @@ import { PlaceholderPage } from './features/PlaceholderPage'
 import { CustomerList } from './features/customers/CustomerList'
 import { SectionLibrary } from './features/sections/SectionLibrary'
 import { TemplateList } from './features/templates/TemplateList'
+import { QuotationBuilder } from './features/quotations/QuotationBuilder'
+import { useParams, useNavigate } from 'react-router-dom'
 
 import '@fontsource/dm-sans/400.css'
 import '@fontsource/dm-sans/500.css'
@@ -38,7 +40,11 @@ const router = createBrowserRouter([
       },
       {
         path: 'quotations',
-        element: <PlaceholderPage title="Quotations" />,
+        element: <PlaceholderPage title="Quotations" />
+      },
+      {
+        path: 'quotations/:id/edit',
+        element: <QuotationBuilderWrapper />,
       },
       {
         path: 'templates',
@@ -59,6 +65,13 @@ const router = createBrowserRouter([
     ],
   },
 ])
+
+
+function QuotationBuilderWrapper() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  return <QuotationBuilder quotationId={id!} onBack={() => navigate('/quotations')} />
+}
 
 function App() {
   return (

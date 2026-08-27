@@ -16,6 +16,8 @@ import (
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/section"
 	"quotierlabs/backend/application/template"
+	"quotierlabs/backend/application/quotation"
+	domain_quotation "quotierlabs/backend/domain/quotation"
 	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/transport/wails"
 )
@@ -43,6 +45,8 @@ var ApplicationSet = wire.NewSet(
 	customer.NewService,
 	section.NewService,
 	template.NewService,
+	quotation.NewService,
+	domain_quotation.NewTemplateResolver,
 )
 
 var TransportSet = wire.NewSet(
@@ -50,6 +54,7 @@ var TransportSet = wire.NewSet(
 	wails.NewCustomerHandler,
 	wails.NewSectionHandler,
 	wails.NewTemplateHandler,
+	wails.NewQuotationHandler,
 )
 
 type App struct {
@@ -69,6 +74,7 @@ type App struct {
 	CustomerHandler *wails.CustomerHandler
 	SectionHandler *wails.SectionHandler
 	TemplateHandler *wails.TemplateHandler
+	QuotationHandler *wails.QuotationHandler
 }
 
 func InitializeApp() (*App, error) {

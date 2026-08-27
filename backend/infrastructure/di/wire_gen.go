@@ -13,9 +13,11 @@ import (
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/onboarding"
+	quotation2 "quotierlabs/backend/application/quotation"
 	"quotierlabs/backend/application/section"
 	"quotierlabs/backend/application/template"
 	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/quotation"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
 	"quotierlabs/backend/infrastructure/sqlite"
@@ -50,22 +52,26 @@ func InitializeApp() (*App, error) {
 	sectionHandler := wails.NewSectionHandler(service, sectionService)
 	templateService := template.NewService(templateRepository, txManager, idGenerator)
 	templateHandler := wails.NewTemplateHandler(service, templateService)
+	templateResolver := quotation.NewTemplateResolver(sectionDefinitionRepository)
+	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, templateResolver, txManager, idGenerator)
+	quotationHandler := wails.NewQuotationHandler(service, quotationService)
 	app := &App{
-		Logger:          logger,
-		IDGenerator:     idGenerator,
-		TxManager:       txManager,
-		Companies:       companyRepository,
-		Customers:       customerRepository,
-		Sections:        sectionDefinitionRepository,
-		Templates:       templateRepository,
-		Quotations:      quotationRepository,
-		Sequences:       numberSequenceRepository,
-		CompanyService:  service,
-		OnboardService:  onboardingService,
-		CompanyHandler:  companyHandler,
-		CustomerHandler: customerHandler,
-		SectionHandler:  sectionHandler,
-		TemplateHandler: templateHandler,
+		Logger:           logger,
+		IDGenerator:      idGenerator,
+		TxManager:        txManager,
+		Companies:        companyRepository,
+		Customers:        customerRepository,
+		Sections:         sectionDefinitionRepository,
+		Templates:        templateRepository,
+		Quotations:       quotationRepository,
+		Sequences:        numberSequenceRepository,
+		CompanyService:   service,
+		OnboardService:   onboardingService,
+		CompanyHandler:   companyHandler,
+		CustomerHandler:  customerHandler,
+		SectionHandler:   sectionHandler,
+		TemplateHandler:  templateHandler,
+		QuotationHandler: quotationHandler,
 	}
 	return app, nil
 }
@@ -78,9 +84,9 @@ func ProvideDB() (*gorm.DB, error) {
 
 var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository)
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler)
+var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -93,10 +99,11 @@ type App struct {
 	Quotations  domain.QuotationRepository
 	Sequences   domain.NumberSequenceRepository
 
-	CompanyService  *company.Service
-	OnboardService  *onboarding.Service
-	CompanyHandler  *wails.CompanyHandler
-	CustomerHandler *wails.CustomerHandler
-	SectionHandler  *wails.SectionHandler
-	TemplateHandler *wails.TemplateHandler
+	CompanyService   *company.Service
+	OnboardService   *onboarding.Service
+	CompanyHandler   *wails.CompanyHandler
+	CustomerHandler  *wails.CustomerHandler
+	SectionHandler   *wails.SectionHandler
+	TemplateHandler  *wails.TemplateHandler
+	QuotationHandler *wails.QuotationHandler
 }

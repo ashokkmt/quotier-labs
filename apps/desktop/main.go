@@ -32,6 +32,7 @@ func (a *DesktopApp) startup(ctx context.Context) {
 	a.diApp.CustomerHandler.Startup(ctx)
 	a.diApp.SectionHandler.Startup(ctx)
 	a.diApp.TemplateHandler.Startup(ctx)
+	a.diApp.QuotationHandler.Startup(ctx)
 }
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 			diApp.CustomerHandler,
 			diApp.SectionHandler,
 			diApp.TemplateHandler,
+			diApp.QuotationHandler,
 		},
 	})
 
