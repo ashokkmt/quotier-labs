@@ -10,6 +10,10 @@ export function GetQuotation(arg1) {
   return window['go']['wails']['QuotationHandler']['GetQuotation'](arg1);
 }
 
+export function RecalculateQuotation(arg1) {
+  return window['go']['wails']['QuotationHandler']['RecalculateQuotation'](arg1);
+}
+
 export function SaveQuotationDocument(arg1) {
   return window['go']['wails']['QuotationHandler']['SaveQuotationDocument'](arg1);
 }

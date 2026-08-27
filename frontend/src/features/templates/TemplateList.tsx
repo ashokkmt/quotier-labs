@@ -1,8 +1,11 @@
+import { useNavigate } from "react-router-dom"
 import { useState, useEffect } from "react"
 import { Plus, LayoutTemplate, Copy, Trash, Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
+import { CreateQuotationDraft } from "../../../wailsjs/go/wails/QuotationHandler"
+import { ListCustomers } from "../../../wailsjs/go/wails/CustomerHandler"
 import { ListTemplates, CreateTemplate, DuplicateTemplate, DeleteTemplate } from "../../../wailsjs/go/wails/TemplateHandler"
 import { TemplateBuilder } from "./TemplateBuilder"
 
@@ -12,6 +15,25 @@ export function TemplateList() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const { toast } = useToast()
 
+  
+  const navigate = useNavigate()
+  const handleCreateQuotation = async (templateId: string) => {
+    try {
+      const customers = await ListCustomers({ limit: 1, offset: 0 })
+      if (!customers || !customers.items || customers.items.length === 0) {
+        toast({ title: "No Customers", description: "Please create a customer first.", variant: "destructive" })
+        return
+      }
+      const res = await CreateQuotationDraft({
+        template_id: templateId,
+        customer_id: customers.items[0].id
+      })
+      navigate(`/quotations/${res.id}/edit`)
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.toString(), variant: "destructive" })
+    }
+  }
+  
   const loadTemplates = async () => {
     setLoading(true)
     try {
@@ -114,6 +136,7 @@ export function TemplateList() {
                 Version: {t.current_version || 1}
               </div>
               <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button size="sm" onClick={() => handleCreateQuotation(t.id)}>Use</Button>
                 {t.is_builtin ? (
                   <Button variant="ghost" size="sm" onClick={() => handleDuplicate(t.id)}>
                     <Copy className="w-4 h-4 mr-2" /> Customize

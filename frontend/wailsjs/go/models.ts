@@ -294,6 +294,32 @@ export namespace customer {
 
 export namespace quotation {
 	
+	export class CalculationResultDTO {
+	    subtotal: number;
+	    discount_total: number;
+	    taxable_total: number;
+	    cgst_total: number;
+	    sgst_total: number;
+	    igst_total: number;
+	    grand_total: number;
+	    tax_mode: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CalculationResultDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.subtotal = source["subtotal"];
+	        this.discount_total = source["discount_total"];
+	        this.taxable_total = source["taxable_total"];
+	        this.cgst_total = source["cgst_total"];
+	        this.sgst_total = source["sgst_total"];
+	        this.igst_total = source["igst_total"];
+	        this.grand_total = source["grand_total"];
+	        this.tax_mode = source["tax_mode"];
+	    }
+	}
 	export class QuotationCreateDTO {
 	    template_id: string;
 	    customer_id: string;

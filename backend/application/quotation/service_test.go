@@ -97,3 +97,59 @@ func TestQuotationService(t *testing.T) {
 		t.Fatalf("expected customer updated to cust-2")
 	}
 }
+
+func TestRecalculateQuotation(t *testing.T) {
+	db := setupTestDB(t)
+	db.Exec("INSERT INTO companies (id, name, currency, state, created_at, updated_at, version) VALUES ('comp-2', 'Test Comp', 'INR', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO customers (id, company_id, name, state, created_at, updated_at, version) VALUES ('cust-3', 'comp-2', 'Test Cust', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-2', 'BuiltinTmpl', 1, '{\"rows\":[]}', 1, 1, ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('seq-2', 'comp-2', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", time.Now().UTC().Year(), time.Now(), time.Now())
+
+	repo := infra_sqlite.NewQuotationRepository(db)
+	templateRepo := infra_sqlite.NewTemplateRepository(db)
+	customerRepo := infra_sqlite.NewCustomerRepository(db)
+	companyRepo := infra_sqlite.NewCompanyRepository(db)
+	seqRepo := infra_sqlite.NewNumberSequenceRepository(db)
+	sectionRepo := infra_sqlite.NewSectionDefinitionRepository(db)
+	resolver := domain_quotation.NewTemplateResolver(sectionRepo)
+	txManager := infra_sqlite.NewGormTxManager(db)
+	idGen := infra_id.NewULIDGenerator()
+
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen)
+	ctx := context.Background()
+
+	// 1. Create Draft
+	q, err := svc.CreateQuotationDraft(ctx, "comp-2", quotation.QuotationCreateDTO{
+		TemplateID: "tmpl-2",
+		CustomerID: "cust-3",
+	})
+	if err != nil {
+		t.Fatalf("failed to create draft: %v", err)
+	}
+
+	// 2. Inject Document with a table having totals
+	docJSON := `{"rows":[{"id":"r1","columns":[{"id":"c1","sections":[{"id":"s1","tables":[{"id":"tbl-1","has_totals":true,"totals_config":{"qty_col":"qty","rate_col":"rate","tax_rate_col":"tax"},"rows":[{"qty":2,"rate":5000,"tax":18.0}]}]}]}]}]}`
+	_, err = svc.UpdateQuotationDocument(ctx, "comp-2", quotation.QuotationUpdateDocumentDTO{
+		ID:       q.ID,
+		Document: docJSON,
+	})
+	if err != nil {
+		t.Fatalf("failed to update doc: %v", err)
+	}
+
+	// 3. Recalculate
+	res, err := svc.RecalculateQuotation(ctx, "comp-2", q.ID)
+	if err != nil {
+		t.Fatalf("failed to recalculate: %v", err)
+	}
+
+	if res.TaxMode != "INTRA_STATE" {
+		t.Errorf("expected INTRA_STATE, got %v", res.TaxMode)
+	}
+	if res.Subtotal != 10000 {
+		t.Errorf("expected subtotal 10000, got %v", res.Subtotal)
+	}
+	if res.CGSTTotal != 900 {
+		t.Errorf("expected cgst 900, got %v", res.CGSTTotal)
+	}
+}

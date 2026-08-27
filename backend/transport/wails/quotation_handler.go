@@ -67,3 +67,11 @@ func (h *QuotationHandler) GetQuotation(id string) (*quotation.QuotationDTO, err
 	}
 	return h.quotationSvc.GetQuotation(h.ctx, compID, id)
 }
+
+func (h *QuotationHandler) RecalculateQuotation(id string) (*quotation.CalculationResultDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	return h.quotationSvc.RecalculateQuotation(h.ctx, compID, id)
+}

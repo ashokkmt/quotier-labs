@@ -1,0 +1,119 @@
+package quotation
+
+import (
+	"context"
+	"encoding/json"
+
+	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/calculation"
+	domain_quotation "quotierlabs/backend/domain/quotation"
+)
+
+type CalculationResultDTO struct {
+	Subtotal      int64 `json:"subtotal"`
+	DiscountTotal int64 `json:"discount_total"`
+	TaxableTotal  int64 `json:"taxable_total"`
+	CGSTTotal     int64 `json:"cgst_total"`
+	SGSTTotal     int64 `json:"sgst_total"`
+	IGSTTotal     int64 `json:"igst_total"`
+	GrandTotal    int64 `json:"grand_total"`
+	TaxMode       string `json:"tax_mode"`
+}
+
+func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotationID string) (*CalculationResultDTO, error) {
+	txCtx, err := s.txManager.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer s.txManager.Rollback(txCtx)
+
+	q, err := s.repo.GetByID(txCtx, quotationID, companyID)
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := domain_quotation.ParseDocument(q.Document)
+	if err != nil {
+		return nil, err
+	}
+
+	var comp *domain.Company
+	if q.CompanySnapshot != nil {
+		comp = &domain.Company{}
+		json.Unmarshal([]byte(*q.CompanySnapshot), comp)
+	} else {
+		comp, _ = s.companyRepo.GetByID(txCtx, companyID)
+	}
+
+	var cust *domain.Customer
+	if q.CustomerSnapshot != nil {
+		cust = &domain.Customer{}
+		json.Unmarshal([]byte(*q.CustomerSnapshot), cust)
+	} else {
+		cust, _ = s.customerRepo.GetByID(txCtx, q.CustomerID, companyID)
+	}
+
+	taxMode := calculation.TaxModeIntraState
+	if comp != nil && cust != nil {
+		if comp.State != nil && cust.State != nil && *comp.State != *cust.State {
+			taxMode = calculation.TaxModeInterState
+		}
+	}
+
+	lines := domain_quotation.ExtractLineItems(doc)
+	engine := calculation.NewEngine()
+	res := engine.Calculate(lines, taxMode)
+
+	q.Subtotal = res.Subtotal
+	q.DiscountTotal = res.DiscountTotal
+	q.TaxableTotal = res.TaxableTotal
+	q.CGSTTotal = res.CGSTTotal
+	q.SGSTTotal = res.SGSTTotal
+	q.IGSTTotal = res.IGSTTotal
+	q.GrandTotal = res.GrandTotal
+
+	if err := s.repo.Update(txCtx, q); err != nil {
+		return nil, err
+	}
+
+	if err := s.txManager.Commit(txCtx); err != nil {
+		return nil, err
+	}
+
+	return &CalculationResultDTO{
+		Subtotal:      res.Subtotal,
+		DiscountTotal: res.DiscountTotal,
+		TaxableTotal:  res.TaxableTotal,
+		CGSTTotal:     res.CGSTTotal,
+		SGSTTotal:     res.SGSTTotal,
+		IGSTTotal:     res.IGSTTotal,
+		GrandTotal:    res.GrandTotal,
+		TaxMode:       string(taxMode),
+	}, nil
+}
+
+func (s *Service) CalculatePreview(ctx context.Context, companyID string, lines []calculation.LineItemInput, customerState *string) (*CalculationResultDTO, error) {
+	comp, err := s.companyRepo.GetByID(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+
+	taxMode := calculation.TaxModeIntraState
+	if customerState != nil && comp.State != nil && *comp.State != *customerState {
+		taxMode = calculation.TaxModeInterState
+	}
+
+	engine := calculation.NewEngine()
+	res := engine.Calculate(lines, taxMode)
+
+	return &CalculationResultDTO{
+		Subtotal:      res.Subtotal,
+		DiscountTotal: res.DiscountTotal,
+		TaxableTotal:  res.TaxableTotal,
+		CGSTTotal:     res.CGSTTotal,
+		SGSTTotal:     res.SGSTTotal,
+		IGSTTotal:     res.IGSTTotal,
+		GrandTotal:    res.GrandTotal,
+		TaxMode:       string(taxMode),
+	}, nil
+}

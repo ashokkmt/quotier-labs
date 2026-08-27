@@ -7,6 +7,8 @@ export function CreateQuotationDraft(arg1:quotation.QuotationCreateDTO):Promise<
 
 export function GetQuotation(arg1:string):Promise<quotation.QuotationDTO>;
 
+export function RecalculateQuotation(arg1:string):Promise<quotation.CalculationResultDTO>;
+
 export function SaveQuotationDocument(arg1:quotation.QuotationUpdateDocumentDTO):Promise<quotation.QuotationDTO>;
 
 export function Startup(arg1:context.Context):Promise<void>;
