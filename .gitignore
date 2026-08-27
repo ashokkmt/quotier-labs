@@ -1,0 +1,48 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+build/
+apps/desktop/build/bin/
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+.env
+.env.local
+
+# Application specific
+quotierlabs.db
+quotierlabs.db-shm
+quotierlabs.db-wal
+quotierlabs.log
+quotierlabs
+
+# Temporaries
+temp/
+
+plans/
+test.md
+AGENTS.md
