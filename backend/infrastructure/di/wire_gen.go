@@ -21,6 +21,7 @@ import (
 	"quotierlabs/backend/domain/quotation"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
+	"quotierlabs/backend/infrastructure/os"
 	"quotierlabs/backend/infrastructure/pdf"
 	"quotierlabs/backend/infrastructure/sqlite"
 	"quotierlabs/backend/transport/wails"
@@ -60,6 +61,10 @@ func InitializeApp() (*App, error) {
 	pdfGenerator := pdf.NewGenerator()
 	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator)
 	documentHandler := wails.NewDocumentHandler(documentService)
+	exportService := document.NewExportService(documentService, quotationRepository, customerRepository)
+	printService := os.NewPrintService()
+	shareService := os.NewShareService()
+	exportHandler := wails.NewExportHandler(exportService, printService, shareService)
 	app := &App{
 		Logger:           logger,
 		IDGenerator:      idGenerator,
@@ -78,6 +83,7 @@ func InitializeApp() (*App, error) {
 		TemplateHandler:  templateHandler,
 		QuotationHandler: quotationHandler,
 		DocumentHandler:  documentHandler,
+		ExportHandler:    exportHandler,
 	}
 	return app, nil
 }
@@ -88,11 +94,11 @@ func ProvideDB() (*gorm.DB, error) {
 	return sqlite.NewDB("quotierlabs.db")
 }
 
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, pdf.NewGenerator)
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, pdf.NewGenerator, os.NewPrintService, os.NewShareService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)))
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService, document.NewExportService)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler)
+var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -113,4 +119,5 @@ type App struct {
 	TemplateHandler  *wails.TemplateHandler
 	QuotationHandler *wails.QuotationHandler
 	DocumentHandler  *wails.DocumentHandler
+	ExportHandler    *wails.ExportHandler
 }

@@ -1,7 +1,7 @@
 import { ArrowLeft, Save, Loader2, Eye, Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "./components/StatusBadge"
-import { PDFActions } from "./components/PDFActions"
+import { ExportActions } from "./components/ExportActions"
 import { CustomerCombobox } from "../../shared/components/CustomerCombobox"
 
 export function BuilderHeader({ 
@@ -68,7 +68,7 @@ export function BuilderHeader({
           </>
         )}
         {readOnly && quotation.status !== 'DRAFT' && (
-          <PDFActions companyId={quotation.company_id} quotationId={quotation.id} status={quotation.status} />
+          <ExportActions companyId={quotation.company_id} quotationId={quotation.id} status={quotation.status} />
         )}
         {readOnly && quotation.status === 'FINALIZED' && (
           <Button variant="secondary" size="sm" onClick={() => onStatusChange('SENT')}>
