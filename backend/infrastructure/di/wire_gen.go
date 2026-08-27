@@ -14,6 +14,7 @@ import (
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/application/section"
+	"quotierlabs/backend/application/template"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
@@ -47,6 +48,8 @@ func InitializeApp() (*App, error) {
 	customerHandler := wails.NewCustomerHandler(service, customerService)
 	sectionService := section.NewService(sectionDefinitionRepository, idGenerator)
 	sectionHandler := wails.NewSectionHandler(service, sectionService)
+	templateService := template.NewService(templateRepository, txManager, idGenerator)
+	templateHandler := wails.NewTemplateHandler(service, templateService)
 	app := &App{
 		Logger:          logger,
 		IDGenerator:     idGenerator,
@@ -62,6 +65,7 @@ func InitializeApp() (*App, error) {
 		CompanyHandler:  companyHandler,
 		CustomerHandler: customerHandler,
 		SectionHandler:  sectionHandler,
+		TemplateHandler: templateHandler,
 	}
 	return app, nil
 }
@@ -74,9 +78,9 @@ func ProvideDB() (*gorm.DB, error) {
 
 var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository)
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler)
+var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -94,4 +98,5 @@ type App struct {
 	CompanyHandler  *wails.CompanyHandler
 	CustomerHandler *wails.CustomerHandler
 	SectionHandler  *wails.SectionHandler
+	TemplateHandler *wails.TemplateHandler
 }

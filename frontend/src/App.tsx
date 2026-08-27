@@ -7,6 +7,7 @@ import { OnboardingWizard } from './features/onboarding/components/OnboardingWiz
 import { PlaceholderPage } from './features/PlaceholderPage'
 import { CustomerList } from './features/customers/CustomerList'
 import { SectionLibrary } from './features/sections/SectionLibrary'
+import { TemplateList } from './features/templates/TemplateList'
 
 import '@fontsource/dm-sans/400.css'
 import '@fontsource/dm-sans/500.css'
@@ -28,6 +29,10 @@ const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       {
+        path: 'sections',
+        element: <SectionLibrary />
+      },
+      {
         index: true,
         element: <Dashboard />,
       },
@@ -37,7 +42,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'templates',
-        element: <SectionLibrary />,
+        element: <TemplateList />,
       },
       {
         path: 'customers',

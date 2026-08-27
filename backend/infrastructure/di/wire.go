@@ -15,6 +15,7 @@ import (
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/section"
+	"quotierlabs/backend/application/template"
 	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/transport/wails"
 )
@@ -41,12 +42,14 @@ var ApplicationSet = wire.NewSet(
 	onboarding.NewService,
 	customer.NewService,
 	section.NewService,
+	template.NewService,
 )
 
 var TransportSet = wire.NewSet(
 	wails.NewCompanyHandler,
 	wails.NewCustomerHandler,
 	wails.NewSectionHandler,
+	wails.NewTemplateHandler,
 )
 
 type App struct {
@@ -65,6 +68,7 @@ type App struct {
 	CompanyHandler *wails.CompanyHandler
 	CustomerHandler *wails.CustomerHandler
 	SectionHandler *wails.SectionHandler
+	TemplateHandler *wails.TemplateHandler
 }
 
 func InitializeApp() (*App, error) {
