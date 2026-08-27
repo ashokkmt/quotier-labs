@@ -51,8 +51,8 @@ func (s *Service) CompleteOnboarding(ctx context.Context, input company.CompanyC
 	seq := &domain.NumberSequence{
 		ID:           s.idGen.Generate(),
 		CompanyID:    comp.ID,
-		DocumentType: "quotation",
-		Prefix:       "QTN",
+		DocumentType: "QUOTATION",
+		Prefix:       "QT",
 		Pattern:      "{PREFIX}-{YYYY}-{0000}",
 		CurrentValue: 0,
 		Year:         time.Now().Year(),

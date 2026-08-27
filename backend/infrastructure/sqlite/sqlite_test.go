@@ -7,23 +7,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	
+
 	"quotierlabs/backend/domain"
 	infra_sqlite "quotierlabs/backend/infrastructure/sqlite"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
 	sqlDB, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		t.Fatalf("failed to open sql db: %v", err)
 	}
 
-	_ = goose.SetDialect("sqlite3")
-	if err := goose.Up(sqlDB, "../../../migrations"); err != nil {
+	// Use the same embedded migration pipeline as production.
+	if err := infra_sqlite.RunMigrations(sqlDB); err != nil {
 		t.Fatalf("goose up failed: %v", err)
 	}
 

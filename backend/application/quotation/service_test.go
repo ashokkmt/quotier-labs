@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -17,14 +16,14 @@ import (
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	dsn := "file:" + t.Name() + "?mode=memory&cache=shared"
 	sqlDB, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		t.Fatalf("failed to open sql db: %v", err)
 	}
 
-	_ = goose.SetDialect("sqlite3")
-	if err := goose.Up(sqlDB, "../../../migrations"); err != nil {
+	if err := infra_sqlite.RunMigrations(sqlDB); err != nil {
 		t.Fatalf("goose up failed: %v", err)
 	}
 

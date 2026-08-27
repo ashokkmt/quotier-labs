@@ -33,7 +33,7 @@ func TestQuotationValidation(t *testing.T) {
 		{
 			name: "valid draft",
 			q: domain.Quotation{
-				Status: quotation.StatusDraft,
+				Status:   string(quotation.StatusDraft),
 				Document: `{"rows":[]}`,
 			},
 			wantErr: nil,
@@ -48,7 +48,7 @@ func TestQuotationValidation(t *testing.T) {
 		{
 			name: "invalid document json",
 			q: domain.Quotation{
-				Status: quotation.StatusDraft,
+				Status:   string(quotation.StatusDraft),
 				Document: `{invalid}`,
 			},
 			wantErr: quotation.ErrInvalidDocument,
