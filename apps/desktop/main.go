@@ -35,6 +35,15 @@ func (a *DesktopApp) startup(ctx context.Context) {
 	a.diApp.QuotationHandler.Startup(ctx)
 	a.diApp.DocumentHandler.Startup(ctx)
 	a.diApp.ExportHandler.Startup(ctx)
+	a.diApp.BackupHandler.Startup(ctx)
+	
+	a.diApp.AutoBackup.Start()
+}
+
+func (a *DesktopApp) shutdown(ctx context.Context) {
+	if a.diApp.AutoBackup != nil {
+		a.diApp.AutoBackup.Stop()
+	}
 }
 
 func main() {
@@ -54,6 +63,7 @@ func main() {
 			Assets: frontend.Assets,
 		},
 		OnStartup: app.startup,
+		OnShutdown: app.shutdown,
 		Bind: []interface{}{
 			app,
 			diApp.CompanyHandler,
@@ -63,6 +73,7 @@ func main() {
 			diApp.QuotationHandler,
 			diApp.DocumentHandler,
 			diApp.ExportHandler,
+			diApp.BackupHandler,
 		},
 	})
 

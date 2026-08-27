@@ -10,6 +10,7 @@ import (
 	"github.com/google/wire"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	backup2 "quotierlabs/backend/application/backup"
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/document"
@@ -19,7 +20,10 @@ import (
 	"quotierlabs/backend/application/template"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/quotation"
+	"quotierlabs/backend/infrastructure/backup"
+	"quotierlabs/backend/infrastructure/export"
 	"quotierlabs/backend/infrastructure/id"
+	"quotierlabs/backend/infrastructure/import"
 	"quotierlabs/backend/infrastructure/logging"
 	"quotierlabs/backend/infrastructure/os"
 	"quotierlabs/backend/infrastructure/pdf"
@@ -65,6 +69,14 @@ func InitializeApp() (*App, error) {
 	printService := os.NewPrintService()
 	shareService := os.NewShareService()
 	exportHandler := wails.NewExportHandler(exportService, printService, shareService)
+	sqLiteBackupService := backup.NewSQLiteBackupService(db)
+	string2 := ProvideCurrentDBPath()
+	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, string2)
+	csvExportService := export.NewCSVExportService(quotationRepository, customerRepository)
+	csvImportService := csvimport.NewCSVImportService(customerRepository)
+	backupHandler := wails.NewBackupHandler(backupService, service, csvExportService, csvImportService)
+	settingsRepository := sqlite.NewSettingsRepository(db)
+	autoBackupManager := backup2.NewAutoBackupManager(logger, backupService, settingsRepository, companyRepository)
 	app := &App{
 		Logger:           logger,
 		IDGenerator:      idGenerator,
@@ -84,6 +96,8 @@ func InitializeApp() (*App, error) {
 		QuotationHandler: quotationHandler,
 		DocumentHandler:  documentHandler,
 		ExportHandler:    exportHandler,
+		BackupHandler:    backupHandler,
+		AutoBackup:       autoBackupManager,
 	}
 	return app, nil
 }
@@ -94,11 +108,17 @@ func ProvideDB() (*gorm.DB, error) {
 	return sqlite.NewDB("quotierlabs.db")
 }
 
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, pdf.NewGenerator, os.NewPrintService, os.NewShareService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)))
+func ProvideCurrentDBPath() string {
+	return "quotierlabs.db"
+}
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService, document.NewExportService)
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB,
+	ProvideCurrentDBPath, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
+)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager)
+
+var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -120,4 +140,6 @@ type App struct {
 	QuotationHandler *wails.QuotationHandler
 	DocumentHandler  *wails.DocumentHandler
 	ExportHandler    *wails.ExportHandler
+	BackupHandler    *wails.BackupHandler
+	AutoBackup       *backup2.AutoBackupManager
 }

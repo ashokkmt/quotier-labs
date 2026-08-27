@@ -79,3 +79,8 @@ type NumberSequenceRepository interface {
 
 	GetCurrent(ctx context.Context, companyID, documentType string, year int) (*NumberSequence, error)
 }
+
+type SettingsRepository interface {
+	Get(ctx context.Context, companyID string, key string) (*Settings, error)
+	Set(ctx context.Context, setting *Settings) error
+}
