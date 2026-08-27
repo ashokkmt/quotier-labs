@@ -19,6 +19,13 @@ type CompanyModel struct {
 	Email     *string
 	Website   *string
 	LogoURL   *string
+	State        *string
+	GSTIN        *string
+	PAN          *string
+	BankDetails  *string
+	SignatureURL *string
+	StampURL     *string
+
 	Currency  string
 	IsActive  bool
 	CreatedAt time.Time
@@ -51,6 +58,13 @@ func toDomainCompany(m *CompanyModel) *domain.Company {
 		Email:     m.Email,
 		Website:   m.Website,
 		LogoURL:   m.LogoURL,
+		State:        m.State,
+		GSTIN:        m.GSTIN,
+		PAN:          m.PAN,
+		BankDetails:  m.BankDetails,
+		SignatureURL: m.SignatureURL,
+		StampURL:     m.StampURL,
+
 		Currency:  m.Currency,
 		IsActive:  m.IsActive,
 		AuditMetadata: domain.AuditMetadata{
@@ -78,6 +92,13 @@ func fromDomainCompany(d *domain.Company) *CompanyModel {
 		Email:     d.Email,
 		Website:   d.Website,
 		LogoURL:   d.LogoURL,
+		State:        d.State,
+		GSTIN:        d.GSTIN,
+		PAN:          d.PAN,
+		BankDetails:  d.BankDetails,
+		SignatureURL: d.SignatureURL,
+		StampURL:     d.StampURL,
+
 		Currency:  d.Currency,
 		IsActive:  d.IsActive,
 		CreatedAt: d.CreatedAt,

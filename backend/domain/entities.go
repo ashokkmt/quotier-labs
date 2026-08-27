@@ -17,6 +17,13 @@ type Company struct {
 	Email     *string
 	Website   *string
 	LogoURL   *string
+	State        *string
+	GSTIN        *string
+	PAN          *string
+	BankDetails  *string
+	SignatureURL *string
+	StampURL     *string
+
 	Currency  string
 	IsActive  bool
 	AuditMetadata

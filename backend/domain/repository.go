@@ -63,5 +63,7 @@ type QuotationRepository interface {
 
 type NumberSequenceRepository interface {
 	ReserveNext(ctx context.Context, companyID, documentType string, year int) (int, error)
+	Create(ctx context.Context, sequence *NumberSequence) error
+
 	GetCurrent(ctx context.Context, companyID, documentType string, year int) (*NumberSequence, error)
 }

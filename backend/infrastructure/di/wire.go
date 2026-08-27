@@ -12,6 +12,9 @@ import (
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
 	"quotierlabs/backend/infrastructure/sqlite"
+	"quotierlabs/backend/application/company"
+	"quotierlabs/backend/application/onboarding"
+	"quotierlabs/backend/transport/wails"
 )
 
 func ProvideDB() (*gorm.DB, error) {
@@ -31,6 +34,15 @@ var InfrastructureSet = wire.NewSet(
 	sqlite.NewNumberSequenceRepository,
 )
 
+var ApplicationSet = wire.NewSet(
+	company.NewService,
+	onboarding.NewService,
+)
+
+var TransportSet = wire.NewSet(
+	wails.NewCompanyHandler,
+)
+
 type App struct {
 	Logger       *zap.Logger
 	IDGenerator  domain.IDGenerator
@@ -41,11 +53,17 @@ type App struct {
 	Templates    domain.TemplateRepository
 	Quotations   domain.QuotationRepository
 	Sequences    domain.NumberSequenceRepository
+	
+	CompanyService *company.Service
+	OnboardService *onboarding.Service
+	CompanyHandler *wails.CompanyHandler
 }
 
 func InitializeApp() (*App, error) {
 	wire.Build(
 		InfrastructureSet,
+		ApplicationSet,
+		TransportSet,
 		wire.Struct(new(App), "*"),
 	)
 	return nil, nil

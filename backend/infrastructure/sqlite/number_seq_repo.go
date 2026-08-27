@@ -99,3 +99,20 @@ func (r *numberSequenceRepository) GetCurrent(ctx context.Context, companyID, do
 	}
 	return toDomainNumberSequence(&model), nil
 }
+
+func (r *numberSequenceRepository) Create(ctx context.Context, seq *domain.NumberSequence) error {
+	db := GetDB(ctx, r.db)
+	model := &NumberSequenceModel{
+		ID:           seq.ID,
+		CompanyID:    seq.CompanyID,
+		DocumentType: seq.DocumentType,
+		Prefix:       seq.Prefix,
+		Pattern:      seq.Pattern,
+		CurrentValue: seq.CurrentValue,
+		Year:         seq.Year,
+		CreatedAt:    seq.CreatedAt,
+		UpdatedAt:    seq.UpdatedAt,
+		Version:      seq.Version,
+	}
+	return db.Create(model).Error
+}

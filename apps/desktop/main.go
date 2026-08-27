@@ -12,16 +12,11 @@ import (
 	"quotierlabs/frontend"
 )
 
-
-
-
-// DesktopApp struct
 type DesktopApp struct {
 	ctx   context.Context
 	diApp *di.App
 }
 
-// NewDesktopApp creates a new App application struct
 func NewDesktopApp(diApp *di.App) *DesktopApp {
 	return &DesktopApp{
 		diApp: diApp,
@@ -31,10 +26,12 @@ func NewDesktopApp(diApp *di.App) *DesktopApp {
 func (a *DesktopApp) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.diApp.Logger.Info("Quotier Labs Desktop App Started")
+	
+	// Start Wails handlers
+	a.diApp.CompanyHandler.Startup(ctx)
 }
 
 func main() {
-	// Initialize DI
 	diApp, err := di.InitializeApp()
 	if err != nil {
 		log.Fatalf("failed to initialize dependencies: %v", err)
@@ -43,7 +40,6 @@ func main() {
 
 	app := NewDesktopApp(diApp)
 
-	// Create application with options
 	err = wails.Run(&options.App{
 		Title:  "Quotier Labs",
 		Width:  1024,
@@ -54,6 +50,7 @@ func main() {
 		OnStartup: app.startup,
 		Bind: []interface{}{
 			app,
+			diApp.CompanyHandler,
 		},
 	})
 

@@ -10,10 +10,13 @@ import (
 	"github.com/google/wire"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"quotierlabs/backend/application/company"
+	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
 	"quotierlabs/backend/infrastructure/sqlite"
+	"quotierlabs/backend/transport/wails"
 )
 
 // Injectors from wire.go:
@@ -35,16 +38,22 @@ func InitializeApp() (*App, error) {
 	templateRepository := sqlite.NewTemplateRepository(db)
 	quotationRepository := sqlite.NewQuotationRepository(db)
 	numberSequenceRepository := sqlite.NewNumberSequenceRepository(db)
+	service := company.NewService(companyRepository, idGenerator)
+	onboardingService := onboarding.NewService(service, txManager, sectionDefinitionRepository, templateRepository, numberSequenceRepository, idGenerator)
+	companyHandler := wails.NewCompanyHandler(service, onboardingService)
 	app := &App{
-		Logger:      logger,
-		IDGenerator: idGenerator,
-		TxManager:   txManager,
-		Companies:   companyRepository,
-		Customers:   customerRepository,
-		Sections:    sectionDefinitionRepository,
-		Templates:   templateRepository,
-		Quotations:  quotationRepository,
-		Sequences:   numberSequenceRepository,
+		Logger:         logger,
+		IDGenerator:    idGenerator,
+		TxManager:      txManager,
+		Companies:      companyRepository,
+		Customers:      customerRepository,
+		Sections:       sectionDefinitionRepository,
+		Templates:      templateRepository,
+		Quotations:     quotationRepository,
+		Sequences:      numberSequenceRepository,
+		CompanyService: service,
+		OnboardService: onboardingService,
+		CompanyHandler: companyHandler,
 	}
 	return app, nil
 }
@@ -57,6 +66,10 @@ func ProvideDB() (*gorm.DB, error) {
 
 var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository)
 
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService)
+
+var TransportSet = wire.NewSet(wails.NewCompanyHandler)
+
 type App struct {
 	Logger      *zap.Logger
 	IDGenerator domain.IDGenerator
@@ -67,4 +80,8 @@ type App struct {
 	Templates   domain.TemplateRepository
 	Quotations  domain.QuotationRepository
 	Sequences   domain.NumberSequenceRepository
+
+	CompanyService *company.Service
+	OnboardService *onboarding.Service
+	CompanyHandler *wails.CompanyHandler
 }

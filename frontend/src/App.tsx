@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from './hooks/use-theme'
 import { AppLayout } from './layouts/AppLayout'
 import { Dashboard } from './features/dashboard/Dashboard'
+import { OnboardingWizard } from './features/onboarding/components/OnboardingWizard'
 import { PlaceholderPage } from './features/PlaceholderPage'
 
 import '@fontsource/dm-sans/400.css'
@@ -16,6 +17,10 @@ import '@fontsource/jetbrains-mono/400.css'
 const queryClient = new QueryClient()
 
 const router = createBrowserRouter([
+  {
+    path: '/onboarding',
+    element: <OnboardingWizard />,
+  },
   {
     path: '/',
     element: <AppLayout />,

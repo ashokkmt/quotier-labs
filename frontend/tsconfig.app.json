@@ -15,7 +15,6 @@
     "jsx": "react-jsx",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "strict": true,
     "ignoreDeprecations": "5.0",

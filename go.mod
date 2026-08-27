@@ -9,6 +9,8 @@ require (
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/wailsapp/wails/v2 v2.15.0
 	go.uber.org/zap v1.28.0
+	gorm.io/driver/sqlite v1.6.0
+	gorm.io/gorm v1.31.2
 )
 
 require (
@@ -46,6 +48,4 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	gorm.io/driver/sqlite v1.6.0 // indirect
-	gorm.io/gorm v1.31.2 // indirect
 )
