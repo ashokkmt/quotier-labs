@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 
-export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fields: any[]) => void }) {
+export function TableEditor({ fields, onChange, readOnly = false }: { fields: any[], onChange: (fields: any[]) => void, readOnly?: boolean }) {
   const addTable = () => {
     const newTable = {
       element_type: "Table",
@@ -56,7 +56,7 @@ export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fi
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-medium">Tables</h3>
-        <Button type="button" variant="outline" size="sm" onClick={addTable}>
+         <Button type="button" variant="outline" size="sm" onClick={addTable} disabled={readOnly}>
           <Plus className="w-4 h-4 mr-2" /> Add Table
         </Button>
       </div>
@@ -69,12 +69,12 @@ export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fi
                 <Input 
                   placeholder="Table ID" 
                   value={f.table.id} 
-                  onChange={(e) => updateTable(i, 'id', e.target.value)}
+                   onChange={(e) => updateTable(i, 'id', e.target.value)} disabled={readOnly}
                 />
                 <Input 
                   placeholder="Table Name" 
                   value={f.table.name} 
-                  onChange={(e) => updateTable(i, 'name', e.target.value)}
+                   onChange={(e) => updateTable(i, 'name', e.target.value)} disabled={readOnly}
                 />
               </div>
               <div className="flex items-center gap-4">
@@ -82,11 +82,11 @@ export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fi
                   <Checkbox 
                     id={`totals-${f.table.id}`} 
                     checked={f.table.has_totals}
-                    onCheckedChange={(c) => updateTable(i, 'has_totals', !!c)}
+                     onCheckedChange={(c) => updateTable(i, 'has_totals', !!c)} disabled={readOnly}
                   />
                   <label htmlFor={`totals-${f.table.id}`} className="text-xs">Show Totals</label>
                 </div>
-                <Button type="button" variant="ghost" size="icon" onClick={() => removeTable(i)}>
+                 <Button type="button" variant="ghost" size="icon" onClick={() => removeTable(i)} disabled={readOnly}>
                   <Trash className="w-4 h-4 text-destructive" />
                 </Button>
               </div>
@@ -95,7 +95,7 @@ export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fi
             <div className="p-3 space-y-2">
               <div className="flex justify-between items-center mb-2">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase">Columns</h4>
-                <Button type="button" variant="ghost" size="sm" onClick={() => addColumn(i)}>
+                 <Button type="button" variant="ghost" size="sm" onClick={() => addColumn(i)} disabled={readOnly}>
                   <Plus className="w-3 h-3 mr-1" /> Add Column
                 </Button>
               </div>
@@ -107,16 +107,16 @@ export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fi
                     <Input 
                       placeholder="Column ID" 
                       value={col.id} 
-                      onChange={(e) => updateColumn(i, cIdx, 'id', e.target.value)}
+                       onChange={(e) => updateColumn(i, cIdx, 'id', e.target.value)} disabled={readOnly}
                       className="col-span-1"
                     />
                     <Input 
                       placeholder="Label" 
                       value={col.label} 
-                      onChange={(e) => updateColumn(i, cIdx, 'label', e.target.value)}
+                       onChange={(e) => updateColumn(i, cIdx, 'label', e.target.value)} disabled={readOnly}
                       className="col-span-1"
                     />
-                    <Select value={col.type} onValueChange={(val) => updateColumn(i, cIdx, 'type', val)}>
+                     <Select value={col.type} onValueChange={(val) => updateColumn(i, cIdx, 'type', val)} disabled={readOnly}>
                       <SelectTrigger className="col-span-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -129,10 +129,10 @@ export function TableEditor({ fields, onChange }: { fields: any[], onChange: (fi
                         <Input 
                           placeholder="Formula" 
                           value={col.formula || ""} 
-                          onChange={(e) => updateColumn(i, cIdx, 'formula', e.target.value)}
+                           onChange={(e) => updateColumn(i, cIdx, 'formula', e.target.value)} disabled={readOnly}
                         />
                       ) : <div />}
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeColumn(i, cIdx)}>
+                       <Button type="button" variant="ghost" size="icon" onClick={() => removeColumn(i, cIdx)} disabled={readOnly}>
                         <Trash className="w-4 h-4 text-destructive" />
                       </Button>
                     </div>

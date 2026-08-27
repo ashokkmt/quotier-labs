@@ -15,7 +15,8 @@ export function BuilderHeader({
   saveIndicator,
   undoRedoControls,
   onFinalize,
-  onStatusChange
+  onStatusChange,
+  onSaveAsTemplate
 }: any) {
   if (!quotation) return null
 
@@ -58,6 +59,7 @@ export function BuilderHeader({
         
         {!readOnly && (
           <>
+            <Button variant="outline" size="sm" onClick={onSaveAsTemplate}>Save as Template</Button>
             <Button variant="default" size="sm" onClick={onSave} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
               Save Draft

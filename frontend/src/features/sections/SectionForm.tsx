@@ -68,10 +68,12 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
           <FieldEditor 
             fields={schemaElements} 
             onChange={isBuiltin ? () => {} : setSchemaElements} 
+            readOnly={isBuiltin}
           />
           <TableEditor 
             fields={schemaElements} 
             onChange={isBuiltin ? () => {} : setSchemaElements} 
+            readOnly={isBuiltin}
           />
         </div>
       </div>

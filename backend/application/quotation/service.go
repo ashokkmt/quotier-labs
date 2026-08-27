@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"quotierlabs/backend/domain"
@@ -78,21 +79,26 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	}
 	defer s.txManager.Rollback(txCtx)
 
-	// Fetch dependencies
-	tmpl, err := s.templateRepo.GetByID(txCtx, input.TemplateID)
-	if err != nil {
-		return nil, fmt.Errorf("template not found: %w", err)
+	// A draft can start empty. Templates and customers are selected later in the builder.
+	var tmpl *domain.Template
+	if input.TemplateID != "" {
+		tmpl, err = s.templateRepo.GetByID(txCtx, input.TemplateID)
+		if err != nil {
+			return nil, fmt.Errorf("template not found: %w", err)
+		}
+		if !tmpl.IsBuiltin && (tmpl.CompanyID == nil || *tmpl.CompanyID != companyID) {
+			return nil, domain.ErrNotFound
+		}
 	}
-	if !tmpl.IsBuiltin && (tmpl.CompanyID == nil || *tmpl.CompanyID != companyID) {
-		return nil, domain.ErrNotFound
-	}
-
-	cust, err := s.customerRepo.GetByID(txCtx, input.CustomerID, companyID)
-	if err != nil {
-		return nil, fmt.Errorf("customer not found: %w", err)
-	}
-	if cust.CompanyID != companyID {
-		return nil, domain.ErrNotFound
+	var cust *domain.Customer
+	if input.CustomerID != "" {
+		cust, err = s.customerRepo.GetByID(txCtx, input.CustomerID, companyID)
+		if err != nil {
+			return nil, fmt.Errorf("customer not found: %w", err)
+		}
+		if cust.CompanyID != companyID {
+			return nil, domain.ErrNotFound
+		}
 	}
 
 	comp, err := s.companyRepo.GetByID(txCtx, companyID)
@@ -100,8 +106,12 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 		return nil, fmt.Errorf("company not found: %w", err)
 	}
 
-	// Resolve document
-	doc, err := s.resolver.Resolve(txCtx, tmpl)
+	var doc *domain_quotation.Document
+	if tmpl != nil {
+		doc, err = s.resolver.Resolve(txCtx, tmpl)
+	} else {
+		doc = &domain_quotation.Document{Rows: []domain_quotation.Row{}}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -120,24 +130,36 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 
 	// Create snapshots
 	compSnap, _ := json.Marshal(comp)
-	custSnap, _ := json.Marshal(cust)
-	tmplSnap, _ := json.Marshal(tmpl)
+	var custSnap, tmplSnap []byte
+	if cust != nil {
+		custSnap, _ = json.Marshal(cust)
+	}
+	if tmpl != nil {
+		tmplSnap, _ = json.Marshal(tmpl)
+	}
 
 	compSnapStr := string(compSnap)
-	custSnapStr := string(custSnap)
-	tmplSnapStr := string(tmplSnap)
+	var custSnapStr, tmplSnapStr *string
+	if len(custSnap) > 0 {
+		v := string(custSnap)
+		custSnapStr = &v
+	}
+	if len(tmplSnap) > 0 {
+		v := string(tmplSnap)
+		tmplSnapStr = &v
+	}
 
 	q := &domain.Quotation{
 		ID:               s.idGen.Generate(),
 		CompanyID:        companyID,
 		TemplateID:       input.TemplateID,
 		CustomerID:       input.CustomerID,
-		Number: formattedSeq,
-		Status:        string(domain_quotation.StatusDraft),
+		Number:           formattedSeq,
+		Status:           string(domain_quotation.StatusDraft),
 		Document:         docJSON,
 		CompanySnapshot:  &compSnapStr,
-		CustomerSnapshot: &custSnapStr,
-		TemplateSnapshot: &tmplSnapStr,
+		CustomerSnapshot: custSnapStr,
+		TemplateSnapshot: tmplSnapStr,
 		SchemaVersion:    1,
 		AuditMetadata: domain.AuditMetadata{
 			CreatedAt: time.Now().UTC(),
@@ -160,6 +182,53 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 
 	dto := mapToDTO(q)
 	return &dto, nil
+}
+
+func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input SaveAsTemplateDTO) (*domain.Template, error) {
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		return nil, &domain.ValidationError{Field: "name", Message: "template name is required"}
+	}
+	txCtx, err := s.txManager.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer s.txManager.Rollback(txCtx)
+	q, err := s.repo.GetByID(txCtx, input.QuotationID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if q.Status != string(domain_quotation.StatusDraft) {
+		return nil, ErrQuotationNotDraft
+	}
+	doc, err := domain_quotation.ParseDocument(q.Document)
+	if err != nil {
+		return nil, fmt.Errorf("invalid quotation document: %w", err)
+	}
+	layout := make([]map[string]interface{}, 0, len(doc.Rows))
+	for _, row := range doc.Rows {
+		cols := make([]map[string]interface{}, 0, len(row.Columns))
+		for _, col := range row.Columns {
+			secs := make([]map[string]interface{}, 0, len(col.Sections))
+			for _, sec := range col.Sections {
+				secs = append(secs, map[string]interface{}{"id": sec.ID, "section_definition_id": sec.SectionDefinitionID, "visibility": sec.Visibility, "optional": sec.Optional})
+			}
+			cols = append(cols, map[string]interface{}{"id": col.ID, "order": col.Order, "width": col.Width, "sections": secs})
+		}
+		layout = append(layout, map[string]interface{}{"id": row.ID, "order": row.Order, "columns": cols})
+	}
+	layoutJSON, _ := json.Marshal(map[string]interface{}{"rows": layout})
+	t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: string(layoutJSON), SchemaVersion: 1, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
+	if err := s.templateRepo.Create(txCtx, t); err != nil {
+		return nil, err
+	}
+	if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: 1, CreatedAt: t.CreatedAt}); err != nil {
+		return nil, err
+	}
+	if err := s.txManager.Commit(txCtx); err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
 func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string, input QuotationUpdateDocumentDTO) (*QuotationDTO, error) {
@@ -255,4 +324,3 @@ func (s *Service) GetQuotation(ctx context.Context, companyID, id string) (*Quot
 	dto := mapToDTO(q)
 	return &dto, nil
 }
-

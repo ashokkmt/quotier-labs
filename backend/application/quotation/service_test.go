@@ -97,6 +97,59 @@ func TestQuotationService(t *testing.T) {
 	}
 }
 
+func TestCreateQuotationDraftFromScratch(t *testing.T) {
+	db := setupTestDB(t)
+	now := time.Now()
+	db.Exec("INSERT INTO companies (id, name, currency, state, is_active, created_at, updated_at, version) VALUES ('scratch-comp', 'Scratch Co', 'INR', 'Maharashtra', 1, ?, ?, 1)", now, now)
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('scratch-seq', 'scratch-comp', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", now.Year(), now, now)
+	dborm := db
+	svc := quotation.NewService(
+		infra_sqlite.NewQuotationRepository(dborm), infra_sqlite.NewTemplateRepository(dborm),
+		infra_sqlite.NewCustomerRepository(dborm), infra_sqlite.NewCompanyRepository(dborm),
+		infra_sqlite.NewNumberSequenceRepository(dborm), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(dborm)),
+		infra_sqlite.NewGormTxManager(dborm), infra_id.NewULIDGenerator(),
+	)
+	q, err := svc.CreateQuotationDraft(context.Background(), "scratch-comp", quotation.QuotationCreateDTO{})
+	if err != nil {
+		t.Fatalf("scratch draft failed: %v", err)
+	}
+	if q.TemplateID != "" || q.CustomerID != "" {
+		t.Fatalf("scratch draft unexpectedly has dependencies: template=%q customer=%q", q.TemplateID, q.CustomerID)
+	}
+	if q.Document != `{"rows":[]}` {
+		t.Fatalf("expected empty document, got %s", q.Document)
+	}
+}
+
+func TestSaveQuotationAsTemplate(t *testing.T) {
+	db := setupTestDB(t)
+	now := time.Now()
+	db.Exec("INSERT INTO companies (id, name, currency, state, is_active, created_at, updated_at, version) VALUES ('template-comp', 'Template Co', 'INR', 'Maharashtra', 1, ?, ?, 1)", now, now)
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('template-seq', 'template-comp', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", now.Year(), now, now)
+	db.Exec("INSERT INTO section_definitions (id, name, schema, schema_version, is_builtin, created_at, updated_at, version) VALUES ('def-1', 'Notes', '{\"elements\":[]}', 1, 1, ?, ?, 1)", now, now)
+	repo := infra_sqlite.NewQuotationRepository(db)
+	templateRepo := infra_sqlite.NewTemplateRepository(db)
+	svc := quotation.NewService(repo, templateRepo, infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(db)), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator())
+	q, err := svc.CreateQuotationDraft(context.Background(), "template-comp", quotation.QuotationCreateDTO{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.UpdateQuotationDocument(context.Background(), "template-comp", quotation.QuotationUpdateDocumentDTO{ID: q.ID, Document: `{"rows":[{"id":"r1","columns":[{"id":"c1","width":"100%","sections":[{"id":"s1","section_definition_id":"def-1","visibility":true,"optional":false}]}]}]}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := svc.SaveAsTemplate(context.Background(), "template-comp", quotation.SaveAsTemplateDTO{QuotationID: q.ID, Name: "Reusable Quote"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tmpl.Name != "Reusable Quote" || tmpl.ID == "" {
+		t.Fatalf("unexpected template: %+v", tmpl)
+	}
+	if _, err := templateRepo.GetByID(context.Background(), tmpl.ID); err != nil {
+		t.Fatalf("template was not persisted: %v", err)
+	}
+}
+
 func TestRecalculateQuotation(t *testing.T) {
 	db := setupTestDB(t)
 	db.Exec("INSERT INTO companies (id, name, currency, state, created_at, updated_at, version) VALUES ('comp-2', 'Test Comp', 'INR', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
@@ -189,12 +242,11 @@ func TestFinalizeAndStatusTransitions(t *testing.T) {
 	if qFin.Status != "FINALIZED" {
 		t.Errorf("expected FINALIZED, got %s", qFin.Status)
 	}
-	
+
 	qDom, _ := repo.GetByID(ctx, q.ID, "comp-3")
 	if qDom.CompanySnapshot == nil || qDom.CustomerSnapshot == nil || qDom.TemplateSnapshot == nil {
 		t.Errorf("snapshots were not created")
 	}
-
 
 	// 3. Invalid Transition
 	_, err = svc.UpdateQuotationStatus(ctx, "comp-3", q.ID, "DRAFT")

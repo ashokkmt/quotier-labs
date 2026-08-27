@@ -4,13 +4,14 @@ import { ThemeProvider } from './hooks/use-theme'
 import { AppLayout } from './layouts/AppLayout'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { OnboardingWizard } from './features/onboarding/components/OnboardingWizard'
-import { PlaceholderPage } from './features/PlaceholderPage'
 import { CustomerList } from './features/customers/CustomerList'
 import { SectionLibrary } from './features/sections/SectionLibrary'
 import { TemplateList } from './features/templates/TemplateList'
 import { QuotationBuilder } from './features/quotations/QuotationBuilder'
 import { QuotationList } from './features/quotations/QuotationList'
 import { SettingsPage } from './features/settings/SettingsPage'
+import { CompanyProfile } from './features/company/CompanyProfile'
+import { NewQuotation } from './features/quotations/NewQuotation'
 import { useParams, useNavigate } from 'react-router-dom'
 
 import '@fontsource/dm-sans/400.css'
@@ -44,6 +45,7 @@ const router = createBrowserRouter([
         path: 'quotations',
         element: <QuotationList />
       },
+      { path: 'quotations/new', element: <NewQuotation /> },
       {
         path: 'quotations/:id/edit',
         element: <QuotationBuilderWrapper />,
@@ -58,7 +60,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'company',
-        element: <PlaceholderPage title="Company Settings" />,
+        element: <CompanyProfile />,
       },
       {
         path: 'settings',

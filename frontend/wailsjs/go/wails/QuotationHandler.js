@@ -30,6 +30,10 @@ export function RecalculateQuotation(arg1) {
   return window['go']['wails']['QuotationHandler']['RecalculateQuotation'](arg1);
 }
 
+export function SaveAsTemplate(arg1) {
+  return window['go']['wails']['QuotationHandler']['SaveAsTemplate'](arg1);
+}
+
 export function SaveQuotationDocument(arg1) {
   return window['go']['wails']['QuotationHandler']['SaveQuotationDocument'](arg1);
 }

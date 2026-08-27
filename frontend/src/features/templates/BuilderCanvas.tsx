@@ -1,13 +1,25 @@
 import type { Layout } from "./schemas/layout-schema"
 import { Button } from "@/components/ui/button"
 import { Trash, Plus, GripHorizontal, Maximize2, SplitSquareHorizontal } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ListSectionDefinitions } from "../../../wailsjs/go/wails/SectionHandler"
 
 export function BuilderCanvas({ layout, onChange }: { layout: Layout, onChange: (l: Layout) => void }) {
+  const [sections, setSections] = useState<any[]>([])
+  useEffect(() => { ListSectionDefinitions().then(setSections).catch(() => setSections([])) }, [])
   
   const removeRow = (rIndex: number) => {
     const newRows = [...layout.rows]
     newRows.splice(rIndex, 1)
     onChange({ rows: newRows })
+  }
+
+  const addSection = (rIndex: number, cIndex: number) => {
+    const definition = sections[0]
+    if (!definition) return
+    const next = structuredClone(layout)
+    next.rows[rIndex].columns[cIndex].sections.push({ id:`section_${Date.now()}`, section_definition_id:definition.id, visibility:true, optional:false })
+    onChange(next)
   }
 
   const splitColumn = (rIndex: number) => {
@@ -86,7 +98,7 @@ export function BuilderCanvas({ layout, onChange }: { layout: Layout, onChange: 
                       {col.sections.map(sec => (
                         <div key={sec.id} className="bg-card border rounded p-2 text-sm shadow-sm flex justify-between items-center">
                           <span>{sec.title_override || "Section"}</span>
-                          <Maximize2 className="w-3 h-3 text-muted-foreground cursor-pointer hover:text-primary" />
+                           <Maximize2 className="w-3 h-3 text-muted-foreground" />
                         </div>
                       ))}
                     </div>
@@ -94,7 +106,7 @@ export function BuilderCanvas({ layout, onChange }: { layout: Layout, onChange: 
                 </div>
                 
                 <div className="mt-3 pt-3 border-t border-dashed flex justify-center">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground hover:text-primary w-full">
+                   <Button variant="ghost" size="sm" disabled={sections.length === 0} onClick={() => addSection(rIndex, cIndex)} className="h-6 text-xs text-muted-foreground hover:text-primary w-full">
                     <Plus className="w-3 h-3 mr-1" /> Add Section
                   </Button>
                 </div>

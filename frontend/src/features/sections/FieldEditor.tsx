@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 
-export function FieldEditor({ fields, onChange }: { fields: any[], onChange: (fields: any[]) => void }) {
+export function FieldEditor({ fields, onChange, readOnly = false }: { fields: any[], onChange: (fields: any[]) => void, readOnly?: boolean }) {
   const addField = () => {
     const newField = {
       element_type: "Field",
@@ -34,29 +34,31 @@ export function FieldEditor({ fields, onChange }: { fields: any[], onChange: (fi
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-medium">Fields</h3>
-        <Button type="button" variant="outline" size="sm" onClick={addField}>
+        <Button type="button" variant="outline" size="sm" onClick={addField} disabled={readOnly}>
           <Plus className="w-4 h-4 mr-2" /> Add Field
         </Button>
       </div>
 
       <div className="space-y-2">
-        {fields.filter(f => f.element_type === "Field").map((f, i) => (
+         {fields.map((f, i) => f.element_type === "Field" && (
           <div key={f.field.id} className="flex items-center gap-3 p-3 border rounded-md bg-card group">
             <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab opacity-50 group-hover:opacity-100" />
             <div className="grid grid-cols-4 gap-3 flex-1">
               <Input 
                 placeholder="Field ID" 
                 value={f.field.id} 
-                onChange={(e) => updateField(i, 'id', e.target.value)}
+                 onChange={(e) => updateField(i, 'id', e.target.value)}
+                 disabled={readOnly}
                 className="col-span-1"
               />
               <Input 
                 placeholder="Label" 
                 value={f.field.label} 
-                onChange={(e) => updateField(i, 'label', e.target.value)}
+                 onChange={(e) => updateField(i, 'label', e.target.value)}
+                 disabled={readOnly}
                 className="col-span-1"
               />
-              <Select value={f.field.type} onValueChange={(val) => updateField(i, 'type', val)}>
+               <Select value={f.field.type} onValueChange={(val) => updateField(i, 'type', val)} disabled={readOnly}>
                 <SelectTrigger className="col-span-1">
                   <SelectValue />
                 </SelectTrigger>
@@ -69,11 +71,11 @@ export function FieldEditor({ fields, onChange }: { fields: any[], onChange: (fi
                   <Checkbox 
                     id={`req-${f.field.id}`} 
                     checked={f.field.required}
-                    onCheckedChange={(c) => updateField(i, 'required', !!c)}
+                     onCheckedChange={(c) => updateField(i, 'required', !!c)} disabled={readOnly}
                   />
                   <label htmlFor={`req-${f.field.id}`} className="text-xs">Required</label>
                 </div>
-                <Button type="button" variant="ghost" size="icon" onClick={() => removeField(i)}>
+                 <Button type="button" variant="ghost" size="icon" onClick={() => removeField(i)} disabled={readOnly}>
                   <Trash className="w-4 h-4 text-destructive" />
                 </Button>
               </div>

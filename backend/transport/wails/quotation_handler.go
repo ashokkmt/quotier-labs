@@ -6,6 +6,7 @@ import (
 
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/quotation"
+	"quotierlabs/backend/application/template"
 )
 
 type QuotationHandler struct {
@@ -114,4 +115,16 @@ func (h *QuotationHandler) DeleteQuotation(id string) error {
 		return err
 	}
 	return h.quotationSvc.DeleteQuotation(h.ctx, compID, id)
+}
+
+func (h *QuotationHandler) SaveAsTemplate(input quotation.SaveAsTemplateDTO) (*template.TemplateDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	t, err := h.quotationSvc.SaveAsTemplate(h.ctx, compID, input)
+	if err != nil {
+		return nil, err
+	}
+	return &template.TemplateDTO{ID: t.ID, CompanyID: t.CompanyID, Name: t.Name, Description: t.Description, Layout: t.Layout, SchemaVersion: t.SchemaVersion, IsBuiltin: t.IsBuiltin, CurrentVersion: t.CurrentVersion, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}, nil
 }

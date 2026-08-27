@@ -529,8 +529,8 @@ export namespace quotation {
 	    }
 	}
 	export class QuotationCreateDTO {
-	    template_id: string;
-	    customer_id: string;
+	    template_id?: string;
+	    customer_id?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new QuotationCreateDTO(source);
@@ -744,6 +744,20 @@ export namespace quotation {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.document = source["document"];
+	    }
+	}
+	export class SaveAsTemplateDTO {
+	    quotation_id: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SaveAsTemplateDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.quotation_id = source["quotation_id"];
+	        this.name = source["name"];
 	    }
 	}
 

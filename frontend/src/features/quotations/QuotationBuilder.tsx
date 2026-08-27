@@ -4,7 +4,8 @@ import { useToast } from "@/hooks/use-toast"
 import { 
   GetQuotation, 
   SaveQuotationDocument, 
-  UpdateQuotationCustomer 
+  UpdateQuotationCustomer,
+  SaveAsTemplate
 } from "../../../wailsjs/go/wails/QuotationHandler"
 import { BuilderHeader } from "./BuilderHeader"
 import { DocumentCanvas } from "./DocumentCanvas"
@@ -126,6 +127,15 @@ export function QuotationBuilder({ quotationId, onBack }: { quotationId: string,
     }
   }
 
+  const handleSaveAsTemplate = async () => {
+    const name = window.prompt("Template name")?.trim()
+    if (!name) return
+    try {
+      await SaveAsTemplate({ quotation_id: quotationId, name })
+      toast({ title: "Template saved", description: "The quotation structure is now reusable." })
+    } catch (err: any) { toast({ title: "Could not save template", description: String(err), variant: "destructive" }) }
+  }
+
   if (loading) {
     return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
@@ -144,6 +154,7 @@ export function QuotationBuilder({ quotationId, onBack }: { quotationId: string,
         undoRedoControls={<UndoRedoControls onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} />}
         onFinalize={handleFinalize}
         onStatusChange={handleStatusChange}
+        onSaveAsTemplate={handleSaveAsTemplate}
       />
       
       <div className="flex-1 overflow-y-auto p-6 flex gap-6">

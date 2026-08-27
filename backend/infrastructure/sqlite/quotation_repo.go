@@ -12,8 +12,8 @@ import (
 type QuotationModel struct {
 	ID               string `gorm:"primaryKey"`
 	CompanyID        string
-	TemplateID       string
-	CustomerID       string
+	TemplateID       *string
+	CustomerID       *string
 	Number           string
 	Status           string
 	Document         string
@@ -38,6 +38,20 @@ type QuotationModel struct {
 	DeletedAt        gorm.DeletedAt `gorm:"index"`
 }
 
+func nullableString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 func (QuotationModel) TableName() string {
 	return "quotations"
 }
@@ -53,8 +67,8 @@ func toDomainQuotation(m *QuotationModel) *domain.Quotation {
 	return &domain.Quotation{
 		ID:               m.ID,
 		CompanyID:        m.CompanyID,
-		TemplateID:       m.TemplateID,
-		CustomerID:       m.CustomerID,
+		TemplateID:       stringValue(m.TemplateID),
+		CustomerID:       stringValue(m.CustomerID),
 		Number:           m.Number,
 		Status:           m.Status,
 		Document:         m.Document,
@@ -89,8 +103,8 @@ func fromDomainQuotation(d *domain.Quotation) *QuotationModel {
 	m := &QuotationModel{
 		ID:               d.ID,
 		CompanyID:        d.CompanyID,
-		TemplateID:       d.TemplateID,
-		CustomerID:       d.CustomerID,
+		TemplateID:       nullableString(d.TemplateID),
+		CustomerID:       nullableString(d.CustomerID),
 		Number:           d.Number,
 		Status:           d.Status,
 		Document:         d.Document,
@@ -190,16 +204,16 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 	db := GetDB(ctx, r.db)
 	var models []QuotationModel
 	query := db.Where("company_id = ?", companyID)
-	
+
 	query = r.applyFilter(query, filter)
-	
+
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
 	}
 	if filter.Offset > 0 {
 		query = query.Offset(filter.Offset)
 	}
-	
+
 	order := "created_at DESC"
 	if filter.SortBy != nil {
 		dir := "ASC"
@@ -217,11 +231,11 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 			order = "status " + dir
 		}
 	}
-	
+
 	if err := query.Order(order).Find(&models).Error; err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]domain.Quotation, len(models))
 	for i, m := range models {
 		result[i] = *toDomainQuotation(&m)
@@ -233,7 +247,7 @@ func (r *quotationRepository) Count(ctx context.Context, companyID string, filte
 	db := GetDB(ctx, r.db)
 	query := db.Model(&QuotationModel{}).Where("company_id = ?", companyID)
 	query = r.applyFilter(query, filter)
-	
+
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
 		return 0, err

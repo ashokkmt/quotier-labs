@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Form } from "@/components/ui/form"
@@ -9,6 +9,7 @@ import { onboardingSchema, type OnboardingData } from "../onboarding/schemas/onb
 import { StepCompanyInfo } from "../onboarding/steps/StepCompanyInfo"
 import { StepGST } from "../onboarding/steps/StepGST"
 import { StepBank } from "../onboarding/steps/StepBank"
+import { GetActiveCompany, UpdateCompany } from "../../../wailsjs/go/wails/CompanyHandler"
 
 export function CompanyProfile() {
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -16,33 +17,44 @@ export function CompanyProfile() {
   const form = useForm<OnboardingData>({
     resolver: zodResolver(onboardingSchema),
     defaultValues: {
-      name: "Quotier Labs",
+      name: "",
       currency: "INR",
-      state: "Maharashtra",
-      // These would be loaded from backend in real implementation via GetActiveCompany
+      state: "",
     },
     mode: "onChange",
   })
 
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [saved, setSaved] = useState(false)
+  const loadProfile = async () => {
+    const c = await GetActiveCompany()
+    form.reset({ name:c.name, legalName:c.legal_name || "", address:c.address || "", phone:c.phone || "", email:c.email || "", website:c.website || "", state:c.state || "", gstin:c.gstin || "", pan:c.pan || "", bankDetails:c.bank_details || "", currency:c.currency || "INR", logoUrl:c.logo_url || "", signatureUrl:c.signature_url || "", stampUrl:c.stamp_url || "" })
+  }
+  useEffect(() => { loadProfile().catch(() => setError("Could not load company profile. Please retry.")).finally(() => setLoading(false)) }, [form])
+
   const onSubmit = async (data: OnboardingData) => {
     setIsSubmitting(true)
     try {
-      // await UpdateCompany(data)
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      console.log("Profile updated", data)
+      const current = await GetActiveCompany()
+      await UpdateCompany({ id: current.id, ...data } as any)
+      setSaved(true); setError("")
     } catch (error) {
-      console.error(error)
+      setError("Could not save company profile. Your changes are still on this form.")
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  if (loading) return <div className="py-12 text-center">Loading company profile...</div>
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       <div>
         <h1 className="text-3xl font-heading font-bold">Company Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your business profile, branding, and tax information.</p>
       </div>
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {saved && <p role="status" className="text-green-600">Company profile saved.</p>}
       
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -76,7 +88,8 @@ export function CompanyProfile() {
             </CardContent>
           </Card>
           
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => { loadProfile().catch(() => setError("Could not reload company profile.")); setSaved(false) }} disabled={isSubmitting}>Cancel</Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>

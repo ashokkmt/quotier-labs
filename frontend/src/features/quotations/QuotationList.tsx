@@ -96,7 +96,7 @@ export function QuotationList() {
           <h1 className="text-3xl font-bold font-heading tracking-tight">Quotations</h1>
           <p className="text-muted-foreground">Manage your past and current quotations.</p>
         </div>
-        <Button onClick={() => navigate('/templates')}>
+         <Button onClick={() => navigate('/quotations/new')}>
           <Plus className="w-4 h-4 mr-2" /> New Quotation
         </Button>
       </div>
@@ -149,10 +149,10 @@ export function QuotationList() {
           <div className="text-center p-12 border-2 border-dashed rounded-lg">
             <h3 className="text-lg font-semibold mb-2">No quotations found</h3>
             <p className="text-muted-foreground mb-4">
-              {search || status !== "ALL" ? "Try adjusting your filters." : "Create your first quotation by selecting a template."}
+               {search || status !== "ALL" ? "Try adjusting your filters." : "Create your first quotation from scratch or a template."}
             </p>
             {!(search || status !== "ALL") && (
-              <Button onClick={() => navigate('/templates')}>Browse Templates</Button>
+               <Button onClick={() => navigate('/quotations/new')}>New Quotation</Button>
             )}
           </div>
         ) : (
