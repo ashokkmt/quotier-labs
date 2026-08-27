@@ -6,6 +6,7 @@ import { Dashboard } from './features/dashboard/Dashboard'
 import { OnboardingWizard } from './features/onboarding/components/OnboardingWizard'
 import { PlaceholderPage } from './features/PlaceholderPage'
 import { CustomerList } from './features/customers/CustomerList'
+import { SectionLibrary } from './features/sections/SectionLibrary'
 
 import '@fontsource/dm-sans/400.css'
 import '@fontsource/dm-sans/500.css'
@@ -36,7 +37,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'templates',
-        element: <PlaceholderPage title="Templates" />,
+        element: <SectionLibrary />,
       },
       {
         path: 'customers',

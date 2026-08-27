@@ -13,6 +13,7 @@ import (
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/onboarding"
+	"quotierlabs/backend/application/section"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/logging"
@@ -44,6 +45,8 @@ func InitializeApp() (*App, error) {
 	companyHandler := wails.NewCompanyHandler(service, onboardingService)
 	customerService := customer.NewService(customerRepository, idGenerator)
 	customerHandler := wails.NewCustomerHandler(service, customerService)
+	sectionService := section.NewService(sectionDefinitionRepository, idGenerator)
+	sectionHandler := wails.NewSectionHandler(service, sectionService)
 	app := &App{
 		Logger:          logger,
 		IDGenerator:     idGenerator,
@@ -58,6 +61,7 @@ func InitializeApp() (*App, error) {
 		OnboardService:  onboardingService,
 		CompanyHandler:  companyHandler,
 		CustomerHandler: customerHandler,
+		SectionHandler:  sectionHandler,
 	}
 	return app, nil
 }
@@ -70,9 +74,9 @@ func ProvideDB() (*gorm.DB, error) {
 
 var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository)
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler)
+var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -89,4 +93,5 @@ type App struct {
 	OnboardService  *onboarding.Service
 	CompanyHandler  *wails.CompanyHandler
 	CustomerHandler *wails.CustomerHandler
+	SectionHandler  *wails.SectionHandler
 }

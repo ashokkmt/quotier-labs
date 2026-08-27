@@ -292,3 +292,96 @@ export namespace customer {
 
 }
 
+export namespace section {
+	
+	export class SectionCreateDTO {
+	    name: string;
+	    description?: string;
+	    category?: string;
+	    schema: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SectionCreateDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.category = source["category"];
+	        this.schema = source["schema"];
+	    }
+	}
+	export class SectionDefinitionDTO {
+	    id: string;
+	    company_id?: string;
+	    name: string;
+	    description?: string;
+	    schema: string;
+	    schema_version: number;
+	    is_builtin: boolean;
+	    category?: string;
+	    // Go type: time
+	    created_at: any;
+	    // Go type: time
+	    updated_at: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new SectionDefinitionDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.company_id = source["company_id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.schema = source["schema"];
+	        this.schema_version = source["schema_version"];
+	        this.is_builtin = source["is_builtin"];
+	        this.category = source["category"];
+	        this.created_at = this.convertValues(source["created_at"], null);
+	        this.updated_at = this.convertValues(source["updated_at"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SectionUpdateDTO {
+	    id: string;
+	    name: string;
+	    description?: string;
+	    category?: string;
+	    schema: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SectionUpdateDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.category = source["category"];
+	        this.schema = source["schema"];
+	    }
+	}
+
+}
+
