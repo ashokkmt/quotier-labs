@@ -317,3 +317,70 @@ func TestQuotationRepository(t *testing.T) {
 		t.Fatalf("expected 1 quotation")
 	}
 }
+
+func TestQuotationRepository_Phase13(t *testing.T) {
+	db := setupTestDB(t)
+	db.Exec("INSERT INTO companies (id, name, currency, created_at, updated_at, version) VALUES ('comp-1', 'Test', 'INR', ?, ?, 1)", time.Now(), time.Now())
+	
+	// Create some customers to test search
+	db.Exec("INSERT INTO customers (id, company_id, name, created_at, updated_at, version) VALUES ('cust-1', 'comp-1', 'Apple Corp', ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO customers (id, company_id, name, created_at, updated_at, version) VALUES ('cust-2', 'comp-1', 'Banana Inc', ?, ?, 1)", time.Now(), time.Now())
+	
+	// Create template to satisfy foreign key
+	db.Exec("INSERT INTO templates (id, company_id, name, layout, schema_version, created_at, updated_at, version) VALUES ('tmpl-1', 'comp-1', 'Tmpl', '{}', 1, ?, ?, 1)", time.Now(), time.Now())
+
+	repo := infra_sqlite.NewQuotationRepository(db)
+	ctx := context.Background()
+
+	// Seed 3 quotations
+	repo.Create(ctx, &domain.Quotation{
+		ID: "q-1", CompanyID: "comp-1", CustomerID: "cust-1", TemplateID: "tmpl-1", Number: "QT-101", Status: "DRAFT", GrandTotal: 100, Document: "{}",
+		AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().Add(-10 * time.Hour), Version: 1},
+	})
+	repo.Create(ctx, &domain.Quotation{
+		ID: "q-2", CompanyID: "comp-1", CustomerID: "cust-2", TemplateID: "tmpl-1", Number: "QT-102", Status: "FINALIZED", GrandTotal: 200, Document: "{}",
+		AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().Add(-5 * time.Hour), Version: 1},
+	})
+	repo.Create(ctx, &domain.Quotation{
+		ID: "q-3", CompanyID: "comp-1", CustomerID: "cust-1", TemplateID: "tmpl-1", Number: "QT-103", Status: "SENT", GrandTotal: 300, Document: "{}",
+		AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now(), Version: 1},
+	})
+
+	// Test Status Filter
+	statusDraft := "DRAFT"
+	drafts, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{Status: &statusDraft})
+	if len(drafts) != 1 || drafts[0].ID != "q-1" {
+		t.Fatalf("expected 1 draft quotation")
+	}
+
+	// Test Search (Customer Name)
+	searchApple := "Apple"
+	appleQs, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{Search: &searchApple})
+	if len(appleQs) != 2 {
+		t.Fatalf("expected 2 quotations for Apple, got %v", len(appleQs))
+	}
+
+	// Test Pagination (Limit and Offset)
+	paginated, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{Limit: 2, Offset: 0, SortBy: func(s string) *string {return &s}("date"), SortDesc: true})
+	if len(paginated) != 2 {
+		t.Fatalf("expected 2 paginated results")
+	}
+	if paginated[0].ID != "q-3" {
+		t.Fatalf("expected latest quote first, got %v", paginated[0].ID)
+	}
+
+	// Test Sort (Amount ASC)
+	amountSort, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{SortBy: func(s string) *string {return &s}("amount"), SortDesc: false})
+	if len(amountSort) != 3 {
+		t.Fatalf("expected 3 results")
+	}
+	if amountSort[0].ID != "q-1" || amountSort[2].ID != "q-3" {
+		t.Fatalf("expected sorted by amount ascending")
+	}
+
+	// Test Count
+	count, err := repo.Count(ctx, "comp-1", domain.QuotationListFilter{})
+	if err != nil || count != 3 {
+		t.Fatalf("expected count 3, got %v", count)
+	}
+}

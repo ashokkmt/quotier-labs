@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type TxManager interface {
 	BeginTx(ctx context.Context) (context.Context, error)
@@ -49,9 +52,16 @@ type TemplateRepository interface {
 }
 
 type QuotationListFilter struct {
-	Limit  int
-	Offset int
-	Status *string
+	Limit      int
+	Offset     int
+	Status     *string
+	CustomerID *string
+	TemplateID *string
+	Search     *string
+	StartDate  *time.Time
+	EndDate    *time.Time
+	SortBy     *string
+	SortDesc   bool
 }
 
 type QuotationRepository interface {
@@ -59,6 +69,8 @@ type QuotationRepository interface {
 	Update(ctx context.Context, quotation *Quotation) error
 	GetByID(ctx context.Context, id, companyID string) (*Quotation, error)
 	List(ctx context.Context, companyID string, filter QuotationListFilter) ([]Quotation, error)
+	Count(ctx context.Context, companyID string, filter QuotationListFilter) (int, error)
+	Delete(ctx context.Context, id, companyID string) error
 }
 
 type NumberSequenceRepository interface {

@@ -6,6 +6,10 @@ export function CreateQuotationDraft(arg1) {
   return window['go']['wails']['QuotationHandler']['CreateQuotationDraft'](arg1);
 }
 
+export function DeleteQuotation(arg1) {
+  return window['go']['wails']['QuotationHandler']['DeleteQuotation'](arg1);
+}
+
 export function DuplicateQuotation(arg1) {
   return window['go']['wails']['QuotationHandler']['DuplicateQuotation'](arg1);
 }

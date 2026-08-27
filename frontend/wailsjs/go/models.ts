@@ -292,27 +292,6 @@ export namespace customer {
 
 }
 
-export namespace domain {
-	
-	export class QuotationListFilter {
-	    Limit: number;
-	    Offset: number;
-	    Status?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new QuotationListFilter(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Limit = source["Limit"];
-	        this.Offset = source["Offset"];
-	        this.Status = source["Status"];
-	    }
-	}
-
-}
-
 export namespace quotation {
 	
 	export class CalculationResultDTO {
@@ -422,6 +401,115 @@ export namespace quotation {
 		    return a;
 		}
 	}
+	export class QuotationListFilterDTO {
+	    limit: number;
+	    offset: number;
+	    status?: string;
+	    customer_id?: string;
+	    template_id?: string;
+	    search?: string;
+	    start_date?: string;
+	    end_date?: string;
+	    sort_by?: string;
+	    sort_desc: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationListFilterDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.limit = source["limit"];
+	        this.offset = source["offset"];
+	        this.status = source["status"];
+	        this.customer_id = source["customer_id"];
+	        this.template_id = source["template_id"];
+	        this.search = source["search"];
+	        this.start_date = source["start_date"];
+	        this.end_date = source["end_date"];
+	        this.sort_by = source["sort_by"];
+	        this.sort_desc = source["sort_desc"];
+	    }
+	}
+	export class QuotationSummaryDTO {
+	    id: string;
+	    number: string;
+	    customer_id: string;
+	    customer_name: string;
+	    status: string;
+	    grand_total: number;
+	    // Go type: time
+	    created_at: any;
+	    // Go type: time
+	    updated_at: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationSummaryDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.number = source["number"];
+	        this.customer_id = source["customer_id"];
+	        this.customer_name = source["customer_name"];
+	        this.status = source["status"];
+	        this.grand_total = source["grand_total"];
+	        this.created_at = this.convertValues(source["created_at"], null);
+	        this.updated_at = this.convertValues(source["updated_at"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class QuotationListResponse {
+	    items: QuotationSummaryDTO[];
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationListResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], QuotationSummaryDTO);
+	        this.total = source["total"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class QuotationUpdateCustomerDTO {
 	    id: string;
 	    customer_id: string;

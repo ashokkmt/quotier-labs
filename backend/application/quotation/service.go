@@ -256,14 +256,3 @@ func (s *Service) GetQuotation(ctx context.Context, companyID, id string) (*Quot
 	return &dto, nil
 }
 
-func (s *Service) ListQuotations(ctx context.Context, companyID string, filter domain.QuotationListFilter) ([]QuotationDTO, error) {
-	qs, err := s.repo.List(ctx, companyID, filter)
-	if err != nil {
-		return nil, err
-	}
-	dtos := make([]QuotationDTO, len(qs))
-	for i, q := range qs {
-		dtos[i] = mapToDTO(&q)
-	}
-	return dtos, nil
-}

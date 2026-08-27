@@ -6,7 +6,6 @@ import (
 
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/quotation"
-	"quotierlabs/backend/domain"
 )
 
 type QuotationHandler struct {
@@ -101,11 +100,18 @@ func (h *QuotationHandler) DuplicateQuotation(id string) (*quotation.QuotationDT
 	return h.quotationSvc.DuplicateQuotation(h.ctx, compID, id)
 }
 
-func (h *QuotationHandler) ListQuotations(filter domain.QuotationListFilter) ([]quotation.QuotationDTO, error) {
+func (h *QuotationHandler) ListQuotations(filter quotation.QuotationListFilterDTO) (*quotation.QuotationListResponse, error) {
 	compID, err := h.getCompanyID()
 	if err != nil {
 		return nil, err
 	}
-	// We need a ListQuotations method in the service
 	return h.quotationSvc.ListQuotations(h.ctx, compID, filter)
+}
+
+func (h *QuotationHandler) DeleteQuotation(id string) error {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return err
+	}
+	return h.quotationSvc.DeleteQuotation(h.ctx, compID, id)
 }

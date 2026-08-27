@@ -159,14 +159,40 @@ func (r *quotationRepository) GetByID(ctx context.Context, id, companyID string)
 	return toDomainQuotation(&model), nil
 }
 
+func (r *quotationRepository) applyFilter(query *gorm.DB, filter domain.QuotationListFilter) *gorm.DB {
+	if filter.Status != nil && *filter.Status != "" && *filter.Status != "ALL" {
+		query = query.Where("status = ?", *filter.Status)
+	}
+	if filter.CustomerID != nil && *filter.CustomerID != "" {
+		query = query.Where("customer_id = ?", *filter.CustomerID)
+	}
+	if filter.TemplateID != nil && *filter.TemplateID != "" {
+		query = query.Where("template_id = ?", *filter.TemplateID)
+	}
+	if filter.Search != nil && *filter.Search != "" {
+		// Note: To search by customer name cleanly we might need a join or query customer snapshot.
+		// For MVP: match by number or simple like on CustomerSnapshot or ID if known.
+		// Since we join or want customer name, let's just do an IN query or like on number.
+		// We'll use a subquery for customer name or match number.
+		searchTerm := "%" + *filter.Search + "%"
+		query = query.Where("number LIKE ? OR customer_id IN (SELECT id FROM customers WHERE name LIKE ?)", searchTerm, searchTerm)
+	}
+	if filter.StartDate != nil {
+		query = query.Where("created_at >= ?", *filter.StartDate)
+	}
+	if filter.EndDate != nil {
+		query = query.Where("created_at <= ?", *filter.EndDate)
+	}
+	return query
+}
+
 func (r *quotationRepository) List(ctx context.Context, companyID string, filter domain.QuotationListFilter) ([]domain.Quotation, error) {
 	db := GetDB(ctx, r.db)
 	var models []QuotationModel
 	query := db.Where("company_id = ?", companyID)
 	
-	if filter.Status != nil {
-		query = query.Where("status = ?", *filter.Status)
-	}
+	query = r.applyFilter(query, filter)
+	
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
 	}
@@ -174,7 +200,25 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 		query = query.Offset(filter.Offset)
 	}
 	
-	if err := query.Order("created_at DESC").Find(&models).Error; err != nil {
+	order := "created_at DESC"
+	if filter.SortBy != nil {
+		dir := "ASC"
+		if filter.SortDesc {
+			dir = "DESC"
+		}
+		switch *filter.SortBy {
+		case "date":
+			order = "created_at " + dir
+		case "number":
+			order = "number " + dir
+		case "amount":
+			order = "grand_total " + dir
+		case "status":
+			order = "status " + dir
+		}
+	}
+	
+	if err := query.Order(order).Find(&models).Error; err != nil {
 		return nil, err
 	}
 	
@@ -183,4 +227,28 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 		result[i] = *toDomainQuotation(&m)
 	}
 	return result, nil
+}
+
+func (r *quotationRepository) Count(ctx context.Context, companyID string, filter domain.QuotationListFilter) (int, error) {
+	db := GetDB(ctx, r.db)
+	query := db.Model(&QuotationModel{}).Where("company_id = ?", companyID)
+	query = r.applyFilter(query, filter)
+	
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+func (r *quotationRepository) Delete(ctx context.Context, id, companyID string) error {
+	db := GetDB(ctx, r.db)
+	res := db.Where("id = ? AND company_id = ?", id, companyID).Delete(&QuotationModel{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
