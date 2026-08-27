@@ -10,7 +10,9 @@ export function BuilderHeader({
   saving, 
   readOnly, 
   onToggleReadOnly,
-  onCustomerChange
+  onCustomerChange,
+  saveIndicator,
+  undoRedoControls
 }: any) {
   if (!quotation) return null
 
@@ -23,6 +25,8 @@ export function BuilderHeader({
         <div className="h-6 w-px bg-border" />
         <div>
           <div className="flex items-center gap-2">
+        {undoRedoControls}
+        {saveIndicator}
             <h2 className="font-bold text-lg">{quotation.number || "Draft"}</h2>
             <Badge variant={quotation.status === 'DRAFT' ? 'secondary' : 'default'}>{quotation.status}</Badge>
           </div>
