@@ -52,6 +52,7 @@ func InitializeApp() (*App, error) {
 	numberSequenceRepository := sqlite.NewNumberSequenceRepository(db)
 	service := company.NewService(companyRepository, idGenerator)
 	onboardingService := onboarding.NewService(service, txManager, sectionDefinitionRepository, templateRepository, numberSequenceRepository, idGenerator)
+	appHandler := wails.NewAppHandler()
 	companyHandler := wails.NewCompanyHandler(service, onboardingService)
 	customerService := customer.NewService(customerRepository, idGenerator)
 	customerHandler := wails.NewCustomerHandler(service, customerService)
@@ -89,6 +90,7 @@ func InitializeApp() (*App, error) {
 		Sequences:        numberSequenceRepository,
 		CompanyService:   service,
 		OnboardService:   onboardingService,
+		AppHandler:       appHandler,
 		CompanyHandler:   companyHandler,
 		CustomerHandler:  customerHandler,
 		SectionHandler:   sectionHandler,
@@ -118,7 +120,7 @@ var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, Prov
 
 var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager)
 
-var TransportSet = wire.NewSet(wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler)
+var TransportSet = wire.NewSet(wails.NewAppHandler, wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -133,6 +135,7 @@ type App struct {
 
 	CompanyService   *company.Service
 	OnboardService   *onboarding.Service
+	AppHandler       *wails.AppHandler
 	CompanyHandler   *wails.CompanyHandler
 	CustomerHandler  *wails.CustomerHandler
 	SectionHandler   *wails.SectionHandler

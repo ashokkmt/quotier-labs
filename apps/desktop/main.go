@@ -28,6 +28,7 @@ func (a *DesktopApp) startup(ctx context.Context) {
 	a.diApp.Logger.Info("Quotier Labs Desktop App Started")
 	
 	// Start Wails handlers
+	a.diApp.AppHandler.Startup(ctx)
 	a.diApp.CompanyHandler.Startup(ctx)
 	a.diApp.CustomerHandler.Startup(ctx)
 	a.diApp.SectionHandler.Startup(ctx)
@@ -66,6 +67,7 @@ func main() {
 		OnShutdown: app.shutdown,
 		Bind: []interface{}{
 			app,
+			diApp.AppHandler,
 			diApp.CompanyHandler,
 			diApp.CustomerHandler,
 			diApp.SectionHandler,

@@ -10,6 +10,7 @@ import { SectionLibrary } from './features/sections/SectionLibrary'
 import { TemplateList } from './features/templates/TemplateList'
 import { QuotationBuilder } from './features/quotations/QuotationBuilder'
 import { QuotationList } from './features/quotations/QuotationList'
+import { SettingsPage } from './features/settings/SettingsPage'
 import { useParams, useNavigate } from 'react-router-dom'
 
 import '@fontsource/dm-sans/400.css'
@@ -61,7 +62,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'settings',
-        element: <PlaceholderPage title="Application Settings" />,
+        element: <SettingsPage />,
       },
     ],
   },

@@ -931,3 +931,24 @@ export namespace template {
 
 }
 
+export namespace wails {
+	
+	export class AppInfo {
+	    version: string;
+	    name: string;
+	    os: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.name = source["name"];
+	        this.os = source["os"];
+	    }
+	}
+
+}
+

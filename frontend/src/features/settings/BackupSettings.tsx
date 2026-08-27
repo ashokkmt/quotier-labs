@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { CreateBackup, RestoreBackup, ValidateBackup } from "../../../wailsjs/go/wails/BackupHandler"
-import { Download, Upload, ShieldCheck, AlertTriangle } from "lucide-react"
+import { Download, Upload, ShieldCheck } from "lucide-react"
 
 export function BackupSettings() {
   const { toast } = useToast()

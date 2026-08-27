@@ -76,6 +76,7 @@ var ApplicationSet = wire.NewSet(
 )
 
 var TransportSet = wire.NewSet(
+	wails.NewAppHandler,
 	wails.NewCompanyHandler,
 	wails.NewCustomerHandler,
 	wails.NewSectionHandler,
@@ -99,6 +100,7 @@ type App struct {
 	
 	CompanyService *company.Service
 	OnboardService *onboarding.Service
+	AppHandler     *wails.AppHandler
 	CompanyHandler *wails.CompanyHandler
 	CustomerHandler *wails.CustomerHandler
 	SectionHandler *wails.SectionHandler
