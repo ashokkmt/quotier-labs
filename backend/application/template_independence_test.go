@@ -16,7 +16,7 @@ import (
 func TestTemplateIndependence(t *testing.T) {
 	db := setupDB(t)
 	sqlDB, _ := db.DB()
-	sqlite.RunMigrations(sqlDB)
+	_ = sqlite.RunMigrations(sqlDB)
 
 	txManager := sqlite.NewGormTxManager(db)
 	compRepo := sqlite.NewCompanyRepository(db)

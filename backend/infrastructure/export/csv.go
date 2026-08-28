@@ -38,9 +38,9 @@ func (s *CSVExportService) ExportQuotations(ctx context.Context, companyID strin
 	defer w.Flush()
 
 	// Write header
-	w.Write([]string{"Number", "CustomerID", "Status", "GrandTotal", "Date"})
+	_ = w.Write([]string{"Number", "CustomerID", "Status", "GrandTotal", "Date"})
 	for _, q := range quotes {
-		w.Write([]string{
+		_ = w.Write([]string{
 			q.Number,
 			q.CustomerID,
 			q.Status,
@@ -68,9 +68,9 @@ func (s *CSVExportService) ExportCustomers(ctx context.Context, companyID string
 	defer w.Flush()
 
 	// Write header
-	w.Write([]string{"Name", "Email", "Phone", "Address", "GSTIN", "PAN"})
+	_ = w.Write([]string{"Name", "Email", "Phone", "Address", "GSTIN", "PAN"})
 	for _, c := range customers {
-		w.Write([]string{
+		_ = w.Write([]string{
 			c.Name,
 			getStr(c.Email),
 			getStr(c.Phone),

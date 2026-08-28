@@ -34,7 +34,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	conn, _ := db.DB()
 	conn.SetMaxOpenConns(1)
-	conn.Exec("PRAGMA foreign_keys = ON")
+	_, _ = conn.Exec("PRAGMA foreign_keys = ON")
 
 	return db
 }
@@ -150,7 +150,7 @@ func TestNumberSequenceRepository(t *testing.T) {
 		t.Fatalf("expected next value 1, got %v", nextVal)
 	}
 
-	txManager.Commit(txCtx)
+	_ = txManager.Commit(txCtx)
 
 	seq, err := repo.GetCurrent(ctx, "comp-1", "quotation", 2026)
 	if err != nil {
@@ -168,7 +168,7 @@ func TestTransactions(t *testing.T) {
 	ctx := context.Background()
 
 	txCtx, _ := txManager.BeginTx(ctx)
-	companyRepo.Create(txCtx, &domain.Company{
+	_ = companyRepo.Create(txCtx, &domain.Company{
 		ID:       "comp-1",
 		Name:     "Rollback Test",
 		AuditMetadata: domain.AuditMetadata{
@@ -177,7 +177,7 @@ func TestTransactions(t *testing.T) {
 			Version:   1,
 		},
 	})
-	txManager.Rollback(txCtx)
+	_ = txManager.Rollback(txCtx)
 
 	_, err := companyRepo.GetByID(ctx, "comp-1")
 	if err == nil {
@@ -204,7 +204,7 @@ func TestSectionDefinitionRepository(t *testing.T) {
 			Version:   1,
 		},
 	}
-	repo.Create(ctx, def)
+	_ = repo.Create(ctx, def)
 
 	compDef := &domain.SectionDefinition{
 		ID:            "sec-2",
@@ -219,7 +219,7 @@ func TestSectionDefinitionRepository(t *testing.T) {
 			Version:   1,
 		},
 	}
-	repo.Create(ctx, compDef)
+	_ = repo.Create(ctx, compDef)
 
 	builtins, _ := repo.ListBuiltins(ctx)
 	if len(builtins) != 1 || builtins[0].ID != "sec-1" {
@@ -252,9 +252,9 @@ func TestTemplateRepository(t *testing.T) {
 			Version:   1,
 		},
 	}
-	repo.Create(ctx, tmpl)
+	_ = repo.Create(ctx, tmpl)
 
-	repo.CreateVersion(ctx, &domain.TemplateVersion{
+	_ = repo.CreateVersion(ctx, &domain.TemplateVersion{
 		ID:            "tv-1",
 		TemplateID:    "tmpl-1",
 		Version:       1,
@@ -268,7 +268,7 @@ func TestTemplateRepository(t *testing.T) {
 		t.Fatalf("expected 1 template")
 	}
 
-	repo.Delete(ctx, "tmpl-1", "comp-1")
+	_ = repo.Delete(ctx, "tmpl-1", "comp-1")
 	list2, _ := repo.ListByCompany(ctx, "comp-1")
 	if len(list2) != 0 {
 		t.Fatalf("expected 0 templates after delete")
@@ -333,15 +333,15 @@ func TestQuotationRepository_Phase13(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed 3 quotations
-	repo.Create(ctx, &domain.Quotation{
+	_ = repo.Create(ctx, &domain.Quotation{
 		ID: "q-1", CompanyID: "comp-1", CustomerID: "cust-1", TemplateID: "tmpl-1", Number: "QT-101", Status: "DRAFT", GrandTotal: 100, Document: "{}",
 		AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().Add(-10 * time.Hour), Version: 1},
 	})
-	repo.Create(ctx, &domain.Quotation{
+	_ = repo.Create(ctx, &domain.Quotation{
 		ID: "q-2", CompanyID: "comp-1", CustomerID: "cust-2", TemplateID: "tmpl-1", Number: "QT-102", Status: "FINALIZED", GrandTotal: 200, Document: "{}",
 		AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().Add(-5 * time.Hour), Version: 1},
 	})
-	repo.Create(ctx, &domain.Quotation{
+	_ = repo.Create(ctx, &domain.Quotation{
 		ID: "q-3", CompanyID: "comp-1", CustomerID: "cust-1", TemplateID: "tmpl-1", Number: "QT-103", Status: "SENT", GrandTotal: 300, Document: "{}",
 		AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now(), Version: 1},
 	})

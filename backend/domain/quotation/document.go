@@ -14,7 +14,20 @@ type Document struct {
 	SchemaVersion int     `json:"schema_version,omitempty"`
 	Children      []Block `json:"children,omitempty"`
 	// Rows is retained only to read documents written before the recursive model.
-	Rows []Row `json:"rows"`
+	Rows []Row          `json:"rows"`
+	Root *PersistedNode `json:"root,omitempty"`
+}
+
+type PersistedNode struct {
+	ID         string                 `json:"id"`
+	Kind       string                 `json:"kind"`
+	Widget     string                 `json:"widget,omitempty"`
+	WidgetType string                 `json:"widget_type,omitempty"`
+	Children   []PersistedNode        `json:"children,omitempty"`
+	Props      map[string]interface{} `json:"props,omitempty"`
+	Settings   map[string]interface{} `json:"settings,omitempty"`
+	Visible    *bool                  `json:"visible,omitempty"`
+	Optional   *bool                  `json:"optional,omitempty"`
 }
 
 type Row struct {
@@ -74,7 +87,51 @@ func ParseDocument(docStr string) (*Document, error) {
 	if err := json.Unmarshal([]byte(docStr), &doc); err != nil {
 		return nil, err
 	}
+	if doc.Root != nil {
+		doc.Children = make([]Block, 0, len(doc.Root.Children))
+		for _, child := range doc.Root.Children {
+			doc.Children = append(doc.Children, persistedBlock(child))
+		}
+	}
 	return &doc, nil
+}
+
+func persistedBlock(node PersistedNode) Block {
+	visible, optional := true, false
+	if node.Visible != nil {
+		visible = *node.Visible
+	}
+	if node.Optional != nil {
+		optional = *node.Optional
+	}
+	settings := node.Settings
+	if settings == nil {
+		settings = node.Props
+	}
+	children := make([]Block, 0, len(node.Children))
+	for _, child := range node.Children {
+		children = append(children, persistedBlock(child))
+	}
+	block := Block{ID: node.ID, Kind: domain_template.BlockKind(node.Kind), WidgetType: firstNonEmpty(node.WidgetType, node.Widget), Children: children, Settings: settings, Visible: visible, Optional: optional}
+	if raw, ok := settings["fields"]; ok {
+		if encoded, err := json.Marshal(raw); err == nil {
+			_ = json.Unmarshal(encoded, &block.Fields)
+		}
+	}
+	if raw, ok := settings["tables"]; ok {
+		if encoded, err := json.Marshal(raw); err == nil {
+			_ = json.Unmarshal(encoded, &block.Tables)
+		}
+	}
+	return block
+}
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (d *Document) ToJSON() (string, error) {
@@ -112,9 +169,7 @@ func ValidateDocument(d *Document) error {
 					if f.ID == "" {
 						return errors.New("field missing ID")
 					}
-					if f.Required && f.Value == nil {
-						// strict validation might occur later, for draft saving nil might be ok.
-					}
+					// strict validation might occur later, for draft saving nil might be ok.
 				}
 			}
 		}

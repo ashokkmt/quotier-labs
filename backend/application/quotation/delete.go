@@ -2,7 +2,7 @@ package quotation
 
 import (
 	"context"
-	"fmt"
+	"quotierlabs/backend/domain"
 )
 
 func (s *Service) DeleteQuotation(ctx context.Context, companyID, quotationID string) error {
@@ -12,7 +12,7 @@ func (s *Service) DeleteQuotation(ctx context.Context, companyID, quotationID st
 	}
 
 	if q.Status != "DRAFT" {
-		return fmt.Errorf("only DRAFT quotations can be deleted")
+		return domain.ErrInvalidTransition
 	}
 
 	return s.repo.Delete(ctx, quotationID, companyID)

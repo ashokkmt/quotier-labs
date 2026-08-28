@@ -92,7 +92,7 @@ func TestValidateInvalidBackup(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	invalidZipPath := filepath.Join(tempDir, "invalid.zip")
-	os.WriteFile(invalidZipPath, []byte("not a zip file"), 0644)
+	_ = os.WriteFile(invalidZipPath, []byte("not a zip file"), 0644)
 
 	svc := backup.NewSQLiteBackupService(nil)
 	valRes, err := svc.ValidateBackup(context.Background(), invalidZipPath)

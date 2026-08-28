@@ -22,6 +22,7 @@ const (
 type Block struct {
 	ID                  string                 `json:"id"`
 	Kind                BlockKind              `json:"kind"`
+	WidgetType          string                 `json:"widget_type,omitempty"`
 	Children            []Block                `json:"children,omitempty"`
 	Title               string                 `json:"title,omitempty"`
 	Fields              []Field                `json:"fields,omitempty"`
@@ -31,6 +32,9 @@ type Block struct {
 	Width               ColumnWidth            `json:"width,omitempty"`
 	Visible             bool                   `json:"visible"`
 	Optional            bool                   `json:"optional"`
+	Settings            map[string]interface{} `json:"settings,omitempty"`
+	Layout              map[string]interface{} `json:"layout,omitempty"`
+	Metadata            map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type Field struct {
@@ -127,9 +131,22 @@ func ValidateRoot(children []Block) error {
 }
 
 type Layout struct {
-	SchemaVersion int     `json:"schema_version"`
-	Children      []Block `json:"children,omitempty"`
-	Rows          []Row   `json:"rows"`
+	SchemaVersion int         `json:"schema_version"`
+	Children      []Block     `json:"children,omitempty"`
+	Rows          []Row       `json:"rows"`
+	Root          *layoutNode `json:"root,omitempty"`
+}
+
+type layoutNode struct {
+	ID         string                 `json:"id"`
+	Kind       BlockKind              `json:"kind"`
+	Widget     string                 `json:"widget,omitempty"`
+	WidgetType string                 `json:"widget_type,omitempty"`
+	Children   []layoutNode           `json:"children,omitempty"`
+	Props      map[string]interface{} `json:"props,omitempty"`
+	Settings   map[string]interface{} `json:"settings,omitempty"`
+	Visible    *bool                  `json:"visible,omitempty"`
+	Optional   *bool                  `json:"optional,omitempty"`
 }
 
 type Row struct {
@@ -173,7 +190,51 @@ func ParseLayout(layoutStr string) (*Layout, error) {
 	if err := json.Unmarshal([]byte(layoutStr), &l); err != nil {
 		return nil, err
 	}
+	if l.Root != nil {
+		l.Children = make([]Block, 0, len(l.Root.Children))
+		for _, child := range l.Root.Children {
+			l.Children = append(l.Children, layoutBlock(child))
+		}
+	}
 	return &l, nil
+}
+
+func layoutBlock(node layoutNode) Block {
+	visible, optional := true, false
+	if node.Visible != nil {
+		visible = *node.Visible
+	}
+	if node.Optional != nil {
+		optional = *node.Optional
+	}
+	settings := node.Settings
+	if settings == nil {
+		settings = node.Props
+	}
+	children := make([]Block, 0, len(node.Children))
+	for _, child := range node.Children {
+		children = append(children, layoutBlock(child))
+	}
+	block := Block{ID: node.ID, Kind: node.Kind, WidgetType: firstLayoutValue(node.WidgetType, node.Widget), Children: children, Settings: settings, Visible: visible, Optional: optional}
+	if raw, ok := settings["fields"]; ok {
+		if encoded, err := json.Marshal(raw); err == nil {
+			_ = json.Unmarshal(encoded, &block.Fields)
+		}
+	}
+	if raw, ok := settings["tables"]; ok {
+		if encoded, err := json.Marshal(raw); err == nil {
+			_ = json.Unmarshal(encoded, &block.Tables)
+		}
+	}
+	return block
+}
+func firstLayoutValue(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (l *Layout) ToJSON() (string, error) {

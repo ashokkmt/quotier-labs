@@ -40,7 +40,7 @@ func (s *Service) CompleteOnboarding(ctx context.Context, input company.CompanyC
 	if err != nil {
 		return err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	comp, err := s.companyService.CreateCompany(txCtx, input)
 	if err != nil {

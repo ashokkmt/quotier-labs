@@ -12,7 +12,7 @@ func (s *Service) UpdateQuotationStatus(ctx context.Context, companyID, quotatio
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	q, err := s.repo.GetByID(txCtx, quotationID, companyID)
 	if err != nil {

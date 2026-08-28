@@ -27,7 +27,7 @@ func setupDB(t *testing.T) *gorm.DB {
 func TestE2ECriticalPath(t *testing.T) {
 	db := setupDB(t)
 	sqlDB, _ := db.DB()
-	sqlite.RunMigrations(sqlDB)
+	_ = sqlite.RunMigrations(sqlDB)
 
 	txManager := sqlite.NewGormTxManager(db)
 	compRepo := sqlite.NewCompanyRepository(db)

@@ -124,7 +124,7 @@ func (r *TemplateResolver) Resolve(ctx context.Context, template *domain.Templat
 							if rowsData, ok := tSec.LayoutOverrides[tbl.ID]; ok {
 								if b, err := json.Marshal(rowsData); err == nil {
 									var parsedRows []map[string]interface{}
-									json.Unmarshal(b, &parsedRows)
+									_ = json.Unmarshal(b, &parsedRows)
 									tbl.Rows = parsedRows
 								}
 							}

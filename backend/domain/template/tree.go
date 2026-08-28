@@ -78,10 +78,20 @@ func cloneBlock(in Block) Block {
 	out := in
 	out.Children = cloneBlocks(in.Children)
 	if in.Overrides != nil {
-		out.Overrides = map[string]interface{}{}
-		for k, v := range in.Overrides {
-			out.Overrides[k] = v
-		}
+		out.Overrides = cloneMap(in.Overrides)
+	}
+	out.Settings = cloneMap(in.Settings)
+	out.Layout = cloneMap(in.Layout)
+	out.Metadata = cloneMap(in.Metadata)
+	return out
+}
+func cloneMap(in map[string]interface{}) map[string]interface{} {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
 	}
 	return out
 }

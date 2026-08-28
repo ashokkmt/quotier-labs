@@ -33,7 +33,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	conn, _ := db.DB()
 	conn.SetMaxOpenConns(1)
-	conn.Exec("PRAGMA foreign_keys = ON")
+	_, _ = conn.Exec("PRAGMA foreign_keys = ON")
 
 	return db
 }

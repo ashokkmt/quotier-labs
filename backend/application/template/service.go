@@ -48,15 +48,16 @@ func (s *Service) CreateTemplate(ctx context.Context, companyID string, input Te
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
+	schemaVersion := layoutSchemaVersion(input.Layout)
 	t := &domain.Template{
 		ID:             s.idGen.Generate(),
 		CompanyID:      &companyID,
 		Name:           input.Name,
 		Description:    input.Description,
 		Layout:         input.Layout,
-		SchemaVersion:  1,
+		SchemaVersion:  schemaVersion,
 		IsBuiltin:      false,
 		CurrentVersion: 1,
 		AuditMetadata: domain.AuditMetadata{
@@ -94,12 +95,22 @@ func (s *Service) CreateTemplate(ctx context.Context, companyID string, input Te
 	return &dto, nil
 }
 
+func layoutSchemaVersion(layout string) int {
+	var value struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if json.Unmarshal([]byte(layout), &value) == nil && value.SchemaVersion > 0 {
+		return value.SchemaVersion
+	}
+	return 1
+}
+
 func (s *Service) UpdateTemplate(ctx context.Context, companyID string, input TemplateUpdateDTO) (*TemplateDTO, error) {
 	txCtx, err := s.txManager.BeginTx(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	t, err := s.repo.GetByID(txCtx, input.ID)
 	if err != nil {
@@ -116,6 +127,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, companyID string, input Te
 	t.Name = input.Name
 	t.Description = input.Description
 	t.Layout = input.Layout
+	t.SchemaVersion = layoutSchemaVersion(input.Layout)
 	t.UpdatedAt = time.Now().UTC()
 	t.CurrentVersion++
 
@@ -198,7 +210,7 @@ func (s *Service) DuplicateTemplate(ctx context.Context, companyID, sourceID str
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	source, err := s.repo.GetByID(txCtx, sourceID)
 	if err != nil {

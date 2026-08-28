@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/go-pdf/fpdf"
 
@@ -24,7 +25,15 @@ func NewLayoutEngine(pdf *fpdf.Fpdf, input document.GeneratorInput) *LayoutEngin
 func (le *LayoutEngine) Render(doc *quotation.Document) error {
 	le.renderHeader()
 	le.renderCustomer()
-	
+	if len(doc.Children) > 0 {
+		for _, block := range doc.Children {
+			if err := le.renderBlock(block); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	// Render arbitrary sections
 	for _, row := range doc.Rows {
 		for _, col := range row.Columns {
@@ -38,6 +47,72 @@ func (le *LayoutEngine) Render(doc *quotation.Document) error {
 	}
 
 	le.renderTotals()
+	return nil
+}
+
+// renderBlock renders only document content. Editor metadata and controls are
+// intentionally absent from this path.
+func (le *LayoutEngine) renderBlock(block quotation.Block) error {
+	if !block.Visible {
+		return nil
+	}
+	if block.WidgetType == "container" || block.WidgetType == "" {
+		for _, child := range block.Children {
+			if err := le.renderBlock(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	pdf := le.pdf
+	text := func() string {
+		if value, ok := block.Settings["text"]; ok && value != nil {
+			return fmt.Sprint(value)
+		}
+		return ""
+	}
+	switch block.WidgetType {
+	case "heading":
+		if value := text(); value != "" {
+			pdf.SetFont("Arial", "B", 14)
+			pdf.MultiCell(0, 8, value, "", "L", false)
+		}
+	case "text", "textarea":
+		if value := text(); value != "" {
+			pdf.SetFont("Arial", "", 10)
+			pdf.MultiCell(0, 6, value, "", "L", false)
+		}
+	case "number", "currency", "date", "select", "boolean":
+		if value, ok := block.Settings["value"]; ok && value != nil && fmt.Sprint(value) != "" {
+			pdf.SetFont("Arial", "", 10)
+			pdf.CellFormat(0, 6, fmt.Sprint(value), "", 1, "L", false, 0, "")
+		}
+	case "divider":
+		pageWidth, _ := pdf.GetPageSize()
+		left, _, right, _ := pdf.GetMargins()
+		pdf.Line(left, pdf.GetY(), pageWidth-right, pdf.GetY())
+		pdf.Ln(4)
+	case "spacer":
+		pdf.Ln(8)
+	case "image", "signature", "stamp":
+		if source, ok := block.Settings["src"].(string); ok && source != "" {
+			if _, err := os.Stat(source); err == nil {
+				pdf.ImageOptions(source, pdf.GetX(), pdf.GetY(), 50, 0, false, fpdf.ImageOptions{ReadDpi: true}, 0, "")
+				pdf.Ln(35)
+			}
+		}
+	case "table":
+		// Tables created by the quotation editor continue through the existing
+		// calculation-aware table renderer when represented in the section model.
+	case "quotation-summary":
+		le.renderTotals()
+	default:
+		for _, child := range block.Children {
+			if err := le.renderBlock(child); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -59,7 +134,7 @@ func (le *LayoutEngine) renderHeader() {
 	if comp.TaxID != nil && *comp.TaxID != "" {
 		pdf.CellFormat(0, 5, "Tax ID / GSTIN: "+*comp.TaxID, "", 1, "L", false, 0, "")
 	}
-	
+
 	// Quotation Meta
 	pdf.Ln(5)
 	pdf.SetFont("Arial", "B", 14)
@@ -82,7 +157,7 @@ func (le *LayoutEngine) renderCustomer() {
 	pdf.CellFormat(0, 6, "Bill To:", "", 1, "L", false, 0, "")
 	pdf.SetFont("Arial", "", 10)
 	pdf.CellFormat(0, 5, cust.Name, "", 1, "L", false, 0, "")
-	
+
 	if cust.CompanyName != nil && *cust.CompanyName != "" {
 		pdf.CellFormat(0, 5, *cust.CompanyName, "", 1, "L", false, 0, "")
 	}
@@ -101,7 +176,7 @@ func (le *LayoutEngine) renderCustomer() {
 
 func (le *LayoutEngine) renderSection(sec quotation.Section) {
 	pdf := le.pdf
-	
+
 	if sec.Title != "" {
 		pdf.SetFont("Arial", "B", 12)
 		pdf.CellFormat(0, 8, sec.Title, "B", 1, "L", false, 0, "")
@@ -121,11 +196,11 @@ func (le *LayoutEngine) renderSection(sec quotation.Section) {
 			pdf.MultiCell(0, 6, val, "", "L", false)
 		}
 	}
-	
+
 	for _, table := range sec.Tables {
 		le.renderTable(table)
 	}
-	
+
 	pdf.Ln(5)
 }
 
@@ -141,7 +216,7 @@ func (le *LayoutEngine) renderTable(table quotation.TableDefinition) {
 	pageWidth, _ := pdf.GetPageSize()
 	left, _, right, _ := pdf.GetMargins()
 	usableWidth := pageWidth - left - right
-	
+
 	colWidth := usableWidth
 	if len(table.Columns) > 0 {
 		colWidth = usableWidth / float64(len(table.Columns))
@@ -176,12 +251,12 @@ func (le *LayoutEngine) renderTotals() {
 	pageWidth, _ := pdf.GetPageSize()
 	left, _, right, _ := pdf.GetMargins()
 	usableWidth := pageWidth - left - right
-	
+
 	offset := usableWidth - 80 // place totals on the right
 
 	pdf.Ln(5)
 	pdf.SetFont("Arial", "", 10)
-	
+
 	drawRow := func(label, value string, bold bool) {
 		pdf.SetX(left + offset)
 		if bold {
@@ -194,12 +269,12 @@ func (le *LayoutEngine) renderTotals() {
 	}
 
 	drawRow("Subtotal:", formatCurrency(q.Subtotal), false)
-	
+
 	if q.DiscountTotal > 0 {
 		drawRow("Discount:", "-"+formatCurrency(q.DiscountTotal), false)
 		drawRow("Taxable Amount:", formatCurrency(q.TaxableTotal), false)
 	}
-	
+
 	if q.CGSTTotal > 0 {
 		drawRow("CGST:", formatCurrency(q.CGSTTotal), false)
 	}
@@ -209,7 +284,7 @@ func (le *LayoutEngine) renderTotals() {
 	if q.IGSTTotal > 0 {
 		drawRow("IGST:", formatCurrency(q.IGSTTotal), false)
 	}
-	
+
 	drawRow("Grand Total:", formatCurrency(q.GrandTotal), true)
 }
 

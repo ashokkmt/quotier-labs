@@ -25,7 +25,7 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	q, err := s.repo.GetByID(txCtx, quotationID, companyID)
 	if err != nil {
@@ -40,7 +40,7 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 	var comp *domain.Company
 	if q.CompanySnapshot != nil {
 		comp = &domain.Company{}
-		json.Unmarshal([]byte(*q.CompanySnapshot), comp)
+		_ = json.Unmarshal([]byte(*q.CompanySnapshot), comp)
 	} else {
 		comp, _ = s.companyRepo.GetByID(txCtx, companyID)
 	}
@@ -48,7 +48,7 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 	var cust *domain.Customer
 	if q.CustomerSnapshot != nil {
 		cust = &domain.Customer{}
-		json.Unmarshal([]byte(*q.CustomerSnapshot), cust)
+		_ = json.Unmarshal([]byte(*q.CustomerSnapshot), cust)
 	} else {
 		cust, _ = s.customerRepo.GetByID(txCtx, q.CustomerID, companyID)
 	}

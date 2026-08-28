@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"fmt"
+	"os"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -12,8 +13,14 @@ import (
 // required PRAGMAs, and runs all pending schema migrations. The migrations
 // are embedded in the binary, so no external file paths are needed.
 func NewDB(dsn string) (*gorm.DB, error) {
+	logLevel := logger.Warn
+	if os.Getenv("SQL_DEBUG") == "1" || os.Getenv("SQL_DEBUG") == "true" {
+		logLevel = logger.Info
+	}
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		// SQL is opt-in. Errors and slow queries remain visible at Warn;
+		// SQL_DEBUG=1 enables statement-level diagnostics for development.
+		Logger: logger.Default.LogMode(logLevel),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)

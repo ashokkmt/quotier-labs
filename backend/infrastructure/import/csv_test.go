@@ -26,7 +26,7 @@ func TestCSVImport(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	path := filepath.Join(tempDir, "customers.csv")
-	os.WriteFile(path, []byte("Client,Contact,Phone\nJohn Doe,john@test.com,123\n,Invalid,456"), 0644)
+	_ = os.WriteFile(path, []byte("Client,Contact,Phone\nJohn Doe,john@test.com,123\n,Invalid,456"), 0644)
 
 	repo := &MockCustomerRepo{}
 	svc := csvimport.NewCSVImportService(repo)

@@ -77,7 +77,7 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	// A draft can start empty. Templates and customers are selected later in the builder.
 	var tmpl *domain.Template
@@ -193,7 +193,7 @@ func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input Sa
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 	q, err := s.repo.GetByID(txCtx, input.QuotationID, companyID)
 	if err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	q, err := s.repo.GetByID(txCtx, input.ID, companyID)
 	if err != nil {
@@ -267,6 +267,9 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 	}
 
 	q.Document = input.Document
+	if strings.Contains(input.Document, `"schema_version":3`) {
+		q.SchemaVersion = 3
+	}
 	q.UpdatedAt = time.Now().UTC()
 
 	if err := domain_quotation.ValidateQuotation(q); err != nil {
@@ -290,7 +293,7 @@ func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string,
 	if err != nil {
 		return nil, err
 	}
-	defer s.txManager.Rollback(txCtx)
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
 	q, err := s.repo.GetByID(txCtx, input.ID, companyID)
 	if err != nil {
