@@ -55,7 +55,18 @@ for (const type of [
     'field',
     (node: BuilderNode) => ({ role: 'content', text: String(node.props.value ?? '') }),
   )
-  def.defaults = () => ({ props: { value: '' }, layout: {}, meta: {} })
+  const isHeading = type === 'heading'
+  def.defaults = () => ({
+    props: { value: isHeading ? 'Heading' : 'Text' },
+    layout: {
+      fontSize: isHeading ? 'xl' : 'md',
+      fontWeight: isHeading ? 'bold' : 'normal',
+      textColor: 'default',
+      lineHeight: 'normal',
+      textAlign: 'left',
+    },
+    meta: {},
+  })
   def.propSchema = [
     {
       key: 'value',
@@ -67,6 +78,13 @@ for (const type of [
             : 'text',
       label: 'Value',
     },
+  ]
+  def.layoutSchema = [
+    { key: 'fontSize', kind: 'token', label: 'Size', tokenGroup: 'typography' },
+    { key: 'fontWeight', kind: 'token', label: 'Weight', tokenGroup: 'border' },
+    { key: 'textColor', kind: 'token', label: 'Colour', tokenGroup: 'color' },
+    { key: 'textAlign', kind: 'token', label: 'Alignment', tokenGroup: 'align' },
+    { key: 'lineHeight', kind: 'token', label: 'Line spacing', tokenGroup: 'density' },
   ]
   registerWidget(def)
 }
@@ -91,6 +109,28 @@ container.layoutSchema = [
   },
   { key: 'gap', kind: 'token', label: 'Gap', tokenGroup: 'spacing' },
   { key: 'padding', kind: 'token', label: 'Padding', tokenGroup: 'spacing' },
+  {
+    key: 'alignItems',
+    kind: 'select',
+    label: 'Cross-axis alignment',
+    options: [
+      { value: 'start', label: 'Start' },
+      { value: 'center', label: 'Centre' },
+      { value: 'end', label: 'End' },
+      { value: 'stretch', label: 'Stretch' },
+    ],
+  },
+  {
+    key: 'justifyContent',
+    kind: 'select',
+    label: 'Distribution',
+    options: [
+      { value: 'start', label: 'Start' },
+      { value: 'center', label: 'Centre' },
+      { value: 'end', label: 'End' },
+      { value: 'space-between', label: 'Space between' },
+    ],
+  },
 ]
 registerWidget(container)
 
@@ -130,16 +170,46 @@ for (const type of [
     type !== 'divider' && type !== 'spacer',
   )
   if (type === 'image') {
-    def.defaults = () => ({ props: { value: '' }, layout: {}, meta: {} })
+    def.render = (node) => ({ role: 'media', text: String(node.props.src ?? '') })
+    def.defaults = () => ({
+      props: { src: '', alt: '' },
+      layout: { imageWidth: 100, imageFit: 'contain' },
+      meta: {},
+    })
     def.propSchema = [
       {
-        key: 'value',
+        key: 'src',
         kind: 'image',
         label: 'Image',
         accept: ['image/png', 'image/jpeg', 'image/webp'],
         maxBytes: 5_000_000,
       },
+      { key: 'alt', kind: 'text', label: 'Alternative text' },
     ]
+    def.layoutSchema = [
+      { key: 'imageWidth', kind: 'number', label: 'Image width (%)' },
+      {
+        key: 'imageFit',
+        kind: 'select',
+        label: 'Fit',
+        options: [
+          { value: 'contain', label: 'Contain' },
+          { value: 'cover', label: 'Cover' },
+        ],
+      },
+    ]
+  }
+  if (type === 'divider') {
+    def.defaults = () => ({ props: { weight: 1, color: 'default' }, layout: {}, meta: {} })
+    def.propSchema = [
+      { key: 'weight', kind: 'number', label: 'Weight (px)' },
+      { key: 'color', kind: 'token', label: 'Colour', tokenGroup: 'color' },
+    ]
+  }
+  if (type === 'spacer') {
+    def.render = () => ({ role: 'container' })
+    def.defaults = () => ({ props: { height: 24 }, layout: {}, meta: {} })
+    def.propSchema = [{ key: 'height', kind: 'number', label: 'Height (px)' }]
   }
   registerWidget(def)
 }

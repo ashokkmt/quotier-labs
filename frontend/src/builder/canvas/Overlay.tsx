@@ -29,6 +29,7 @@ export function Overlay({
   const setDrag = useBuilderStore((state) => state.setDrag)
   const nodes = useBuilderStore((state) => state.nodes)
   const resize = useBuilderStore((state) => state.resize)
+  const updateLayout = useBuilderStore((state) => state.updateLayout)
   const selectedNode = selected ? nodes[selected] : undefined
   const selectedParent = selectedNode?.parentId ? nodes[selectedNode.parentId] : undefined
   const canResize = Boolean(
@@ -36,6 +37,7 @@ export function Overlay({
     selectedParent?.layout.direction === 'horizontal' &&
     selectedParent.children.indexOf(selectedNode.id) < selectedParent.children.length - 1,
   )
+  const canResizeImage = selectedNode?.type === 'image'
   const [selectedRect, setSelectedRect] = useState<Rect | null>(null)
   const [hoveredRect, setHoveredRect] = useState<Rect | null>(null)
   const [dropRect, setDropRect] = useState<Rect | null>(null)
@@ -60,12 +62,19 @@ export function Overlay({
             }
           : plan.preview === 'inside'
             ? { top: target.top + 4, left: target.left + 4, width: target.width - 8, height: 4 }
-            : {
-                top: target.top + (plan.index === 0 ? -2 : target.height - 2),
-                left: target.left,
-                width: target.width,
-                height: 4,
-              },
+            : plan.axis === 'horizontal'
+              ? {
+                  top: target.top,
+                  left: target.left + (plan.linePosition === 'before' ? -2 : target.width - 2),
+                  width: 4,
+                  height: target.height,
+                }
+              : {
+                  top: target.top + (plan.linePosition === 'before' ? -2 : target.height - 2),
+                  left: target.left,
+                  width: target.width,
+                  height: 4,
+                },
       )
     }
     update()
@@ -136,6 +145,41 @@ export function Overlay({
               />
             )}
           </div>
+          {canResizeImage && (
+            <button
+              type="button"
+              aria-label="Resize selected image"
+              className="absolute h-3 w-3 rounded-sm border-2 border-white bg-blue-600 pointer-events-auto cursor-nwse-resize"
+              style={{
+                left: selectedRect.left + selectedRect.width - 6,
+                top: selectedRect.top + selectedRect.height - 6,
+              }}
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                if (!selected) return
+                const startX = event.clientX
+                const startWidth = Number(selectedNode?.layout.imageWidth ?? 100)
+                const onMove = (move: PointerEvent) => {
+                  const next = Math.max(
+                    10,
+                    Math.min(
+                      100,
+                      startWidth +
+                        ((move.clientX - startX) / Math.max(selectedRect.width, 1)) * 100,
+                    ),
+                  )
+                  updateLayout(selected, 'imageWidth', Math.round(next))
+                }
+                const onEnd = () => {
+                  window.removeEventListener('pointermove', onMove)
+                  window.removeEventListener('pointerup', onEnd)
+                }
+                window.addEventListener('pointermove', onMove)
+                window.addEventListener('pointerup', onEnd, { once: true })
+              }}
+            />
+          )}
         </>
       )}
       {dropRect && (

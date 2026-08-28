@@ -51,4 +51,47 @@ describe('engine geometry placement', () => {
       ]),
     )
   })
+  it('predicts a horizontal insertion line while hovering the gap between fields', () => {
+    const document = createRoot('root')
+    document.nodes.p = {
+      id: 'p',
+      role: 'container',
+      type: 'container',
+      parentId: 'root',
+      children: ['a', 'b'],
+      props: {},
+      layout: { direction: 'horizontal' },
+      meta: { visible: true, optional: false },
+    }
+    document.nodes.a = {
+      id: 'a',
+      role: 'widget',
+      type: 'field.text',
+      parentId: 'p',
+      children: [],
+      props: {},
+      layout: {},
+      meta: { visible: true, optional: false },
+    }
+    document.nodes.b = { ...document.nodes.a, id: 'b' }
+    document.nodes.root.children = ['p']
+    expect(
+      resolvePlacement(
+        document,
+        { type: 'create', widget: 'image' },
+        {
+          p: { left: 0, top: 0, width: 120, height: 30 },
+          a: { left: 0, top: 0, width: 50, height: 30 },
+          b: { left: 70, top: 0, width: 50, height: 30 },
+        },
+        { x: 60, y: 15 },
+      ),
+    ).toMatchObject({
+      parentId: 'p',
+      index: 1,
+      preview: 'line',
+      axis: 'horizontal',
+      linePosition: 'before',
+    })
+  })
 })

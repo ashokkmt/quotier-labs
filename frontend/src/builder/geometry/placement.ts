@@ -10,6 +10,8 @@ export type OperationPlan = {
   index: number
   targetId?: string
   side?: 'left' | 'right'
+  axis?: 'horizontal' | 'vertical'
+  linePosition?: 'before' | 'after'
   preview: 'line' | 'inside' | 'split'
   explanation: string
 }
@@ -44,16 +46,24 @@ export function resolvePlacement(
         parentId: parent.id,
         index: 0,
         preview: 'inside',
+        axis: parent.layout.direction ?? 'vertical',
         explanation: 'Place in empty container',
       }
     const horizontal = parent.layout.direction === 'horizontal'
-    for (let index = 0; index < children.length; index++) {
-      const child = children[index]
-      const rect = rects[child.id]
-      if (!rect || !contains(rect, pointer.x, pointer.y)) continue
+    const axis = horizontal ? 'horizontal' : 'vertical'
+    const placed = children
+      .map((child) => ({ child, rect: rects[child.id] }))
+      .filter((candidate): candidate is { child: (typeof children)[number]; rect: RectLike } =>
+        Boolean(candidate.rect),
+      )
+      .sort((a, b) => (horizontal ? a.rect.left - b.rect.left : a.rect.top - b.rect.top))
+    for (let index = 0; index < placed.length; index++) {
+      const { child, rect } = placed[index]
+      const inChild = contains(rect, pointer.x, pointer.y)
       if (
         !horizontal &&
         sourceDef.capabilities.horizontal &&
+        inChild &&
         (pointer.x - rect.left < band(rect.width) ||
           rect.left + rect.width - pointer.x < band(rect.width))
       ) {
@@ -64,27 +74,33 @@ export function resolvePlacement(
           targetId: child.id,
           side: pointer.x - rect.left < band(rect.width) ? 'left' : 'right',
           preview: 'split',
+          axis,
           explanation: 'Place side by side',
         }
       }
-      const axis = horizontal ? pointer.x - rect.left : pointer.y - rect.top
-      const middle = (horizontal ? rect.width : rect.height) / 2
-      return {
-        operation: source.type === 'move' ? 'move' : 'insert',
-        parentId: parent.id,
-        index: axis < middle ? index : index + 1,
-        targetId: child.id,
-        preview: 'line',
-        explanation: axis < middle ? 'Insert before' : 'Insert after',
-      }
+      const coordinate = horizontal ? pointer.x : pointer.y
+      const middle = horizontal ? rect.left + rect.width / 2 : rect.top + rect.height / 2
+      if (coordinate < middle)
+        return {
+          operation: source.type === 'move' ? 'move' : 'insert',
+          parentId: parent.id,
+          index,
+          targetId: child.id,
+          preview: 'line',
+          axis,
+          linePosition: 'before',
+          explanation: 'Insert before',
+        }
     }
-    const last = children[children.length - 1]
+    const last = placed[placed.length - 1]?.child
     return {
       operation: source.type === 'move' ? 'move' : 'insert',
       parentId: parent.id,
-      index: children.length,
-      targetId: last.id,
+      index: placed.length,
+      targetId: last?.id,
       preview: 'line',
+      axis,
+      linePosition: 'after',
       explanation: 'Insert at end',
     }
   }
@@ -96,6 +112,7 @@ export function resolvePlacement(
         parentId: root.id,
         index: root.children.length,
         preview: 'inside',
+        axis: 'vertical',
         explanation: 'Place in document body',
       }
     : null

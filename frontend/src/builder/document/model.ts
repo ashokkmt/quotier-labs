@@ -11,6 +11,12 @@ export type LayoutProps = {
   wrap?: 'nowrap' | 'wrap'
   basis?: Basis
   textAlign?: 'left' | 'center' | 'right'
+  fontSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+  fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold'
+  textColor?: 'default' | 'muted' | 'primary' | 'success' | 'danger'
+  lineHeight?: 'tight' | 'normal' | 'relaxed'
+  imageWidth?: number
+  imageFit?: 'contain' | 'cover'
 }
 
 export type DocumentMeta = {

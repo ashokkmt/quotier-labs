@@ -1,8 +1,52 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { SelectImage } from '../../../wailsjs/go/wails/CompanyHandler'
 import type { BuilderNode } from '../document/model'
 import type { SchemaField } from '../registry/types'
 import { getWidget } from '../registry/registry'
+
+const tokenOptions = {
+  spacing: [
+    ['none', 'None'],
+    ['xs', 'Extra small'],
+    ['sm', 'Small'],
+    ['md', 'Medium'],
+    ['lg', 'Large'],
+  ],
+  color: [
+    ['default', 'Default'],
+    ['muted', 'Muted'],
+    ['primary', 'Primary'],
+    ['success', 'Success'],
+    ['danger', 'Danger'],
+  ],
+  typography: [
+    ['xs', 'Extra small'],
+    ['sm', 'Small'],
+    ['md', 'Body'],
+    ['lg', 'Large'],
+    ['xl', 'Heading'],
+    ['2xl', 'Display'],
+  ],
+  border: [
+    ['normal', 'Normal'],
+    ['medium', 'Medium'],
+    ['semibold', 'Semibold'],
+    ['bold', 'Bold'],
+  ],
+  align: [
+    ['left', 'Left'],
+    ['center', 'Centre'],
+    ['right', 'Right'],
+  ],
+  density: [
+    ['tight', 'Tight'],
+    ['normal', 'Normal'],
+    ['relaxed', 'Relaxed'],
+  ],
+  width: [],
+} as const
 
 export function Inspector({
   node,
@@ -73,22 +117,56 @@ function InspectorField({
     )
   if (field.kind === 'image')
     return (
+      <div className="block space-y-1">
+        <Label>{field.label}</Label>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full justify-start"
+          onClick={async () => {
+            const src = await SelectImage('Select image')
+            if (src) onChange(src)
+          }}
+        >
+          Choose image
+        </Button>
+        {value ? <p className="truncate text-xs text-muted-foreground">{String(value)}</p> : null}
+      </div>
+    )
+  if (field.kind === 'token') {
+    const options = field.tokenGroup ? tokenOptions[field.tokenGroup] : []
+    return (
       <label className="block space-y-1">
         <Label>{field.label}</Label>
-        <Input
-          type="file"
-          accept={field.accept?.join(',')}
-          onChange={(event) => onChange(event.target.files?.[0]?.name ?? '')}
-        />
+        <select
+          className="w-full border rounded-md h-9 px-2 text-sm"
+          value={String(value)}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {options.map(([optionValue, label]) => (
+            <option key={optionValue} value={optionValue}>
+              {label}
+            </option>
+          ))}
+        </select>
       </label>
     )
+  }
   return (
     <label className="block space-y-1">
       <Label>{field.label}</Label>
       <Input
         type={field.kind === 'number' || field.kind === 'currency' ? 'number' : 'text'}
         value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
+        min={field.key === 'imageWidth' ? 10 : field.key === 'weight' ? 1 : undefined}
+        max={field.key === 'imageWidth' ? 100 : field.key === 'weight' ? 12 : undefined}
+        onChange={(event) =>
+          onChange(
+            field.kind === 'number' || field.kind === 'currency'
+              ? Number(event.target.value)
+              : event.target.value,
+          )
+        }
       />
     </label>
   )

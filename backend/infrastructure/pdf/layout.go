@@ -54,12 +54,51 @@ func (le *LayoutEngine) Render(doc *quotation.Document) error {
 // renderBlock renders only document content. Editor metadata and controls are
 // intentionally absent from this path.
 func (le *LayoutEngine) renderBlock(block quotation.Block) error {
+	return le.renderBlockInWidth(block, 0)
+}
+
+// renderBlockInWidth projects the same container direction/basis data used by
+// the editor into bounded PDF columns. A width of zero uses the page content
+// width, preserving the legacy full-width path.
+func (le *LayoutEngine) renderBlockInWidth(block quotation.Block, contentWidth float64) error {
 	if !block.Visible {
 		return nil
 	}
 	if block.Kind == "container" || block.WidgetType == "container" || block.WidgetType == "" {
+		if fmt.Sprint(block.Layout["direction"]) == "horizontal" && len(block.Children) > 0 {
+			pageWidth, _ := le.pdf.GetPageSize()
+			left, _, right, _ := le.pdf.GetMargins()
+			startX, startY := le.pdf.GetX(), le.pdf.GetY()
+			available := contentWidth
+			if available == 0 {
+				available = pageWidth - right - startX
+				if startX < left {
+					available = pageWidth - left - right
+				}
+			}
+			gap := map[string]float64{"none": 0, "xs": 1, "sm": 2, "md": 4, "lg": 8}[fmt.Sprint(block.Layout["gap"])]
+			available -= gap * float64(len(block.Children)-1)
+			x, maxY := startX, startY
+			for _, child := range block.Children {
+				basis, _ := child.Layout["basis"].(float64)
+				if basis <= 0 {
+					basis = 10000 / float64(len(block.Children))
+				}
+				width := available * basis / 10000
+				le.pdf.SetXY(x, startY)
+				if err := le.renderBlockInWidth(child, width); err != nil {
+					return err
+				}
+				if y := le.pdf.GetY(); y > maxY {
+					maxY = y
+				}
+				x += width + gap
+			}
+			le.pdf.SetXY(startX, maxY)
+			return nil
+		}
 		for _, child := range block.Children {
-			if err := le.renderBlock(child); err != nil {
+			if err := le.renderBlockInWidth(child, contentWidth); err != nil {
 				return err
 			}
 		}
@@ -75,34 +114,128 @@ func (le *LayoutEngine) renderBlock(block quotation.Block) error {
 		}
 		return ""
 	}
+	fontSize := func(defaultSize float64) float64 {
+		switch fmt.Sprint(block.Layout["fontSize"]) {
+		case "xs":
+			return 8
+		case "sm":
+			return 9
+		case "md":
+			return 10
+		case "lg":
+			return 12
+		case "xl":
+			return 14
+		case "2xl":
+			return 18
+		default:
+			return defaultSize
+		}
+	}
+	fontStyle := func(defaultStyle string) string {
+		switch fmt.Sprint(block.Layout["fontWeight"]) {
+		case "normal":
+			return ""
+		case "medium", "semibold", "bold":
+			return "B"
+		default:
+			return defaultStyle
+		}
+	}
+	applyTextColor := func() {
+		switch fmt.Sprint(block.Layout["textColor"]) {
+		case "muted":
+			pdf.SetTextColor(100, 116, 139)
+		case "primary":
+			pdf.SetTextColor(37, 99, 235)
+		case "success":
+			pdf.SetTextColor(5, 150, 105)
+		case "danger":
+			pdf.SetTextColor(220, 38, 38)
+		default:
+			pdf.SetTextColor(15, 23, 42)
+		}
+	}
+	align := func() string {
+		switch fmt.Sprint(block.Layout["textAlign"]) {
+		case "center":
+			return "C"
+		case "right":
+			return "R"
+		default:
+			return "L"
+		}
+	}
 	widgetType := strings.TrimPrefix(block.WidgetType, "field.")
 	switch widgetType {
 	case "heading":
 		if value := text(); value != "" {
-			pdf.SetFont("Arial", "B", 14)
-			pdf.MultiCell(0, 8, value, "", "L", false)
+			applyTextColor()
+			pdf.SetFont("Arial", fontStyle("B"), fontSize(14))
+			pdf.MultiCell(contentWidth, 8, value, "", align(), false)
 		}
 	case "text", "textarea":
 		if value := text(); value != "" {
-			pdf.SetFont("Arial", "", 10)
-			pdf.MultiCell(0, 6, value, "", "L", false)
+			applyTextColor()
+			pdf.SetFont("Arial", fontStyle(""), fontSize(10))
+			pdf.MultiCell(contentWidth, 6, value, "", align(), false)
 		}
 	case "number", "currency", "date", "select", "boolean":
 		if value := text(); value != "" {
-			pdf.SetFont("Arial", "", 10)
-			pdf.CellFormat(0, 6, value, "", 1, "L", false, 0, "")
+			applyTextColor()
+			pdf.SetFont("Arial", fontStyle(""), fontSize(10))
+			pdf.CellFormat(contentWidth, 6, value, "", 1, align(), false, 0, "")
 		}
 	case "divider":
 		pageWidth, _ := pdf.GetPageSize()
 		left, _, right, _ := pdf.GetMargins()
-		pdf.Line(left, pdf.GetY(), pageWidth-right, pdf.GetY())
+		switch fmt.Sprint(block.Settings["color"]) {
+		case "primary":
+			pdf.SetDrawColor(37, 99, 235)
+		case "success":
+			pdf.SetDrawColor(5, 150, 105)
+		case "danger":
+			pdf.SetDrawColor(220, 38, 38)
+		case "muted":
+			pdf.SetDrawColor(148, 163, 184)
+		default:
+			pdf.SetDrawColor(71, 85, 105)
+		}
+		weight := 1.0
+		if raw, ok := block.Settings["weight"].(float64); ok {
+			weight = raw
+		}
+		if weight < 1 {
+			weight = 1
+		}
+		if weight > 12 {
+			weight = 12
+		}
+		pdf.SetLineWidth(weight * 0.35)
+		start := pdf.GetX()
+		if start < left {
+			start = left
+		}
+		end := pageWidth - right
+		if contentWidth > 0 {
+			end = start + contentWidth
+		}
+		pdf.Line(start, pdf.GetY(), end, pdf.GetY())
+		pdf.SetLineWidth(0.2)
 		pdf.Ln(4)
 	case "spacer":
 		pdf.Ln(8)
 	case "image", "signature", "stamp":
 		if source, ok := block.Settings["src"].(string); ok && source != "" {
 			if _, err := os.Stat(source); err == nil {
-				pdf.ImageOptions(source, pdf.GetX(), pdf.GetY(), 50, 0, false, fpdf.ImageOptions{ReadDpi: true}, 0, "")
+				width := 50.0
+				if raw, ok := block.Layout["imageWidth"].(float64); ok {
+					width = 50 * raw / 100
+				}
+				if contentWidth > 0 && width > contentWidth {
+					width = contentWidth
+				}
+				pdf.ImageOptions(source, pdf.GetX(), pdf.GetY(), width, 0, false, fpdf.ImageOptions{ReadDpi: true}, 0, "")
 				pdf.Ln(35)
 			}
 		}
@@ -113,7 +246,7 @@ func (le *LayoutEngine) renderBlock(block quotation.Block) error {
 		le.renderTotals()
 	default:
 		for _, child := range block.Children {
-			if err := le.renderBlock(child); err != nil {
+			if err := le.renderBlockInWidth(child, contentWidth); err != nil {
 				return err
 			}
 		}

@@ -45,6 +45,24 @@ describe('V4 builder tree kernel', () => {
       expect(validateDocument(wrapped.document)).toBeNull()
     }
   })
+  it('inserts a newly created widget into an existing horizontal container without a wrapper', () => {
+    let document = createRoot('root')
+    const row = createNode('container')!
+    row.id = 'row'
+    row.layout.direction = 'horizontal'
+    const rowResult = insertNode(document, row, 'root')
+    if (!rowResult.ok) throw new Error(rowResult.reason)
+    document = rowResult.document
+    const first = insertNode(document, widget('a'), 'row')
+    if (!first.ok) throw new Error(first.reason)
+    const second = wrapBeside(first.document, widget('b'), 'a', 'right')
+    expect(second.ok).toBe(true)
+    if (second.ok) {
+      expect(second.document.nodes.row.children).toEqual(['a', 'b'])
+      expect(second.document.nodes.a.layout.basis).toBe(5000)
+      expect(second.document.nodes.b.layout.basis).toBe(5000)
+    }
+  })
   it('duplicates complete subtrees and resizes adjacent shares', () => {
     let document = createRoot('root')
     const container = createNode('container')!

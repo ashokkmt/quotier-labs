@@ -37,6 +37,7 @@ type BuilderStore = DocumentModel & {
   copySelected: () => boolean
   pasteIntoSelection: () => boolean
   resize: (leftId: string, basis: number) => boolean
+  addWidget: (widget: string) => boolean
   updateProp: (id: string, key: string, value: unknown) => void
   updateLayout: (id: string, key: string, value: unknown) => void
 }
@@ -146,6 +147,29 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
       return false
     }
     set(result.document)
+    return true
+  },
+  addWidget: (widget) => {
+    const state = get()
+    const node = createNode(widget)
+    if (!node) return false
+    const selected = state.selectedNodeId ? state.nodes[state.selectedNodeId] : undefined
+    const parent =
+      selected && (selected.role === 'root' || selected.role === 'container')
+        ? selected
+        : selected?.parentId
+          ? state.nodes[selected.parentId]
+          : state.nodes[state.rootId]
+    const index =
+      selected && parent.id !== selected.id
+        ? parent.children.indexOf(selected.id) + 1
+        : parent.children.length
+    const result = insertNode(state, node, parent.id, index)
+    if (!result.ok) {
+      set({ lastError: result.reason })
+      return false
+    }
+    set({ ...result.document, selectedNodeId: node.id, lastError: null })
     return true
   },
   updateProp: (id, key, value) =>

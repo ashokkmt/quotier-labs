@@ -113,6 +113,7 @@ export function insertNode(
   const at = Math.max(0, Math.min(index ?? parent.children.length, parent.children.length))
   next.nodes[node.id] = { ...node, parentId, children: [] }
   parent.children.splice(at, 0, node.id)
+  normalizeHorizontalShares(next, parent.id)
   return validateDocument(next) ? fail(validateDocument(next)!) : success(next)
 }
 export function moveNode(
@@ -136,6 +137,7 @@ export function moveNode(
   if (oldParent.id === newParent.id && oldIndex < at) at--
   newParent.children.splice(Math.max(0, Math.min(at, newParent.children.length)), 0, id)
   next.nodes[id].parentId = parentId
+  normalizeHorizontalShares(next, newParent.id)
   return validateDocument(next) ? fail(validateDocument(next)!) : success(next)
 }
 export function deleteNode(document: DocumentModel, id: string): TreeResult {
@@ -185,13 +187,12 @@ export function wrapBeside(
   if (source.id === targetId || subtreeIds(document, source.id).includes(targetId))
     return fail('invalid side placement')
   const parent = document.nodes[target.parentId]
-  if (parent.layout.direction === 'horizontal')
-    return moveNode(
-      document,
-      source.id,
-      parent.id,
-      parent.children.indexOf(targetId) + (side === 'right' ? 1 : 0),
-    )
+  if (parent.layout.direction === 'horizontal') {
+    const index = parent.children.indexOf(targetId) + (side === 'right' ? 1 : 0)
+    return document.nodes[source.id]
+      ? moveNode(document, source.id, parent.id, index)
+      : insertNode(document, source, parent.id, index)
+  }
   const next = copy(document)
   const targetIndex = next.nodes[parent.id].children.indexOf(targetId)
   if (next.nodes[source.id]) {
@@ -222,6 +223,21 @@ export function wrapBeside(
   }
   next.nodes[parent.id].children[targetIndex] = wrapperId
   return validateDocument(next) ? fail(validateDocument(next)!) : success(next)
+}
+
+// A horizontal composition always owns its column shares. This keeps a newly
+// created two-column row at 50/50 while still allowing explicit resize changes
+// after placement.
+function normalizeHorizontalShares(document: DocumentModel, parentId: string) {
+  const parent = document.nodes[parentId]
+  if (!parent || parent.layout.direction !== 'horizontal' || !parent.children.length) return
+  const share = Math.floor(BASIS_TOTAL / parent.children.length)
+  let remaining = BASIS_TOTAL
+  parent.children.forEach((childId, index) => {
+    const basis = index === parent.children.length - 1 ? remaining : share
+    document.nodes[childId].layout = { ...document.nodes[childId].layout, basis }
+    remaining -= basis
+  })
 }
 export function resizeSiblings(document: DocumentModel, leftId: string, basis: number): TreeResult {
   const left = document.nodes[leftId]
