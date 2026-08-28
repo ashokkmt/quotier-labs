@@ -1,14 +1,19 @@
-import { useState, useEffect } from "react"
-import { Plus, Search, MoreVertical, Pencil, Trash } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card } from "@/components/ui/card"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useToast } from "@/hooks/use-toast"
-import { CustomerCreateDialog } from "../../shared/components/CustomerCreateDialog"
+import { useState, useEffect } from 'react'
+import { Plus, Search, MoreVertical, Pencil, Trash } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { useToast } from '@/hooks/use-toast'
+import { CustomerCreateDialog } from '../../shared/components/CustomerCreateDialog'
 
-import { ListCustomers, DeleteCustomer } from "../../../wailsjs/go/wails/CustomerHandler"
-import { customer } from "../../../wailsjs/go/models"
+import { ListCustomers, DeleteCustomer } from '../../../wailsjs/go/wails/CustomerHandler'
+import { customer } from '../../../wailsjs/go/models'
 
 export function CustomerList() {
   const [customers, setCustomers] = useState<customer.CustomerDTO[]>([])
@@ -23,7 +28,7 @@ export function CustomerList() {
       setCustomers(result.items || [])
     } catch (err) {
       console.error(err)
-      toast({ title: "Failed to load customers", variant: "destructive" })
+      toast({ title: 'Failed to load customers', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -31,17 +36,18 @@ export function CustomerList() {
 
   useEffect(() => {
     loadCustomers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this customer? This cannot be undone.")) return
+    if (!confirm('Are you sure you want to delete this customer? This cannot be undone.')) return
     try {
       await DeleteCustomer(id)
-      toast({ title: "Customer deleted successfully" })
+      toast({ title: 'Customer deleted successfully' })
       loadCustomers()
     } catch (err) {
       console.error(err)
-      toast({ title: "Failed to delete customer", variant: "destructive" })
+      toast({ title: 'Failed to delete customer', variant: 'destructive' })
     }
   }
 
@@ -64,7 +70,7 @@ export function CustomerList() {
 
       {loading ? (
         <div className="space-y-4">
-          {[1, 2, 3].map(i => (
+          {[1, 2, 3].map((i) => (
             <Card key={i} className="p-4 h-24 animate-pulse bg-muted/50" />
           ))}
         </div>
@@ -74,7 +80,9 @@ export function CustomerList() {
             <Plus className="w-6 h-6 text-primary" />
           </div>
           <h3 className="text-xl font-medium mb-2">No customers yet</h3>
-          <p className="text-muted-foreground mb-4">Add your first customer to start creating quotations.</p>
+          <p className="text-muted-foreground mb-4">
+            Add your first customer to start creating quotations.
+          </p>
           <Button onClick={() => setDialogOpen(true)}>Add Customer</Button>
         </Card>
       ) : (
@@ -93,13 +101,15 @@ export function CustomerList() {
                 <tr key={c.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-6 py-4">
                     <div className="font-medium text-foreground">{c.name}</div>
-                    {c.company_name && <div className="text-xs text-muted-foreground">{c.company_name}</div>}
+                    {c.company_name && (
+                      <div className="text-xs text-muted-foreground">{c.company_name}</div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
-                    <div>{c.email || "—"}</div>
+                    <div>{c.email || '—'}</div>
                     <div className="text-muted-foreground">{c.phone}</div>
                   </td>
-                  <td className="px-6 py-4">{c.state || "—"}</td>
+                  <td className="px-6 py-4">{c.state || '—'}</td>
                   <td className="px-6 py-4 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -108,10 +118,15 @@ export function CustomerList() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => alert("Edit not implemented fully for MVP inline")}>
+                        <DropdownMenuItem
+                          onClick={() => alert('Edit not implemented fully for MVP inline')}
+                        >
                           <Pencil className="w-4 h-4 mr-2" /> Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDelete(c.id)}>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDelete(c.id)}
+                        >
                           <Trash className="w-4 h-4 mr-2" /> Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -123,10 +138,10 @@ export function CustomerList() {
           </table>
         </div>
       )}
-      
+
       {dialogOpen && (
-        <CustomerCreateDialog 
-          open={dialogOpen} 
+        <CustomerCreateDialog
+          open={dialogOpen}
           onOpenChange={setDialogOpen}
           onSuccess={() => {
             setDialogOpen(false)

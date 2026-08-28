@@ -1,10 +1,17 @@
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Button } from "@/components/ui/button"
-import { customerSchema, type CustomerData } from "./schemas/customer-schema"
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
+import { customerSchema, type CustomerData } from './schemas/customer-schema'
 
 interface CustomerFormProps {
   initialData?: Partial<CustomerData>
@@ -17,20 +24,20 @@ export function CustomerForm({ initialData, onSubmit, onCancel, isSubmitting }: 
   const form = useForm<CustomerData>({
     resolver: zodResolver(customerSchema),
     defaultValues: {
-      id: initialData?.id || "",
-      name: initialData?.name || "",
-      company_name: initialData?.company_name || "",
-      contact_person: initialData?.contact_person || "",
-      address: initialData?.address || "",
-      phone: initialData?.phone || "",
-      email: initialData?.email || "",
-      gstin: initialData?.gstin || "",
-      pan: initialData?.pan || "",
-      state: initialData?.state || "",
-      country: initialData?.country || "",
-      notes: initialData?.notes || "",
+      id: initialData?.id || '',
+      name: initialData?.name || '',
+      company_name: initialData?.company_name || '',
+      contact_person: initialData?.contact_person || '',
+      address: initialData?.address || '',
+      phone: initialData?.phone || '',
+      email: initialData?.email || '',
+      gstin: initialData?.gstin || '',
+      pan: initialData?.pan || '',
+      state: initialData?.state || '',
+      country: initialData?.country || '',
+      notes: initialData?.notes || '',
     },
-    mode: "onChange",
+    mode: 'onChange',
   })
 
   return (
@@ -42,7 +49,9 @@ export function CustomerForm({ initialData, onSubmit, onCancel, isSubmitting }: 
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
+                <FormLabel>
+                  Customer Name <span className="text-destructive">*</span>
+                </FormLabel>
                 <FormControl>
                   <Input placeholder="John Doe or Business Name" {...field} />
                 </FormControl>
@@ -130,13 +139,13 @@ export function CustomerForm({ initialData, onSubmit, onCancel, isSubmitting }: 
             </FormItem>
           )}
         />
-        
+
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
             Cancel
           </Button>
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : "Save Customer"}
+            {isSubmitting ? 'Saving...' : 'Save Customer'}
           </Button>
         </div>
       </form>

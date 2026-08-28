@@ -1,6 +1,6 @@
-import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 export function StepCompanyInfo({ form }: any) {
   return (
@@ -10,7 +10,9 @@ export function StepCompanyInfo({ form }: any) {
         name="name"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Company Name <span className="text-destructive">*</span></FormLabel>
+            <FormLabel>
+              Company Name <span className="text-destructive">*</span>
+            </FormLabel>
             <FormControl>
               <Input placeholder="Acme Corp" {...field} />
             </FormControl>

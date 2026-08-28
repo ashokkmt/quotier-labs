@@ -1,5 +1,5 @@
-import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 
 export function StepGST({ form }: any) {
   return (
@@ -9,7 +9,9 @@ export function StepGST({ form }: any) {
         name="state"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>State (Place of Supply) <span className="text-destructive">*</span></FormLabel>
+            <FormLabel>
+              State (Place of Supply) <span className="text-destructive">*</span>
+            </FormLabel>
             <FormControl>
               <Input placeholder="Maharashtra" {...field} />
             </FormControl>

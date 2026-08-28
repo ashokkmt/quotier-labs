@@ -1,15 +1,18 @@
-import { useEffect } from "react"
+import { useEffect } from 'react'
 
-const RECOVERY_PREFIX = "quotier_recovery_"
+const RECOVERY_PREFIX = 'quotier_recovery_'
 
 export function useRecovery(quotationId: string, document: any) {
   useEffect(() => {
     if (!document || !quotationId) return
     // Write checkpoint to localStorage
-    localStorage.setItem(RECOVERY_PREFIX + quotationId, JSON.stringify({
-      timestamp: Date.now(),
-      document: document
-    }))
+    localStorage.setItem(
+      RECOVERY_PREFIX + quotationId,
+      JSON.stringify({
+        timestamp: Date.now(),
+        document: document,
+      }),
+    )
   }, [document, quotationId])
 
   const clearRecovery = () => {

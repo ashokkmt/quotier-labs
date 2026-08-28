@@ -1,22 +1,26 @@
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { useToast } from "@/hooks/use-toast"
-import { SelectImportFile, PreviewImport, ImportCustomers } from "../../../wailsjs/go/wails/BackupHandler"
-import { FileUp, Loader2, CheckCircle2 } from "lucide-react"
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { useToast } from '@/hooks/use-toast'
+import {
+  SelectImportFile,
+  PreviewImport,
+  ImportCustomers,
+} from '../../../wailsjs/go/wails/BackupHandler'
+import { FileUp, Loader2, CheckCircle2 } from 'lucide-react'
 
 export function CustomerImport({ onComplete }: { onComplete: () => void }) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [file, setFile] = useState("")
+  const [file, setFile] = useState('')
   const [preview, setPreview] = useState<any>(null)
-  
+
   const [mapping, setMapping] = useState({
-    name: "Name",
-    email: "Email",
-    phone: "Phone",
-    address: "Address",
-    gstin: "GSTIN",
-    pan: "PAN"
+    name: 'Name',
+    email: 'Email',
+    phone: 'Phone',
+    address: 'Address',
+    gstin: 'GSTIN',
+    pan: 'PAN',
   })
 
   const handleSelectFile = async () => {
@@ -28,7 +32,7 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
         setPreview(prev)
       }
     } catch (err: any) {
-      toast({ title: "Failed to read file", description: err.toString(), variant: "destructive" })
+      toast({ title: 'Failed to read file', description: err.toString(), variant: 'destructive' })
     }
   }
 
@@ -37,10 +41,10 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
     setLoading(true)
     try {
       const importedCount = await ImportCustomers(file, mapping)
-      toast({ title: "Import Successful", description: `Imported ${importedCount} customers.` })
+      toast({ title: 'Import Successful', description: `Imported ${importedCount} customers.` })
       onComplete()
     } catch (err: any) {
-      toast({ title: "Import Failed", description: err.toString(), variant: "destructive" })
+      toast({ title: 'Import Failed', description: err.toString(), variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -64,21 +68,25 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
                 Found {preview.total} rows ({preview.valid} valid to import)
               </p>
             </div>
-            <Button variant="outline" onClick={() => setPreview(null)}>Change File</Button>
+            <Button variant="outline" onClick={() => setPreview(null)}>
+              Change File
+            </Button>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             {Object.keys(mapping).map((field) => (
               <div key={field} className="space-y-1">
                 <label className="text-sm font-medium capitalize">{field}</label>
-                <select 
+                <select
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={mapping[field as keyof typeof mapping]}
-                  onChange={(e) => setMapping({...mapping, [field]: e.target.value})}
+                  onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}
                 >
                   <option value="">-- Ignore --</option>
                   {preview.headers.map((h: string) => (
-                    <option key={h} value={h}>{h}</option>
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -90,14 +98,20 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
             {preview.rows.slice(0, 1).map((r: any, i: number) => (
               <div key={i} className="text-sm font-mono bg-background border p-3 rounded">
                 {Object.entries(r.data).map(([k, v]) => (
-                  <div key={k}><span className="text-muted-foreground">{k}:</span> {v as string}</div>
+                  <div key={k}>
+                    <span className="text-muted-foreground">{k}:</span> {v as string}
+                  </div>
                 ))}
               </div>
             ))}
           </div>
 
           <Button onClick={handleImport} disabled={loading} className="w-full">
-            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+            )}
             Confirm Import
           </Button>
         </div>

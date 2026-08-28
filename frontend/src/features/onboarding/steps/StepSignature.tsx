@@ -1,6 +1,6 @@
-import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
-import { Button } from "@/components/ui/button"
-import { SelectImage } from "../../../../wailsjs/go/wails/CompanyHandler"
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form'
+import { Button } from '@/components/ui/button'
+import { SelectImage } from '../../../../wailsjs/go/wails/CompanyHandler'
 
 export function StepSignature({ form }: any) {
   const handleUpload = async (field: any, title: string) => {
@@ -10,7 +10,7 @@ export function StepSignature({ form }: any) {
         field.onChange(path)
       }
     } catch (err: any) {
-      alert("Upload failed: " + err)
+      alert('Upload failed: ' + err)
     }
   }
 
@@ -27,10 +27,18 @@ export function StepSignature({ form }: any) {
             <FormLabel>Authorized Signature</FormLabel>
             <FormControl>
               <div className="flex items-center gap-4">
-                <Button type="button" variant="outline" onClick={() => handleUpload(field, "Select Signature Image")}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleUpload(field, 'Select Signature Image')}
+                >
                   Choose Signature
                 </Button>
-                {field.value && <span className="text-sm text-muted-foreground overflow-hidden text-ellipsis w-64">{field.value}</span>}
+                {field.value && (
+                  <span className="text-sm text-muted-foreground overflow-hidden text-ellipsis w-64">
+                    {field.value}
+                  </span>
+                )}
               </div>
             </FormControl>
             <FormMessage />
@@ -46,10 +54,18 @@ export function StepSignature({ form }: any) {
             <FormLabel>Company Stamp</FormLabel>
             <FormControl>
               <div className="flex items-center gap-4">
-                <Button type="button" variant="outline" onClick={() => handleUpload(field, "Select Stamp Image")}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleUpload(field, 'Select Stamp Image')}
+                >
                   Choose Stamp
                 </Button>
-                {field.value && <span className="text-sm text-muted-foreground overflow-hidden text-ellipsis w-64">{field.value}</span>}
+                {field.value && (
+                  <span className="text-sm text-muted-foreground overflow-hidden text-ellipsis w-64">
+                    {field.value}
+                  </span>
+                )}
               </div>
             </FormControl>
             <FormMessage />

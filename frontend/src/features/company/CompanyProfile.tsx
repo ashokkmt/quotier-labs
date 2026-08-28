@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Form } from "@/components/ui/form"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { onboardingSchema, type OnboardingData } from "../onboarding/schemas/onboarding-schema"
+import { useState, useEffect } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Form } from '@/components/ui/form'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { onboardingSchema, type OnboardingData } from '../onboarding/schemas/onboarding-schema'
 
-import { StepCompanyInfo } from "../onboarding/steps/StepCompanyInfo"
-import { StepGST } from "../onboarding/steps/StepGST"
-import { StepBank } from "../onboarding/steps/StepBank"
-import { GetActiveCompany, UpdateCompany } from "../../../wailsjs/go/wails/CompanyHandler"
+import { StepCompanyInfo } from '../onboarding/steps/StepCompanyInfo'
+import { StepGST } from '../onboarding/steps/StepGST'
+import { StepBank } from '../onboarding/steps/StepBank'
+import { GetActiveCompany, UpdateCompany } from '../../../wailsjs/go/wails/CompanyHandler'
 
 export function CompanyProfile() {
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -17,30 +17,50 @@ export function CompanyProfile() {
   const form = useForm<OnboardingData>({
     resolver: zodResolver(onboardingSchema),
     defaultValues: {
-      name: "",
-      currency: "INR",
-      state: "",
+      name: '',
+      currency: 'INR',
+      state: '',
     },
-    mode: "onChange",
+    mode: 'onChange',
   })
 
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
+  const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const loadProfile = async () => {
     const c = await GetActiveCompany()
-    form.reset({ name:c.name, legalName:c.legal_name || "", address:c.address || "", phone:c.phone || "", email:c.email || "", website:c.website || "", state:c.state || "", gstin:c.gstin || "", pan:c.pan || "", bankDetails:c.bank_details || "", currency:c.currency || "INR", logoUrl:c.logo_url || "", signatureUrl:c.signature_url || "", stampUrl:c.stamp_url || "" })
+    form.reset({
+      name: c.name,
+      legalName: c.legal_name || '',
+      address: c.address || '',
+      phone: c.phone || '',
+      email: c.email || '',
+      website: c.website || '',
+      state: c.state || '',
+      gstin: c.gstin || '',
+      pan: c.pan || '',
+      bankDetails: c.bank_details || '',
+      currency: c.currency || 'INR',
+      logoUrl: c.logo_url || '',
+      signatureUrl: c.signature_url || '',
+      stampUrl: c.stamp_url || '',
+    })
   }
-  useEffect(() => { loadProfile().catch(() => setError("Could not load company profile. Please retry.")).finally(() => setLoading(false)) }, [form])
+  useEffect(() => {
+    loadProfile()
+      .catch(() => setError('Could not load company profile. Please retry.'))
+      .finally(() => setLoading(false)) // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form])
 
   const onSubmit = async (data: OnboardingData) => {
     setIsSubmitting(true)
     try {
       const current = await GetActiveCompany()
       await UpdateCompany({ id: current.id, ...data } as any)
-      setSaved(true); setError("")
-    } catch (error) {
-      setError("Could not save company profile. Your changes are still on this form.")
+      setSaved(true)
+      setError('')
+    } catch {
+      setError('Could not save company profile. Your changes are still on this form.')
     } finally {
       setIsSubmitting(false)
     }
@@ -51,11 +71,21 @@ export function CompanyProfile() {
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       <div>
         <h1 className="text-3xl font-heading font-bold">Company Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your business profile, branding, and tax information.</p>
+        <p className="text-muted-foreground mt-1">
+          Manage your business profile, branding, and tax information.
+        </p>
       </div>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
-      {saved && <p role="status" className="text-green-600">Company profile saved.</p>}
-      
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
+      {saved && (
+        <p role="status" className="text-green-600">
+          Company profile saved.
+        </p>
+      )}
+
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <Card>
@@ -67,7 +97,7 @@ export function CompanyProfile() {
               <StepCompanyInfo form={form} />
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader>
               <CardTitle>GST & Tax</CardTitle>
@@ -77,7 +107,7 @@ export function CompanyProfile() {
               <StepGST form={form} />
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader>
               <CardTitle>Bank Details</CardTitle>
@@ -87,11 +117,21 @@ export function CompanyProfile() {
               <StepBank form={form} />
             </CardContent>
           </Card>
-          
+
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => { loadProfile().catch(() => setError("Could not reload company profile.")); setSaved(false) }} disabled={isSubmitting}>Cancel</Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                loadProfile().catch(() => setError('Could not reload company profile.'))
+                setSaved(false)
+              }}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Saving..." : "Save Changes"}
+              {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
         </form>

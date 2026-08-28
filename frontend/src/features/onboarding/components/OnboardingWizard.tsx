@@ -1,32 +1,44 @@
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useNavigate } from "react-router-dom"
-import { Form } from "@/components/ui/form"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { onboardingSchema, type OnboardingData } from "../schemas/onboarding-schema"
+import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useNavigate } from 'react-router-dom'
+import { Form } from '@/components/ui/form'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card'
+import { onboardingSchema, type OnboardingData } from '../schemas/onboarding-schema'
 
-import { StepWelcome } from "../steps/StepWelcome"
-import { StepCompanyInfo } from "../steps/StepCompanyInfo"
-import { StepBranding } from "../steps/StepBranding"
-import { StepGST } from "../steps/StepGST"
-import { StepBank } from "../steps/StepBank"
-import { StepSignature } from "../steps/StepSignature"
-import { StepDocumentSettings } from "../steps/StepDocumentSettings"
-import { StepBackup } from "../steps/StepBackup"
+import { StepWelcome } from '../steps/StepWelcome'
+import { StepCompanyInfo } from '../steps/StepCompanyInfo'
+import { StepBranding } from '../steps/StepBranding'
+import { StepGST } from '../steps/StepGST'
+import { StepBank } from '../steps/StepBank'
+import { StepSignature } from '../steps/StepSignature'
+import { StepDocumentSettings } from '../steps/StepDocumentSettings'
+import { StepBackup } from '../steps/StepBackup'
 
-import { CompleteOnboarding } from "../../../../wailsjs/go/wails/CompanyHandler"
+import { CompleteOnboarding } from '../../../../wailsjs/go/wails/CompanyHandler'
 
 const steps = [
-  { id: "welcome", title: "Welcome to Quotier Labs", component: StepWelcome },
-  { id: "info", title: "Company Information", component: StepCompanyInfo, fields: ["name", "email", "website"] },
-  { id: "branding", title: "Branding", component: StepBranding },
-  { id: "gst", title: "GST & Tax", component: StepGST, fields: ["state", "gstin"] },
-  { id: "bank", title: "Bank Details", component: StepBank },
-  { id: "signature", title: "Signature & Stamp", component: StepSignature },
-  { id: "settings", title: "Document Settings", component: StepDocumentSettings },
-  { id: "backup", title: "Backup Recommendation", component: StepBackup },
+  { id: 'welcome', title: 'Welcome to Quotier Labs', component: StepWelcome },
+  {
+    id: 'info',
+    title: 'Company Information',
+    component: StepCompanyInfo,
+    fields: ['name', 'email', 'website'],
+  },
+  { id: 'branding', title: 'Branding', component: StepBranding },
+  { id: 'gst', title: 'GST & Tax', component: StepGST, fields: ['state', 'gstin'] },
+  { id: 'bank', title: 'Bank Details', component: StepBank },
+  { id: 'signature', title: 'Signature & Stamp', component: StepSignature },
+  { id: 'settings', title: 'Document Settings', component: StepDocumentSettings },
+  { id: 'backup', title: 'Backup Recommendation', component: StepBackup },
 ]
 
 export function OnboardingWizard() {
@@ -37,22 +49,22 @@ export function OnboardingWizard() {
   const form = useForm<OnboardingData>({
     resolver: zodResolver(onboardingSchema),
     defaultValues: {
-      name: "",
-      currency: "INR",
-      state: "",
-      legalName: "",
-      address: "",
-      phone: "",
-      email: "",
-      website: "",
-      logoUrl: "",
-      gstin: "",
-      pan: "",
-      bankDetails: "",
-      signatureUrl: "",
-      stampUrl: "",
+      name: '',
+      currency: 'INR',
+      state: '',
+      legalName: '',
+      address: '',
+      phone: '',
+      email: '',
+      website: '',
+      logoUrl: '',
+      gstin: '',
+      pan: '',
+      bankDetails: '',
+      signatureUrl: '',
+      stampUrl: '',
     },
-    mode: "onChange",
+    mode: 'onChange',
   })
 
   const nextStep = async () => {
@@ -61,7 +73,7 @@ export function OnboardingWizard() {
       const isValid = await form.trigger(stepFields as any)
       if (!isValid) return
     }
-    
+
     if (currentStep < steps.length - 1) {
       setCurrentStep((prev) => prev + 1)
     } else {
@@ -81,7 +93,7 @@ export function OnboardingWizard() {
       await CompleteOnboarding({
         ...data,
       } as any)
-      navigate("/")
+      navigate('/')
     } catch (error) {
       console.error(error)
     } finally {
@@ -101,9 +113,9 @@ export function OnboardingWizard() {
             </span>
             <div className="flex gap-1">
               {steps.map((_, i) => (
-                <div 
-                  key={i} 
-                  className={`h-2 w-8 rounded-full transition-colors ${i <= currentStep ? 'bg-primary' : 'bg-muted'}`} 
+                <div
+                  key={i}
+                  className={`h-2 w-8 rounded-full transition-colors ${i <= currentStep ? 'bg-primary' : 'bg-muted'}`}
                 />
               ))}
             </div>
@@ -111,30 +123,28 @@ export function OnboardingWizard() {
           <CardTitle className="text-2xl">{steps[currentStep].title}</CardTitle>
           <CardDescription>Set up your workspace to get started</CardDescription>
         </CardHeader>
-        
+
         <Form {...form}>
-          <form onSubmit={e => e.preventDefault()}>
+          <form onSubmit={(e) => e.preventDefault()}>
             <CardContent className="min-h-[300px]">
               <CurrentStepComponent form={form} />
             </CardContent>
-            
+
             <CardFooter className="flex justify-between border-t p-6">
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={prevStep}
                 disabled={currentStep === 0 || isSubmitting}
               >
                 Back
               </Button>
-              <Button 
-                type="button" 
-                onClick={nextStep}
-                disabled={isSubmitting}
-              >
-                {isSubmitting 
-                  ? "Setting up..." 
-                  : currentStep === steps.length - 1 ? "Complete Setup" : "Continue"}
+              <Button type="button" onClick={nextStep} disabled={isSubmitting}>
+                {isSubmitting
+                  ? 'Setting up...'
+                  : currentStep === steps.length - 1
+                    ? 'Complete Setup'
+                    : 'Continue'}
               </Button>
             </CardFooter>
           </form>

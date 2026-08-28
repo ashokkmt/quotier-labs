@@ -1,12 +1,31 @@
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { FileDown, Printer, Share2, Copy, ExternalLink, Loader2, MoreVertical } from "lucide-react"
-import { SavePDF, PrintPDF, SharePDF, OpenPDF, GenerateTempPDF } from "../../../../wailsjs/go/wails/ExportHandler"
-import { ClipboardSetText } from "../../../../wailsjs/runtime"
-import { useToast } from "@/hooks/use-toast"
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { FileDown, Printer, Share2, Copy, ExternalLink, Loader2, MoreVertical } from 'lucide-react'
+import {
+  SavePDF,
+  PrintPDF,
+  SharePDF,
+  OpenPDF,
+  GenerateTempPDF,
+} from '../../../../wailsjs/go/wails/ExportHandler'
+import { ClipboardSetText } from '../../../../wailsjs/runtime'
+import { useToast } from '@/hooks/use-toast'
 
-export function ExportActions({ companyId, quotationId, status }: { companyId: string, quotationId: string, status: string }) {
+export function ExportActions({
+  companyId,
+  quotationId,
+  status,
+}: {
+  companyId: string
+  quotationId: string
+  status: string
+}) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
 
@@ -15,10 +34,10 @@ export function ExportActions({ companyId, quotationId, status }: { companyId: s
     try {
       const path = await SavePDF(companyId, quotationId)
       if (path) {
-        toast({ title: "PDF Saved", description: `Saved to ${path}` })
+        toast({ title: 'PDF Saved', description: `Saved to ${path}` })
       }
     } catch (err: any) {
-      toast({ title: "Save Failed", description: err.message, variant: "destructive" })
+      toast({ title: 'Save Failed', description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -29,7 +48,7 @@ export function ExportActions({ companyId, quotationId, status }: { companyId: s
     try {
       await PrintPDF(companyId, quotationId)
     } catch (err: any) {
-      toast({ title: "Print Failed", description: err.message, variant: "destructive" })
+      toast({ title: 'Print Failed', description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -40,7 +59,7 @@ export function ExportActions({ companyId, quotationId, status }: { companyId: s
     try {
       await SharePDF(companyId, quotationId)
     } catch (err: any) {
-      toast({ title: "Share Failed", description: err.message, variant: "destructive" })
+      toast({ title: 'Share Failed', description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -51,7 +70,7 @@ export function ExportActions({ companyId, quotationId, status }: { companyId: s
     try {
       await OpenPDF(companyId, quotationId)
     } catch (err: any) {
-      toast({ title: "Open Failed", description: err.message, variant: "destructive" })
+      toast({ title: 'Open Failed', description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -63,21 +82,25 @@ export function ExportActions({ companyId, quotationId, status }: { companyId: s
       const path = await GenerateTempPDF(companyId, quotationId)
       if (path) {
         await ClipboardSetText(path)
-        toast({ title: "Path Copied", description: "Temporary PDF path copied to clipboard" })
+        toast({ title: 'Path Copied', description: 'Temporary PDF path copied to clipboard' })
       }
     } catch (err: any) {
-      toast({ title: "Copy Failed", description: err.message, variant: "destructive" })
+      toast({ title: 'Copy Failed', description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
   }
 
-  if (status === "DRAFT") return null
+  if (status === 'DRAFT') return null
 
   return (
     <div className="flex items-center gap-2">
       <Button variant="outline" size="sm" onClick={handleSave} disabled={loading}>
-        {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+        {loading ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        ) : (
+          <FileDown className="w-4 h-4 mr-2" />
+        )}
         Save PDF
       </Button>
 

@@ -1,16 +1,16 @@
-import { Undo, Redo } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Undo, Redo } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
-export function UndoRedoControls({ 
-  onUndo, 
-  onRedo, 
-  canUndo, 
-  canRedo 
-}: { 
-  onUndo: () => void, 
-  onRedo: () => void, 
-  canUndo: boolean, 
-  canRedo: boolean 
+export function UndoRedoControls({
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+}: {
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
 }) {
   return (
     <div className="flex items-center gap-1 border-r pr-2 mr-2">

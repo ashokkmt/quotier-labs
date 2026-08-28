@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "react"
-import { useToast } from "@/hooks/use-toast"
+import { useEffect, useRef, useState } from 'react'
+import { useToast } from '@/hooks/use-toast'
 
 export type SaveState = 'Saved' | 'Saving...' | 'Save failed - retrying' | 'Unsaved changes'
 
 export function useAutosave(
-  document: any, 
-  dirty: boolean, 
+  document: any,
+  dirty: boolean,
   onSave: (doc: any) => Promise<void>,
   clearDirty: () => void,
-  debounceMs: number = 800
+  debounceMs: number = 800,
 ) {
   const [saveState, setSaveState] = useState<SaveState>('Saved')
   const [lastSaved, setLastSaved] = useState<Date>(new Date())
@@ -30,7 +30,11 @@ export function useAutosave(
         setSaveState('Save failed - retrying')
         setTimeout(() => executeSave(docToSave), 1000 * Math.pow(2, retryCount.current)) // exponential backoff
       } else {
-        toast({ title: "Autosave failed permanently", description: "Please check your connection or save manually.", variant: "destructive" })
+        toast({
+          title: 'Autosave failed permanently',
+          description: 'Please check your connection or save manually.',
+          variant: 'destructive',
+        })
         setSaveState('Unsaved changes')
       }
     }
@@ -40,7 +44,7 @@ export function useAutosave(
     if (!dirty) return
     setSaveState('Unsaved changes')
     if (timerRef.current) clearTimeout(timerRef.current)
-    
+
     timerRef.current = setTimeout(() => {
       executeSave(document)
     }, debounceMs)
@@ -48,6 +52,7 @@ export function useAutosave(
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [document, dirty])
 
   useEffect(() => {
@@ -59,6 +64,7 @@ export function useAutosave(
     }
     window.addEventListener('blur', handleBlur)
     return () => window.removeEventListener('blur', handleBlur)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [document, dirty])
 
   useEffect(() => {
@@ -73,6 +79,7 @@ export function useAutosave(
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [document, dirty])
 
   return { saveState, lastSaved, forceSave: () => executeSave(document) }

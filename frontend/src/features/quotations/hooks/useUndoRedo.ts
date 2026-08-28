@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react"
-import type { Command } from "../commands/types"
+import { useState, useCallback } from 'react'
+import type { Command } from '../commands/types'
 
 export function useUndoRedo(initialState: any) {
   const [state, setState] = useState(initialState)
@@ -29,10 +29,10 @@ export function useUndoRedo(initialState: any) {
     if (undoStack.length === 0) return
     const cmd = undoStack[undoStack.length - 1]
     const inverted = cmd.invert()
-    
+
     setState((current: any) => inverted.apply(current))
-    setUndoStack(prev => prev.slice(0, -1))
-    setRedoStack(prev => [...prev, inverted])
+    setUndoStack((prev) => prev.slice(0, -1))
+    setRedoStack((prev) => [...prev, inverted])
     setDirty(true)
   }, [undoStack])
 
@@ -40,10 +40,10 @@ export function useUndoRedo(initialState: any) {
     if (redoStack.length === 0) return
     const cmd = redoStack[redoStack.length - 1]
     const inverted = cmd.invert() // Re-apply the original
-    
+
     setState((current: any) => inverted.apply(current))
-    setRedoStack(prev => prev.slice(0, -1))
-    setUndoStack(prev => [...prev, inverted])
+    setRedoStack((prev) => prev.slice(0, -1))
+    setUndoStack((prev) => [...prev, inverted])
     setDirty(true)
   }, [redoStack])
 
@@ -56,6 +56,6 @@ export function useUndoRedo(initialState: any) {
     canUndo: undoStack.length > 0,
     canRedo: redoStack.length > 0,
     dirty,
-    setDirty
+    setDirty,
   }
 }

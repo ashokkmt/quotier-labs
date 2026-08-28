@@ -1,8 +1,12 @@
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { useToast } from "@/hooks/use-toast"
-import { CreateBackup, RestoreBackup, ValidateBackup } from "../../../wailsjs/go/wails/BackupHandler"
-import { Download, Upload, ShieldCheck } from "lucide-react"
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { useToast } from '@/hooks/use-toast'
+import {
+  CreateBackup,
+  RestoreBackup,
+  ValidateBackup,
+} from '../../../wailsjs/go/wails/BackupHandler'
+import { Download, Upload, ShieldCheck } from 'lucide-react'
 
 export function BackupSettings() {
   const { toast } = useToast()
@@ -13,11 +17,11 @@ export function BackupSettings() {
     try {
       const info = await CreateBackup()
       if (info) {
-        toast({ title: "Backup Created", description: `Saved to ${info.path}` })
+        toast({ title: 'Backup Created', description: `Saved to ${info.path}` })
       }
     } catch (err: any) {
-      if (err !== "backup cancelled") {
-        toast({ title: "Backup Failed", description: err.toString(), variant: "destructive" })
+      if (err !== 'backup cancelled') {
+        toast({ title: 'Backup Failed', description: err.toString(), variant: 'destructive' })
       }
     } finally {
       setLoading(false)
@@ -30,21 +34,25 @@ export function BackupSettings() {
       if (!validation) return
 
       if (!validation.is_valid) {
-        toast({ title: "Invalid Backup", description: validation.error, variant: "destructive" })
+        toast({ title: 'Invalid Backup', description: validation.error, variant: 'destructive' })
         return
       }
 
-      if (!confirm(`Are you sure you want to restore? This will replace all current data with data from ${validation.info?.metadata.company_name} (Backed up: ${new Date(validation.info?.metadata.created_at || '').toLocaleDateString()})`)) {
+      if (
+        !confirm(
+          `Are you sure you want to restore? This will replace all current data with data from ${validation.info?.metadata.company_name} (Backed up: ${new Date(validation.info?.metadata.created_at || '').toLocaleDateString()})`,
+        )
+      ) {
         return
       }
 
       setLoading(true)
       await RestoreBackup(validation.info!.path)
-      toast({ title: "Restore Successful", description: "Application will now reload." })
+      toast({ title: 'Restore Successful', description: 'Application will now reload.' })
       setTimeout(() => window.location.reload(), 1500)
     } catch (err: any) {
-      if (err !== "restore cancelled") {
-        toast({ title: "Restore Failed", description: err.toString(), variant: "destructive" })
+      if (err !== 'restore cancelled') {
+        toast({ title: 'Restore Failed', description: err.toString(), variant: 'destructive' })
       }
     } finally {
       setLoading(false)
@@ -55,7 +63,9 @@ export function BackupSettings() {
     <div className="space-y-6 max-w-3xl">
       <div>
         <h2 className="text-2xl font-bold font-heading tracking-tight">Data & Backup</h2>
-        <p className="text-muted-foreground">Manage your data, create manual backups, or restore from a previous backup archive.</p>
+        <p className="text-muted-foreground">
+          Manage your data, create manual backups, or restore from a previous backup archive.
+        </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -65,7 +75,8 @@ export function BackupSettings() {
           </div>
           <h3 className="text-lg font-semibold">Create Backup</h3>
           <p className="text-sm text-muted-foreground">
-            Creates a complete, verifiable ZIP archive containing your database and application data.
+            Creates a complete, verifiable ZIP archive containing your database and application
+            data.
           </p>
           <Button onClick={handleBackup} disabled={loading} className="w-full">
             Backup Now
@@ -78,30 +89,56 @@ export function BackupSettings() {
           </div>
           <h3 className="text-lg font-semibold">Restore Data</h3>
           <p className="text-sm text-muted-foreground">
-            Restore from a ZIP archive. <strong className="text-destructive">This replaces all current data.</strong>
+            Restore from a ZIP archive.{' '}
+            <strong className="text-destructive">This replaces all current data.</strong>
           </p>
-          <Button variant="destructive" onClick={handleRestore} disabled={loading} className="w-full">
+          <Button
+            variant="destructive"
+            onClick={handleRestore}
+            disabled={loading}
+            className="w-full"
+          >
             Restore from File
           </Button>
         </div>
       </div>
-      
+
       <div className="border rounded-lg p-6 bg-card space-y-4">
         <h3 className="text-lg font-semibold">Export Data (CSV)</h3>
-        <p className="text-sm text-muted-foreground">Export your data to CSV format for external use.</p>
+        <p className="text-sm text-muted-foreground">
+          Export your data to CSV format for external use.
+        </p>
         <div className="flex gap-4">
-          <Button variant="outline" onClick={async () => {
-            try { 
-              const res = await (window as any).go.wails.BackupHandler.ExportQuotations();
-              if (res && res.success) toast({ title: "Exported", description: `Saved to ${res.path}` });
-            } catch(e: any) { if(e !== "cancelled") toast({ title: "Error", description: e.toString(), variant: "destructive" }); }
-          }}>Export Quotations</Button>
-          <Button variant="outline" onClick={async () => {
-            try { 
-              const res = await (window as any).go.wails.BackupHandler.ExportCustomers();
-              if (res && res.success) toast({ title: "Exported", description: `Saved to ${res.path}` });
-            } catch(e: any) { if(e !== "cancelled") toast({ title: "Error", description: e.toString(), variant: "destructive" }); }
-          }}>Export Customers</Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              try {
+                const res = await (window as any).go.wails.BackupHandler.ExportQuotations()
+                if (res && res.success)
+                  toast({ title: 'Exported', description: `Saved to ${res.path}` })
+              } catch (e: any) {
+                if (e !== 'cancelled')
+                  toast({ title: 'Error', description: e.toString(), variant: 'destructive' })
+              }
+            }}
+          >
+            Export Quotations
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              try {
+                const res = await (window as any).go.wails.BackupHandler.ExportCustomers()
+                if (res && res.success)
+                  toast({ title: 'Exported', description: `Saved to ${res.path}` })
+              } catch (e: any) {
+                if (e !== 'cancelled')
+                  toast({ title: 'Error', description: e.toString(), variant: 'destructive' })
+              }
+            }}
+          >
+            Export Customers
+          </Button>
         </div>
       </div>
 
@@ -111,7 +148,8 @@ export function BackupSettings() {
           <div>
             <h4 className="font-semibold">Automatic Backups</h4>
             <p className="text-sm text-muted-foreground mt-1">
-              Automatic backups are enabled and will save a copy of your database to the application directory every hour while the application is running.
+              Automatic backups are enabled and will save a copy of your database to the application
+              directory every hour while the application is running.
             </p>
           </div>
         </div>

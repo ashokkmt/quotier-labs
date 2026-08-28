@@ -1,22 +1,22 @@
-import { ArrowLeft, Save, Loader2, Eye, Edit2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { StatusBadge } from "./components/StatusBadge"
-import { ExportActions } from "./components/ExportActions"
-import { CustomerCombobox } from "../../shared/components/CustomerCombobox"
+import { ArrowLeft, Save, Loader2, Eye, Edit2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { StatusBadge } from './components/StatusBadge'
+import { ExportActions } from './components/ExportActions'
+import { CustomerCombobox } from '../../shared/components/CustomerCombobox'
 
-export function BuilderHeader({ 
-  quotation, 
-  onBack, 
-  onSave, 
-  saving, 
-  readOnly, 
+export function BuilderHeader({
+  quotation,
+  onBack,
+  onSave,
+  saving,
+  readOnly,
   onToggleReadOnly,
   onCustomerChange,
   saveIndicator,
   undoRedoControls,
   onFinalize,
   onStatusChange,
-  onSaveAsTemplate
+  onSaveAsTemplate,
 }: any) {
   if (!quotation) return null
 
@@ -29,9 +29,9 @@ export function BuilderHeader({
         <div className="h-6 w-px bg-border" />
         <div>
           <div className="flex items-center gap-2">
-        {undoRedoControls}
-        {saveIndicator}
-            <h2 className="font-bold text-lg">{quotation.number || "Draft"}</h2>
+            {undoRedoControls}
+            {saveIndicator}
+            <h2 className="font-bold text-lg">{quotation.number || 'Draft'}</h2>
             <StatusBadge status={quotation.status} />
           </div>
         </div>
@@ -40,28 +40,35 @@ export function BuilderHeader({
           {readOnly ? (
             <div className="text-sm font-medium">Customer ID: {quotation.customer_id}</div> // Simplified for view mode
           ) : (
-            <CustomerCombobox 
-              value={quotation.customer_id} 
-              onChange={onCustomerChange} 
-            />
+            <CustomerCombobox value={quotation.customer_id} onChange={onCustomerChange} />
           )}
         </div>
       </div>
-      
+
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onToggleReadOnly}>
           {readOnly ? (
-            <><Edit2 className="w-4 h-4 mr-2" /> Edit Mode</>
+            <>
+              <Edit2 className="w-4 h-4 mr-2" /> Edit Mode
+            </>
           ) : (
-            <><Eye className="w-4 h-4 mr-2" /> Preview</>
+            <>
+              <Eye className="w-4 h-4 mr-2" /> Preview
+            </>
           )}
         </Button>
-        
+
         {!readOnly && (
           <>
-            <Button variant="outline" size="sm" onClick={onSaveAsTemplate}>Save as Template</Button>
+            <Button variant="outline" size="sm" onClick={onSaveAsTemplate}>
+              Save as Template
+            </Button>
             <Button variant="default" size="sm" onClick={onSave} disabled={saving}>
-              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              {saving ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
               Save Draft
             </Button>
             <Button variant="secondary" size="sm" onClick={onFinalize}>
@@ -70,7 +77,11 @@ export function BuilderHeader({
           </>
         )}
         {readOnly && quotation.status !== 'DRAFT' && (
-          <ExportActions companyId={quotation.company_id} quotationId={quotation.id} status={quotation.status} />
+          <ExportActions
+            companyId={quotation.company_id}
+            quotationId={quotation.id}
+            status={quotation.status}
+          />
         )}
         {readOnly && quotation.status === 'FINALIZED' && (
           <Button variant="secondary" size="sm" onClick={() => onStatusChange('SENT')}>
@@ -87,7 +98,6 @@ export function BuilderHeader({
             </Button>
           </>
         )}
-
       </div>
     </div>
   )

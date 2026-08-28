@@ -1,8 +1,14 @@
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { CustomerForm } from "../../features/customers/CustomerForm"
-import { useToast } from "@/hooks/use-toast"
-import { CreateCustomer } from "../../../wailsjs/go/wails/CustomerHandler"
+import { useState } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { CustomerForm } from '../../features/customers/CustomerForm'
+import { useToast } from '@/hooks/use-toast'
+import { CreateCustomer } from '../../../wailsjs/go/wails/CustomerHandler'
 
 interface CustomerCreateDialogProps {
   open: boolean
@@ -18,10 +24,14 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess }: Customer
     setIsSubmitting(true)
     try {
       const result = await CreateCustomer(data)
-      toast({ title: "Customer created successfully" })
+      toast({ title: 'Customer created successfully' })
       if (onSuccess) onSuccess(result)
     } catch (err: any) {
-      toast({ title: "Failed to create customer", description: err.toString(), variant: "destructive" })
+      toast({
+        title: 'Failed to create customer',
+        description: err.toString(),
+        variant: 'destructive',
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -33,14 +43,15 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess }: Customer
         <DialogHeader>
           <DialogTitle>Add New Customer</DialogTitle>
           <DialogDescription>
-            Enter customer details. This information will be used for billing and quotation generation.
+            Enter customer details. This information will be used for billing and quotation
+            generation.
           </DialogDescription>
         </DialogHeader>
-        
-        <CustomerForm 
-          onSubmit={handleSubmit} 
-          onCancel={() => onOpenChange(false)} 
-          isSubmitting={isSubmitting} 
+
+        <CustomerForm
+          onSubmit={handleSubmit}
+          onCancel={() => onOpenChange(false)}
+          isSubmitting={isSubmitting}
         />
       </DialogContent>
     </Dialog>

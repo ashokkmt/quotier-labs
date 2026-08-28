@@ -1,15 +1,15 @@
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { FieldEditor } from "./FieldEditor"
-import { TableEditor } from "./TableEditor"
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { FieldEditor } from './FieldEditor'
+import { TableEditor } from './TableEditor'
 
 export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any) {
-  const [name, setName] = useState(initialData?.name || "")
-  const [description, setDescription] = useState(initialData?.description || "")
-  const [category, setCategory] = useState(initialData?.category || "")
-  
+  const [name, setName] = useState(initialData?.name || '')
+  const [description, setDescription] = useState(initialData?.description || '')
+  const [category, setCategory] = useState(initialData?.category || '')
+
   const [schemaElements, setSchemaElements] = useState(() => {
     if (initialData?.schema) {
       try {
@@ -28,7 +28,7 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
       name,
       description,
       category,
-      schema: JSON.stringify({ elements: schemaElements })
+      schema: JSON.stringify({ elements: schemaElements }),
     })
   }
 
@@ -37,26 +37,26 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2 sm:col-span-1">
           <label className="text-sm font-medium mb-1 block">Section Name</label>
-          <Input 
-            required 
-            value={name} 
-            onChange={e => setName(e.target.value)} 
+          <Input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             disabled={isBuiltin}
           />
         </div>
         <div className="col-span-2 sm:col-span-1">
           <label className="text-sm font-medium mb-1 block">Category</label>
-          <Input 
-            value={category} 
-            onChange={e => setCategory(e.target.value)} 
+          <Input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
             disabled={isBuiltin}
           />
         </div>
         <div className="col-span-2">
           <label className="text-sm font-medium mb-1 block">Description</label>
-          <Textarea 
-            value={description} 
-            onChange={e => setDescription(e.target.value)} 
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
             disabled={isBuiltin}
           />
         </div>
@@ -65,14 +65,14 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
       <div className="border-t pt-4">
         <h3 className="text-lg font-medium mb-4">Schema Definition</h3>
         <div className="space-y-8">
-          <FieldEditor 
-            fields={schemaElements} 
-            onChange={isBuiltin ? () => {} : setSchemaElements} 
+          <FieldEditor
+            fields={schemaElements}
+            onChange={isBuiltin ? () => {} : setSchemaElements}
             readOnly={isBuiltin}
           />
-          <TableEditor 
-            fields={schemaElements} 
-            onChange={isBuiltin ? () => {} : setSchemaElements} 
+          <TableEditor
+            fields={schemaElements}
+            onChange={isBuiltin ? () => {} : setSchemaElements}
             readOnly={isBuiltin}
           />
         </div>
@@ -80,13 +80,9 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
 
       <div className="flex justify-end gap-2 pt-4 border-t">
         <Button type="button" variant="outline" onClick={onCancel}>
-          {isBuiltin ? "Close" : "Cancel"}
+          {isBuiltin ? 'Close' : 'Cancel'}
         </Button>
-        {!isBuiltin && (
-          <Button type="submit">
-            Save Section
-          </Button>
-        )}
+        {!isBuiltin && <Button type="submit">Save Section</Button>}
       </div>
     </form>
   )

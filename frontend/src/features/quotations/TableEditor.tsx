@@ -1,11 +1,10 @@
-import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table"
-import type { ColumnDef } from "@tanstack/react-table"
-import { Plus, Trash } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useReactTable, getCoreRowModel, flexRender } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Plus, Trash } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export function TableEditor({ tableDef, rows, onChange, readOnly }: any) {
-  
   const updateData = (rowIndex: number, columnId: string, value: any) => {
     const newRows = [...rows]
     if (!newRows[rowIndex]) newRows[rowIndex] = {}
@@ -21,32 +20,41 @@ export function TableEditor({ tableDef, rows, onChange, readOnly }: any) {
         const val = getValue() as string
         if (readOnly) return <span>{val}</span>
         return (
-          <Input 
-            value={val || ""} 
-            onChange={(e) => updateData(row.index, c.id, e.target.value)} 
+          <Input
+            value={val || ''}
+            onChange={(e) => updateData(row.index, c.id, e.target.value)}
             className="h-8 min-w-[80px]"
           />
         )
-      }
+      },
     })),
-    ...(readOnly ? [] : [{
-      id: "actions",
-      cell: ({ row }: any) => (
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
-          const newRows = [...rows]
-          newRows.splice(row.index, 1)
-          onChange(newRows)
-        }}>
-          <Trash className="w-3 h-3" />
-        </Button>
-      )
-    }])
+    ...(readOnly
+      ? []
+      : [
+          {
+            id: 'actions',
+            cell: ({ row }: any) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive"
+                onClick={() => {
+                  const newRows = [...rows]
+                  newRows.splice(row.index, 1)
+                  onChange(newRows)
+                }}
+              >
+                <Trash className="w-3 h-3" />
+              </Button>
+            ),
+          },
+        ]),
   ]
 
   const table = useReactTable({
     data: rows || [],
     columns,
-    getCoreRowModel: getCoreRowModel()
+    getCoreRowModel: getCoreRowModel(),
   })
 
   return (
@@ -86,9 +94,13 @@ export function TableEditor({ tableDef, rows, onChange, readOnly }: any) {
         </table>
       </div>
       {!readOnly && (
-        <Button variant="outline" size="sm" onClick={() => {
-          onChange([...(rows || []), {}])
-        }}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onChange([...(rows || []), {}])
+          }}
+        >
           <Plus className="w-4 h-4 mr-2" /> Add Row
         </Button>
       )}

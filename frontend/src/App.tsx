@@ -37,7 +37,7 @@ const router = createBrowserRouter([
     children: [
       {
         path: 'sections',
-        element: <SectionLibrary />
+        element: <SectionLibrary />,
       },
       {
         index: true,
@@ -45,9 +45,13 @@ const router = createBrowserRouter([
       },
       {
         path: 'quotations',
-        element: <QuotationList />
+        element: <QuotationList />,
       },
-      { path: 'quotations/new', element: <FocusedWorkspaceLayout />, children: [{ index: true, element: <NewQuotation /> }] },
+      {
+        path: 'quotations/new',
+        element: <FocusedWorkspaceLayout />,
+        children: [{ index: true, element: <NewQuotation /> }],
+      },
       {
         path: 'quotations/:id/edit',
         element: <FocusedWorkspaceLayout />,
@@ -57,7 +61,11 @@ const router = createBrowserRouter([
         path: 'templates',
         element: <TemplateList />,
       },
-      { path: 'templates/:id/edit', element: <FocusedWorkspaceLayout />, children: [{ index: true, element: <TemplateBuilderWrapper /> }] },
+      {
+        path: 'templates/:id/edit',
+        element: <FocusedWorkspaceLayout />,
+        children: [{ index: true, element: <TemplateBuilderWrapper /> }],
+      },
       {
         path: 'customers',
         element: <CustomerList />,
@@ -74,13 +82,16 @@ const router = createBrowserRouter([
   },
 ])
 
-
 function QuotationBuilderWrapper() {
   const { id } = useParams()
   const navigate = useNavigate()
   return <QuotationBuilder quotationId={id!} onBack={() => navigate('/quotations')} />
 }
-function TemplateBuilderWrapper() { const { id } = useParams(); const navigate = useNavigate(); return <TemplateBuilder templateId={id!} onBack={() => navigate('/templates')} /> }
+function TemplateBuilderWrapper() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  return <TemplateBuilder templateId={id!} onBack={() => navigate('/templates')} />
+}
 
 function App() {
   return (

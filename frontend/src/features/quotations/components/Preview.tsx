@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
-import { GetQuotationPreviewPDF } from "../../../../wailsjs/go/wails/DocumentHandler"
-import { Loader2 } from "lucide-react"
+import { useState, useEffect } from 'react'
+import { GetQuotationPreviewPDF } from '../../../../wailsjs/go/wails/DocumentHandler'
+import { Loader2 } from 'lucide-react'
 
 interface PreviewProps {
   companyId: string
@@ -26,7 +26,7 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
         }
       } catch (err: any) {
         if (isMounted) {
-          setError(err.message || "Failed to generate preview")
+          setError(err.message || 'Failed to generate preview')
         }
       } finally {
         if (isMounted) {
@@ -65,11 +65,7 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
         </div>
       )}
       {pdfDataUri && (
-        <object
-          data={pdfDataUri}
-          type="application/pdf"
-          className="w-full h-full min-h-[800px]"
-        >
+        <object data={pdfDataUri} type="application/pdf" className="w-full h-full min-h-[800px]">
           <p>It appears your browser does not support PDFs. Please download the PDF to view it.</p>
         </object>
       )}

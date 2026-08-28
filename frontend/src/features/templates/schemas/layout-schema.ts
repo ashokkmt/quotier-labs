@@ -1,4 +1,4 @@
-export type ColumnWidth = "100%" | "50%" | "33%" | "66%"
+export type ColumnWidth = '100%' | '50%' | '33%' | '66%'
 
 export interface SectionInstance {
   id: string

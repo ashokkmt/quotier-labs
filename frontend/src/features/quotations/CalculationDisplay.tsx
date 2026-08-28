@@ -1,24 +1,23 @@
-
 export function CalculationDisplay({ result }: { result: any | null }) {
-  if (!result) return null;
+  if (!result) return null
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'INR'
+      currency: 'INR',
     }).format(val / 100)
   }
 
   return (
     <div className="bg-background border rounded-lg p-6 shadow-sm min-w-[300px]">
       <h3 className="text-lg font-semibold mb-4 border-b pb-2">Quotation Summary</h3>
-      
+
       <div className="space-y-3 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Subtotal:</span>
           <span className="font-medium">{formatCurrency(result.subtotal || 0)}</span>
         </div>
-        
+
         {result.discount_total > 0 && (
           <div className="flex justify-between text-destructive">
             <span>Discount:</span>

@@ -1,16 +1,16 @@
-import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
-import { Button } from "@/components/ui/button"
-import { SelectImage } from "../../../../wailsjs/go/wails/CompanyHandler"
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form'
+import { Button } from '@/components/ui/button'
+import { SelectImage } from '../../../../wailsjs/go/wails/CompanyHandler'
 
 export function StepBranding({ form }: any) {
   const handleUpload = async (field: any) => {
     try {
-      const path = await SelectImage("Select Company Logo")
+      const path = await SelectImage('Select Company Logo')
       if (path) {
         field.onChange(path)
       }
     } catch (err: any) {
-      alert("Upload failed: " + err)
+      alert('Upload failed: ' + err)
     }
   }
 
@@ -30,7 +30,11 @@ export function StepBranding({ form }: any) {
                 <Button type="button" variant="outline" onClick={() => handleUpload(field)}>
                   Choose Image
                 </Button>
-                {field.value && <span className="text-sm text-muted-foreground overflow-hidden text-ellipsis w-64">{field.value}</span>}
+                {field.value && (
+                  <span className="text-sm text-muted-foreground overflow-hidden text-ellipsis w-64">
+                    {field.value}
+                  </span>
+                )}
               </div>
             </FormControl>
             <FormMessage />
