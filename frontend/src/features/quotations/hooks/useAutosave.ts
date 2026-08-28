@@ -24,7 +24,7 @@ export function useAutosave(
       setLastSaved(new Date())
       clearDirty()
       retryCount.current = 0
-    } catch (err) {
+    } catch {
       if (retryCount.current < 3) {
         retryCount.current += 1
         setSaveState('Save failed - retrying')

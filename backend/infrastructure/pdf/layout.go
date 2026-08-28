@@ -3,6 +3,7 @@ package pdf
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-pdf/fpdf"
 
@@ -56,7 +57,7 @@ func (le *LayoutEngine) renderBlock(block quotation.Block) error {
 	if !block.Visible {
 		return nil
 	}
-	if block.WidgetType == "container" || block.WidgetType == "" {
+	if block.Kind == "container" || block.WidgetType == "container" || block.WidgetType == "" {
 		for _, child := range block.Children {
 			if err := le.renderBlock(child); err != nil {
 				return err
@@ -66,12 +67,16 @@ func (le *LayoutEngine) renderBlock(block quotation.Block) error {
 	}
 	pdf := le.pdf
 	text := func() string {
+		if value, ok := block.Settings["value"]; ok && value != nil {
+			return fmt.Sprint(value)
+		}
 		if value, ok := block.Settings["text"]; ok && value != nil {
 			return fmt.Sprint(value)
 		}
 		return ""
 	}
-	switch block.WidgetType {
+	widgetType := strings.TrimPrefix(block.WidgetType, "field.")
+	switch widgetType {
 	case "heading":
 		if value := text(); value != "" {
 			pdf.SetFont("Arial", "B", 14)
@@ -83,9 +88,9 @@ func (le *LayoutEngine) renderBlock(block quotation.Block) error {
 			pdf.MultiCell(0, 6, value, "", "L", false)
 		}
 	case "number", "currency", "date", "select", "boolean":
-		if value, ok := block.Settings["value"]; ok && value != nil && fmt.Sprint(value) != "" {
+		if value := text(); value != "" {
 			pdf.SetFont("Arial", "", 10)
-			pdf.CellFormat(0, 6, fmt.Sprint(value), "", 1, "L", false, 0, "")
+			pdf.CellFormat(0, 6, value, "", 1, "L", false, 0, "")
 		}
 	case "divider":
 		pageWidth, _ := pdf.GetPageSize()

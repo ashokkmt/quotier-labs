@@ -1,129 +1,118 @@
-import { useCallback, useEffect, useRef } from 'react'
-import { useBuilderStore } from '../document/store'
+import { useEffect, useMemo, useRef } from 'react'
 import { CanvasNode } from './CanvasNode'
 import { Overlay } from './Overlay'
-import { usePointerDrag } from '../interaction/usePointerDrag'
-import { hitDropZone, RectCache } from '../geometry/hitTest'
-import { predictPlacement, type PlacementIntent } from '../geometry/placement'
+import { useBuilderStore } from '../document/store'
+import { resolvePlacement } from '../geometry/placement'
 
 export function Canvas() {
-  const store = useBuilderStore()
-  const containerRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const rootId = useBuilderStore((state) => state.rootId)
+  const nodes = useBuilderStore((state) => state.nodes)
+  const drag = useBuilderStore((state) => state.drag)
+  const setDrag = useBuilderStore((state) => state.setDrag)
+  const selectNode = useBuilderStore((state) => state.selectNode)
+  const hoverNode = useBuilderStore((state) => state.hoverNode)
+  const commitPlan = useBuilderStore((state) => state.commitPlan)
+  const deleteSelected = useBuilderStore((state) => state.deleteSelected)
+  const duplicateSelected = useBuilderStore((state) => state.duplicateSelected)
+  const copySelected = useBuilderStore((state) => state.copySelected)
+  const pasteIntoSelection = useBuilderStore((state) => state.pasteIntoSelection)
+  const document = useMemo(() => ({ schemaVersion: 4 as const, rootId, nodes }), [rootId, nodes])
 
-  // Expose geometry cache
-  const rectCache = useRef(new RectCache())
+  useEffect(() => {
+    if (!drag?.active || !hostRef.current) return
+    const rects: Record<string, DOMRect> = {}
+    hostRef.current.querySelectorAll<HTMLElement>('[data-builder-node]').forEach((element) => {
+      const id = element.dataset.builderNode
+      if (id) rects[id] = element.getBoundingClientRect()
+    })
+    const plan = resolvePlacement(document, drag.source, rects, { x: drag.x, y: drag.y })
+    setDrag((current) => (current ? { ...current, resolution: plan } : null))
+  }, [document, drag?.active, drag?.x, drag?.y, drag?.source, setDrag])
 
-  const handleCommit = useCallback(
-    (source: any, resolution: PlacementIntent | null) => {
-      if (!resolution) return
-      const id =
-        source.type === 'create' ? `n_${Math.random().toString(36).substring(2, 9)}` : source.nodeId
-
-      if (source.type === 'create') {
-        const newNode = {
-          id,
-          kind:
-            source.widget === 'section'
-              ? 'section'
-              : source.widget === 'container'
-                ? 'row'
-                : ('column' as any), // naive mapping for now
-          widget: source.widget,
-          parentId: resolution.parentId,
-          children: [],
-          props: {},
-          style: {},
-          meta: { visible: true, optional: false },
-        }
-
-        if (resolution.intent === 'wrap-left' || resolution.intent === 'wrap-right') {
-          store.wrapInRow(resolution.targetId!, newNode, resolution.intent === 'wrap-left')
-        } else {
-          store.addNode(newNode, resolution.parentId, resolution.index)
-        }
-      } else if (source.type === 'move') {
-        if (resolution.intent === 'wrap-left' || resolution.intent === 'wrap-right') {
-          store.wrapInRow(resolution.targetId!, store.nodes[id], resolution.intent === 'wrap-left')
-        } else {
-          store.moveNode(id, resolution.parentId, resolution.index)
-        }
-      }
-    },
-    [store],
-  )
-
-  const { drag, setResolution } = usePointerDrag(handleCommit)
-
-  // Listen to drag updates and calculate placement
   useEffect(() => {
     if (!drag) return
-    rectCache.current.beginFrame()
-
-    const provider = {
-      elementFromPoint: (x: number, y: number) => {
-        // Find element at point, ignoring the overlay
-        return document.elementFromPoint(x, y)
-      },
-      rectFor: (id: string) => {
-        return rectCache.current.read(id, () => {
-          const el = document.querySelector(`[data-builder-node="${id}"]`)
-          return el ? el.getBoundingClientRect() : undefined
-        })
-      },
+    const move = (event: PointerEvent) =>
+      setDrag((current) =>
+        current
+          ? {
+              ...current,
+              x: event.clientX,
+              y: event.clientY,
+              active:
+                current.active ||
+                Math.hypot(event.clientX - current.startX, event.clientY - current.startY) >= 4,
+            }
+          : null,
+      )
+    const end = () => {
+      const current = useBuilderStore.getState().drag
+      if (current?.active && current.resolution) commitPlan(current.resolution, current.source)
+      else setDrag(null)
     }
-
-    const dropZoneId = hitDropZone(provider, drag.x, drag.y, store.nodes)
-    if (!dropZoneId) {
-      setResolution(null)
-      return
+    const cancel = () => setDrag(null)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end, { once: true })
+    window.addEventListener('pointercancel', cancel, { once: true })
+    window.addEventListener('keydown', (event) => event.key === 'Escape' && cancel(), {
+      once: true,
+    })
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', cancel)
     }
-
-    const parentNode = store.nodes[dropZoneId]
-    const childrenNodes = parentNode.children.map((id) => store.nodes[id]).filter(Boolean)
-
-    // Get rects for children
-    const rects: Record<string, DOMRect> = {}
-    for (const child of childrenNodes) {
-      const rect = provider.rectFor(child.id)
-      if (rect) rects[child.id] = rect
-    }
-
-    const resolution = predictPlacement(parentNode, childrenNodes, rects, { x: drag.x, y: drag.y })
-    setResolution(resolution)
-  }, [drag?.x, drag?.y, store.nodes]) // run when drag pos changes
+  }, [drag, commitPlan, setDrag])
 
   return (
     <div
-      ref={containerRef}
-      className="relative w-full h-full min-h-[800px] bg-white text-black shadow-lg rounded overflow-hidden"
-      onClick={(e) => {
-        const target = e.target as HTMLElement
-        const nodeEl = target.closest('[data-builder-node]') as HTMLElement
-        if (nodeEl?.dataset.builderNode) {
-          store.selectNode(nodeEl.dataset.builderNode)
-        } else {
-          store.selectNode(null)
+      ref={hostRef}
+      tabIndex={0}
+      className="relative min-h-[1123px] w-full bg-white text-black shadow-lg outline-none"
+      onKeyDown={(event) => {
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault()
+          deleteSelected()
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+          event.preventDefault()
+          duplicateSelected()
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
+          event.preventDefault()
+          copySelected()
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
+          event.preventDefault()
+          pasteIntoSelection()
         }
       }}
+      onClick={(event) => {
+        const element = (event.target as HTMLElement).closest<HTMLElement>('[data-builder-node]')
+        selectNode(element?.dataset.builderNode ?? null)
+      }}
+      onPointerMove={(event) => {
+        if (drag) return
+        hoverNode(
+          (event.target as HTMLElement).closest<HTMLElement>('[data-builder-node]')?.dataset
+            .builderNode ?? null,
+        )
+      }}
+      onPointerLeave={() => hoverNode(null)}
     >
-      <div
-        className="w-full h-full isolate pointer-events-auto p-8"
-        onPointerMove={(e) => {
-          if (drag) return
-          const target = e.target as HTMLElement
-          const nodeEl = target.closest('[data-builder-node]') as HTMLElement
-          if (nodeEl?.dataset.builderNode) {
-            store.hoverNode(nodeEl.dataset.builderNode)
-          } else {
-            store.hoverNode(null)
-          }
-        }}
-        onPointerLeave={() => store.hoverNode(null)}
-      >
-        <CanvasNode id={store.rootId} />
+      <div className="p-8 min-h-[1123px]">
+        {nodes[rootId].children.length ? (
+          <CanvasNode id={rootId} />
+        ) : (
+          <div
+            data-builder-node={rootId}
+            className="min-h-[1000px] border-2 border-dashed rounded text-muted-foreground flex items-center justify-center"
+          >
+            Drop or add content here
+          </div>
+        )}
       </div>
-
-      <Overlay dragResolution={drag?.resolution} />
+      <Overlay hostRef={hostRef} plan={drag?.resolution} />
     </div>
   )
 }

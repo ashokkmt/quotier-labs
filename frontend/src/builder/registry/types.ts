@@ -1,4 +1,4 @@
-import type { BuilderNode, NodeKind } from '../document/model'
+import type { BuilderNode, LayoutProps, NodeRole } from '../document/model'
 export type SchemaField = {
   key: string
   kind:
@@ -17,13 +17,14 @@ export type WidgetDefinition = {
   type: string
   category: 'structure' | 'field' | 'content' | 'builtin-section'
   metadata: { label: string; icon?: string; description?: string }
-  defaults: () => Partial<BuilderNode>
-  propSchema: SchemaField[]
-  styleSchema: SchemaField[]
-  capabilities: {
-    canHaveChildren: boolean
-    allowedParents: NodeKind[] | '*'
-    allowedChildren: Array<NodeKind | 'field' | 'table'> | '*'
+  role: Exclude<NodeRole, 'root'>
+  defaults: () => {
+    props?: Record<string, unknown>
+    layout?: LayoutProps
+    meta?: Partial<BuilderNode['meta']>
   }
+  propSchema: SchemaField[]
+  layoutSchema: SchemaField[]
+  capabilities: { allowedParents: '*' | NodeRole[]; horizontal: boolean }
   render: (node: BuilderNode) => RenderOutput
 }

@@ -4,6 +4,7 @@ import { Canvas } from './canvas/Canvas'
 import { Inspector } from './inspector/Inspector'
 import { getWidget } from './registry/registry'
 import { BlockLibraryPanel } from '../features/quotations/components/BlockLibraryPanel'
+import { Navigator } from './canvas/Navigator'
 import type { DocumentModel } from './document/model'
 
 export function BuilderEngine({
@@ -43,7 +44,10 @@ export function BuilderEngine({
 
   return (
     <div className="flex w-full h-full bg-muted/20">
-      <BlockLibraryPanel />
+      <div className="w-60 shrink-0 border-r overflow-y-auto">
+        <BlockLibraryPanel />
+        <Navigator />
+      </div>
 
       <div className="flex-1 p-8 overflow-y-auto overflow-x-hidden flex justify-center">
         <div className="w-[794px] min-h-[1123px] shrink-0 origin-top">
@@ -57,15 +61,10 @@ export function BuilderEngine({
           onUpdate={(key: string, value: unknown) => {
             if (store.selectedNodeId) {
               const node = store.nodes[store.selectedNodeId]
-              const widget = getWidget(node.widget)
-              const isStyle = widget?.styleSchema.some((s) => s.key === key)
-              if (isStyle) {
-                store.updateNode(store.selectedNodeId, {
-                  style: { ...node.style, [key]: value } as any,
-                })
-              } else {
-                store.updateProp(store.selectedNodeId, key, value)
-              }
+              const widget = getWidget(node.type)
+              const isLayout = widget?.layoutSchema.some((field) => field.key === key)
+              if (isLayout) store.updateLayout(store.selectedNodeId, key, value)
+              else store.updateProp(store.selectedNodeId, key, value)
             }
           }}
         />

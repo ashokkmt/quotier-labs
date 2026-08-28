@@ -1,80 +1,117 @@
-import type { BuilderNode } from '../document/model'
-export type PlacementIntent = {
-  intent:
-    'before' | 'after' | 'inside' | 'wrap-left' | 'wrap-right' | 'escape-before' | 'escape-after'
+import type { DocumentModel } from '../document/model'
+import { isContainer } from '../document/model'
+import { getWidget } from '../registry/registry'
+import type { DragSource } from '../document/store'
+
+export type RectLike = { left: number; top: number; width: number; height: number }
+export type OperationPlan = {
+  operation: 'insert' | 'move' | 'wrap-beside'
   parentId: string
   index: number
   targetId?: string
+  side?: 'left' | 'right'
+  preview: 'line' | 'inside' | 'split'
+  explanation: string
 }
-export type RectLike = { left: number; top: number; width: number; height: number }
 
-export function predictPlacement(
-  parent: BuilderNode,
-  children: BuilderNode[],
+const contains = (rect: RectLike, x: number, y: number) =>
+  x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height
+const band = (size: number) => Math.max(24, Math.min(72, size * 0.18))
+
+export function resolvePlacement(
+  document: DocumentModel,
+  source: DragSource,
   rects: Record<string, RectLike>,
   pointer: { x: number; y: number },
-): PlacementIntent {
-  if (!children.length) return { intent: 'inside', parentId: parent.id, index: 0 }
-
-  const isHorizontal = parent.props.direction === 'horizontal'
-
-  for (let index = 0; index < children.length; index++) {
-    const target = children[index]
-    const rect = rects[target.id]
-    if (!rect) continue
-
-    // Check if pointer is vertically within this child's rect (with some padding)
-    if (pointer.y >= rect.top && pointer.y <= rect.top + rect.height) {
-      // If we are in a vertical layout, check for 50/50 wrap (left/right 15% bands)
+): OperationPlan | null {
+  const sourceType = source.type === 'create' ? source.widget : document.nodes[source.nodeId]?.type
+  const sourceDef = sourceType ? getWidget(sourceType) : undefined
+  if (!sourceDef) return null
+  const candidates = Object.values(document.nodes)
+    .filter(isContainer)
+    .filter((node) => rects[node.id] && contains(rects[node.id], pointer.x, pointer.y))
+    .sort((a, b) => rects[a.id].width * rects[a.id].height - rects[b.id].width * rects[b.id].height)
+  for (const parent of candidates) {
+    if (!(
+      sourceDef.capabilities.allowedParents === '*' ||
+      sourceDef.capabilities.allowedParents.includes(parent.role)
+    ))
+      continue
+    const children = parent.children.map((id) => document.nodes[id]).filter(Boolean)
+    if (!children.length)
+      return {
+        operation: source.type === 'move' ? 'move' : 'insert',
+        parentId: parent.id,
+        index: 0,
+        preview: 'inside',
+        explanation: 'Place in empty container',
+      }
+    const horizontal = parent.layout.direction === 'horizontal'
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index]
+      const rect = rects[child.id]
+      if (!rect || !contains(rect, pointer.x, pointer.y)) continue
       if (
-        !isHorizontal &&
-        target.style.width !== 'half' &&
-        target.style.width !== 'third' &&
-        target.style.width !== 'two-thirds'
+        !horizontal &&
+        sourceDef.capabilities.horizontal &&
+        (pointer.x - rect.left < band(rect.width) ||
+          rect.left + rect.width - pointer.x < band(rect.width))
       ) {
-        const band = rect.width * 0.15
-        if (pointer.x >= rect.left && pointer.x <= rect.left + band) {
-          return { intent: 'wrap-left', parentId: parent.id, index, targetId: target.id }
-        }
-        if (pointer.x >= rect.left + rect.width - band && pointer.x <= rect.left + rect.width) {
-          return { intent: 'wrap-right', parentId: parent.id, index, targetId: target.id }
+        return {
+          operation: 'wrap-beside',
+          parentId: parent.id,
+          index,
+          targetId: child.id,
+          side: pointer.x - rect.left < band(rect.width) ? 'left' : 'right',
+          preview: 'split',
+          explanation: 'Place side by side',
         }
       }
-
-      // Normal before/after prediction based on axis
-      const axis = isHorizontal ? pointer.x : pointer.y
-      const midpoint =
-        (isHorizontal ? rect.left : rect.top) + (isHorizontal ? rect.width : rect.height) / 2
-
-      if (axis < midpoint) {
-        return { intent: 'before', parentId: parent.id, index, targetId: target.id }
+      const axis = horizontal ? pointer.x - rect.left : pointer.y - rect.top
+      const middle = (horizontal ? rect.width : rect.height) / 2
+      return {
+        operation: source.type === 'move' ? 'move' : 'insert',
+        parentId: parent.id,
+        index: axis < middle ? index : index + 1,
+        targetId: child.id,
+        preview: 'line',
+        explanation: axis < middle ? 'Insert before' : 'Insert after',
       }
     }
+    const last = children[children.length - 1]
+    return {
+      operation: source.type === 'move' ? 'move' : 'insert',
+      parentId: parent.id,
+      index: children.length,
+      targetId: last.id,
+      preview: 'line',
+      explanation: 'Insert at end',
+    }
   }
-
-  return {
-    intent: 'after',
-    parentId: parent.id,
-    index: children.length,
-    targetId: children[children.length - 1].id,
-  }
+  const root = document.nodes[document.rootId]
+  return sourceDef.capabilities.allowedParents === '*' ||
+    sourceDef.capabilities.allowedParents.includes(root.role)
+    ? {
+        operation: source.type === 'move' ? 'move' : 'insert',
+        parentId: root.id,
+        index: root.children.length,
+        preview: 'inside',
+        explanation: 'Place in document body',
+      }
+    : null
 }
 
 export function alignmentGuides(active: RectLike, siblings: RectLike[], threshold = 6) {
   const guides: Array<{ axis: 'x' | 'y'; position: number }> = []
-  for (const sibling of siblings) {
-    for (const [a, b] of [
-      [active.left, sibling.left],
-      [active.left + active.width, sibling.left + sibling.width],
-      [active.left + active.width / 2, sibling.left + sibling.width / 2],
-    ] as Array<[number, number]>)
-      if (Math.abs(a - b) <= threshold) guides.push({ axis: 'x', position: b })
-    for (const [a, b] of [
-      [active.top, sibling.top],
-      [active.top + active.height, sibling.top + sibling.height],
-      [active.top + active.height / 2, sibling.top + sibling.height / 2],
-    ] as Array<[number, number]>)
-      if (Math.abs(a - b) <= threshold) guides.push({ axis: 'y', position: b })
-  }
+  for (const sibling of siblings)
+    for (const [axis, own, theirs] of [
+      ['x', active.left, sibling.left],
+      ['x', active.left + active.width, sibling.left + sibling.width],
+      ['x', active.left + active.width / 2, sibling.left + sibling.width / 2],
+      ['y', active.top, sibling.top],
+      ['y', active.top + active.height, sibling.top + sibling.height],
+      ['y', active.top + active.height / 2, sibling.top + sibling.height / 2],
+    ] as Array<['x' | 'y', number, number]>)
+      if (Math.abs(own - theirs) <= threshold) guides.push({ axis, position: theirs })
   return guides
 }

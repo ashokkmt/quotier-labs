@@ -3,110 +3,55 @@ import { useBuilderStore } from '../document/store'
 import { getWidget } from '../registry/registry'
 import { cn } from '../../lib/utils'
 
+const padding = { none: 'p-0', xs: 'p-1', sm: 'p-2', md: 'p-4', lg: 'p-8' }
+const gap = { none: 'gap-0', xs: 'gap-1', sm: 'gap-2', md: 'gap-4', lg: 'gap-8' }
+
 export const CanvasNode = memo(function CanvasNode({ id }: { id: string }) {
-  const node = useBuilderStore((s) => s.nodes[id])
-  const isHovered = useBuilderStore((s) => s.hoveredNodeId === id)
-  const isSelected = useBuilderStore((s) => s.selectedNodeId === id)
-  const beginDrag = useBuilderStore((s) => s.setDrag)
-  const rootId = useBuilderStore((s) => s.rootId)
-
+  const node = useBuilderStore((state) => state.nodes[id])
   if (!node) return null
-
-  const widget = getWidget(node.widget)
-  if (!widget) return <div className="text-red-500">Unknown widget: {node.widget}</div>
-
-  const output = widget.render(node)
-
-  // Base structural classes based on style tokens
-  const widthClass =
-    node.style.width === 'half'
-      ? 'w-1/2'
-      : node.style.width === 'third'
-        ? 'w-1/3'
-        : node.style.width === 'two-thirds'
-          ? 'w-2/3'
-          : 'w-full'
-  const spacingClass =
-    node.style.spacing === 'sm'
-      ? 'p-2'
-      : node.style.spacing === 'lg'
-        ? 'p-8'
-        : node.style.spacing === 'none'
-          ? 'p-0'
-          : 'p-4'
-  const alignClass =
-    node.style.align === 'center'
-      ? 'text-center'
-      : node.style.align === 'right'
-        ? 'text-right'
-        : 'text-left'
-
-  // Flex layouts
-  const isHorizontal = node.props.direction === 'horizontal'
-  const layoutClass =
-    output.role === 'container' ? (isHorizontal ? 'flex flex-row flex-wrap' : 'flex flex-col') : ''
-
+  const definition = node.role === 'root' ? undefined : getWidget(node.type)
+  const output = definition?.render(node)
+  const isContainer = node.role === 'root' || node.role === 'container'
+  const horizontal = node.layout.direction === 'horizontal'
+  const basis = node.layout.basis ? `${node.layout.basis / 100}%` : undefined
   return (
     <div
       data-builder-node={id}
       className={cn(
-        'relative group',
-        widthClass,
-        spacingClass,
-        alignClass,
-        layoutClass,
+        isContainer && 'min-w-0',
+        isContainer && (horizontal ? 'flex flex-row flex-wrap' : 'flex flex-col'),
+        isContainer && gap[node.layout.gap ?? 'md'],
+        isContainer && padding[node.layout.padding ?? 'none'],
         !node.meta.visible && 'opacity-50 grayscale',
+        node.role === 'widget' && 'min-w-0',
       )}
+      style={{
+        flexBasis: basis,
+        flexGrow: node.layout.basis ? 0 : 1,
+        textAlign: node.layout.textAlign,
+      }}
     >
-      {(isHovered || isSelected) && id !== rootId && (
-        <div
-          className="absolute -top-3 -left-3 bg-blue-500 text-white w-6 h-6 flex items-center justify-center rounded cursor-grab z-10"
-          onPointerDown={(e) => {
-            if (e.button !== 0) return
-            e.preventDefault()
-            e.stopPropagation()
-            beginDrag({
-              source: { type: 'move', nodeId: id },
-              x: e.clientX,
-              y: e.clientY,
-              resolution: null,
-            })
-          }}
-        >
-          ☷
-        </div>
-      )}
-
-      {output.role === 'content' && (
-        <div className="prose prose-sm max-w-none break-words">
+      {output?.role === 'content' && (
+        <div className="break-words whitespace-pre-wrap">
           {output.text || (
-            <span className="text-muted-foreground opacity-50">Empty {widget.metadata.label}</span>
+            <span className="text-muted-foreground">Empty {definition?.metadata.label}</span>
           )}
         </div>
       )}
-
-      {output.role === 'media' && (
-        <div className="bg-muted min-h-[100px] flex items-center justify-center rounded border border-dashed">
+      {output?.role === 'media' && (
+        <div className="min-h-24 border border-dashed rounded flex items-center justify-center overflow-hidden">
           {output.text ? (
             <img src={output.text} alt="" className="max-w-full h-auto" />
           ) : (
-            <span className="text-muted-foreground">Image Placeholder</span>
+            <span className="text-muted-foreground">Image</span>
           )}
         </div>
       )}
-
-      {output.role === 'divider' && <hr className="my-4 border-t-2" />}
-
-      {output.role === 'table' && (
-        <div className="border rounded p-4 text-center text-muted-foreground bg-muted/20">
-          Table Component Placeholder
-        </div>
+      {output?.role === 'divider' && <hr className="w-full border-t" />}
+      {output?.role === 'table' && (
+        <div className="border rounded p-4 text-muted-foreground">Table</div>
       )}
-
-      {/* Render children for containers */}
-      {node.children.map((childId) => (
-        <CanvasNode key={childId} id={childId} />
-      ))}
+      {isContainer && node.children.map((child) => <CanvasNode key={child} id={child} />)}
     </div>
   )
 })

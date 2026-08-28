@@ -12,9 +12,11 @@ const MaxDepth = 8
 type BlockKind string
 
 const (
-	BlockSection BlockKind = "section"
-	BlockRow     BlockKind = "row"
-	BlockColumn  BlockKind = "column"
+	BlockSection   BlockKind = "section"
+	BlockRow       BlockKind = "row"
+	BlockColumn    BlockKind = "column"
+	BlockContainer BlockKind = "container"
+	BlockWidget    BlockKind = "widget"
 )
 
 // Block is the single recursive structural node used by templates and documents.
@@ -35,6 +37,7 @@ type Block struct {
 	Settings            map[string]interface{} `json:"settings,omitempty"`
 	Layout              map[string]interface{} `json:"layout,omitempty"`
 	Metadata            map[string]interface{} `json:"metadata,omitempty"`
+	Role                string                 `json:"role,omitempty"`
 }
 
 type Field struct {
@@ -67,7 +70,9 @@ type Table struct {
 func CanContain(parent, child BlockKind) bool {
 	switch parent {
 	case "root":
-		return child == BlockSection || child == BlockRow
+		return child == BlockSection || child == BlockRow || child == BlockContainer || child == BlockWidget
+	case BlockContainer:
+		return child == BlockContainer || child == BlockWidget
 	case BlockSection:
 		return child == BlockSection || child == BlockRow
 	case BlockRow:
@@ -91,10 +96,10 @@ func validateBlock(b Block, depth int, ancestors map[string]bool) error {
 	if ancestors[b.ID] {
 		return domain.ErrCycle
 	}
-	if b.Kind != BlockSection && b.Kind != BlockRow && b.Kind != BlockColumn {
+	if b.Kind != BlockSection && b.Kind != BlockRow && b.Kind != BlockColumn && b.Kind != BlockContainer && b.Kind != BlockWidget {
 		return fmt.Errorf("invalid block kind %q", b.Kind)
 	}
-	if b.Kind != BlockSection && (len(b.Fields) > 0 || len(b.Tables) > 0) {
+	if b.Kind != BlockSection && b.Kind != BlockWidget && (len(b.Fields) > 0 || len(b.Tables) > 0) {
 		return domain.ErrFieldsOutsideSection
 	}
 	next := make(map[string]bool, len(ancestors)+1)
@@ -109,6 +114,9 @@ func validateBlock(b Block, depth int, ancestors map[string]bool) error {
 		if err := validateBlock(child, depth+1, next); err != nil {
 			return err
 		}
+	}
+	if b.Kind == BlockWidget && len(b.Children) > 0 {
+		return domain.ErrInvalidParent
 	}
 	return nil
 }
@@ -140,6 +148,8 @@ type Layout struct {
 type layoutNode struct {
 	ID         string                 `json:"id"`
 	Kind       BlockKind              `json:"kind"`
+	Role       string                 `json:"role,omitempty"`
+	Type       string                 `json:"type,omitempty"`
 	Widget     string                 `json:"widget,omitempty"`
 	WidgetType string                 `json:"widget_type,omitempty"`
 	Children   []layoutNode           `json:"children,omitempty"`
@@ -147,6 +157,8 @@ type layoutNode struct {
 	Settings   map[string]interface{} `json:"settings,omitempty"`
 	Visible    *bool                  `json:"visible,omitempty"`
 	Optional   *bool                  `json:"optional,omitempty"`
+	Layout     map[string]interface{} `json:"layout,omitempty"`
+	Meta       map[string]interface{} `json:"meta,omitempty"`
 }
 
 type Row struct {
@@ -215,7 +227,22 @@ func layoutBlock(node layoutNode) Block {
 	for _, child := range node.Children {
 		children = append(children, layoutBlock(child))
 	}
-	block := Block{ID: node.ID, Kind: node.Kind, WidgetType: firstLayoutValue(node.WidgetType, node.Widget), Children: children, Settings: settings, Visible: visible, Optional: optional}
+	kind := node.Kind
+	if node.Role == "container" {
+		kind = BlockContainer
+	}
+	if node.Role == "widget" {
+		kind = BlockWidget
+	}
+	if node.Meta != nil {
+		if raw, ok := node.Meta["visible"].(bool); ok {
+			visible = raw
+		}
+		if raw, ok := node.Meta["optional"].(bool); ok {
+			optional = raw
+		}
+	}
+	block := Block{ID: node.ID, Kind: kind, Role: node.Role, WidgetType: firstLayoutValue(node.Type, node.WidgetType, node.Widget), Children: children, Settings: settings, Layout: node.Layout, Metadata: node.Meta, Visible: visible, Optional: optional}
 	if raw, ok := settings["fields"]; ok {
 		if encoded, err := json.Marshal(raw); err == nil {
 			_ = json.Unmarshal(encoded, &block.Fields)

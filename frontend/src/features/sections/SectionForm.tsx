@@ -15,7 +15,7 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
       try {
         const parsed = JSON.parse(initialData.schema)
         return parsed.elements || []
-      } catch (e) {
+      } catch {
         return []
       }
     }

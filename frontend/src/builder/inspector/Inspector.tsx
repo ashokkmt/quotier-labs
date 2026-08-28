@@ -17,16 +17,16 @@ export function Inspector({
         Select an element to inspect it.
       </aside>
     )
-  const definition = getWidget(node.widget)
-  const fields = [...(definition?.propSchema ?? []), ...(definition?.styleSchema ?? [])]
+  const definition = getWidget(node.type)
+  const fields = [...(definition?.propSchema ?? []), ...(definition?.layoutSchema ?? [])]
   return (
     <aside className="w-64 border-l p-4 space-y-4" aria-label="Properties">
-      <h2 className="font-semibold">{definition?.metadata.label ?? node.widget}</h2>
+      <h2 className="font-semibold">{definition?.metadata.label ?? node.type}</h2>
       {fields.map((field) => (
         <InspectorField
           key={field.key}
           field={field}
-          value={node.props[field.key] ?? node.style[field.key as keyof typeof node.style] ?? ''}
+          value={node.props[field.key] ?? node.layout[field.key as keyof typeof node.layout] ?? ''}
           onChange={(value) => onUpdate(field.key, value)}
         />
       ))}

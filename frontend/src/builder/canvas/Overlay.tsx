@@ -1,120 +1,151 @@
-import { useEffect, useState, useRef } from 'react'
+import { useLayoutEffect, useState, type RefObject } from 'react'
 import { useBuilderStore } from '../document/store'
-import type { PlacementIntent } from '../geometry/placement'
+import type { OperationPlan } from '../geometry/placement'
 
 type Rect = { top: number; left: number; width: number; height: number }
-
-export function Overlay({ dragResolution }: { dragResolution?: PlacementIntent | null }) {
-  const selectedNodeId = useBuilderStore((s) => s.selectedNodeId)
-  const hoveredNodeId = useBuilderStore((s) => s.hoveredNodeId)
+const relative = (host: HTMLElement, nodeId: string): Rect | null => {
+  const element = host.querySelector<HTMLElement>(`[data-builder-node="${nodeId}"]`)
+  if (!element) return null
+  const outer = host.getBoundingClientRect()
+  const rect = element.getBoundingClientRect()
+  return {
+    top: rect.top - outer.top,
+    left: rect.left - outer.left,
+    width: rect.width,
+    height: rect.height,
+  }
+}
+export function Overlay({
+  hostRef,
+  plan,
+}: {
+  hostRef: RefObject<HTMLDivElement | null>
+  plan?: OperationPlan | null
+}) {
+  const selected = useBuilderStore((state) => state.selectedNodeId)
+  const hovered = useBuilderStore((state) => state.hoveredNodeId)
+  const deleteSelected = useBuilderStore((state) => state.deleteSelected)
+  const duplicateSelected = useBuilderStore((state) => state.duplicateSelected)
+  const setDrag = useBuilderStore((state) => state.setDrag)
+  const nodes = useBuilderStore((state) => state.nodes)
+  const resize = useBuilderStore((state) => state.resize)
+  const selectedNode = selected ? nodes[selected] : undefined
+  const selectedParent = selectedNode?.parentId ? nodes[selectedNode.parentId] : undefined
+  const canResize = Boolean(
+    selectedNode &&
+    selectedParent?.layout.direction === 'horizontal' &&
+    selectedParent.children.indexOf(selectedNode.id) < selectedParent.children.length - 1,
+  )
   const [selectedRect, setSelectedRect] = useState<Rect | null>(null)
   const [hoveredRect, setHoveredRect] = useState<Rect | null>(null)
-  const [dropLine, setDropLine] = useState<Rect | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    let frame: number
-    const updateGeometry = () => {
-      if (!containerRef.current) return
-      const containerBounds = containerRef.current.getBoundingClientRect()
-
-      const getRelativeRect = (el: Element): Rect => {
-        const bounds = el.getBoundingClientRect()
-        return {
-          top: bounds.top - containerBounds.top,
-          left: bounds.left - containerBounds.left,
-          width: bounds.width,
-          height: bounds.height,
-        }
-      }
-
-      if (selectedNodeId) {
-        const el = document.querySelector(`[data-builder-node="${selectedNodeId}"]`)
-        if (el) setSelectedRect(getRelativeRect(el))
-        else setSelectedRect(null)
-      } else {
-        setSelectedRect(null)
-      }
-
-      if (hoveredNodeId && hoveredNodeId !== selectedNodeId && !dragResolution) {
-        const el = document.querySelector(`[data-builder-node="${hoveredNodeId}"]`)
-        if (el) setHoveredRect(getRelativeRect(el))
-        else setHoveredRect(null)
-      } else {
-        setHoveredRect(null)
-      }
-
-      if (dragResolution) {
-        const parentEl = document.querySelector(`[data-builder-node="${dragResolution.parentId}"]`)
-        const targetEl = dragResolution.targetId
-          ? document.querySelector(`[data-builder-node="${dragResolution.targetId}"]`)
+  const [dropRect, setDropRect] = useState<Rect | null>(null)
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const update = () => {
+      setSelectedRect(selected ? relative(host, selected) : null)
+      setHoveredRect(!plan && hovered && hovered !== selected ? relative(host, hovered) : null)
+      const target = plan?.targetId
+        ? relative(host, plan.targetId)
+        : plan
+          ? relative(host, plan.parentId)
           : null
-
-        if (dragResolution.intent === 'inside' && parentEl) {
-          const p = getRelativeRect(parentEl)
-          setDropLine({ top: p.top + 4, left: p.left + 4, width: p.width - 8, height: 4 })
-        } else if (targetEl) {
-          const t = getRelativeRect(targetEl)
-          if (dragResolution.intent === 'before') {
-            setDropLine({ top: t.top - 2, left: t.left, width: t.width, height: 4 })
-          } else if (dragResolution.intent === 'after') {
-            setDropLine({ top: t.top + t.height - 2, left: t.left, width: t.width, height: 4 })
-          } else if (dragResolution.intent === 'wrap-left') {
-            setDropLine({ top: t.top, left: t.left, width: t.width / 2, height: t.height })
-          } else if (dragResolution.intent === 'wrap-right') {
-            setDropLine({
-              top: t.top,
-              left: t.left + t.width / 2,
-              width: t.width / 2,
-              height: t.height,
-            })
-          }
-        } else {
-          setDropLine(null)
-        }
-      } else {
-        setDropLine(null)
-      }
-
-      frame = requestAnimationFrame(updateGeometry)
+      if (!target || !plan) return setDropRect(null)
+      setDropRect(
+        plan.preview === 'split'
+          ? {
+              ...target,
+              left: plan.side === 'left' ? target.left : target.left + target.width / 2,
+              width: target.width / 2,
+            }
+          : plan.preview === 'inside'
+            ? { top: target.top + 4, left: target.left + 4, width: target.width - 8, height: 4 }
+            : {
+                top: target.top + (plan.index === 0 ? -2 : target.height - 2),
+                left: target.left,
+                width: target.width,
+                height: 4,
+              },
+      )
     }
-    frame = requestAnimationFrame(updateGeometry)
-    return () => cancelAnimationFrame(frame)
-  }, [selectedNodeId, dragResolution])
-
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [hostRef, selected, hovered, plan])
   return (
-    <div ref={containerRef} className="absolute inset-0 pointer-events-none z-50 overflow-hidden">
-      {hoveredRect && (
-        <div
-          className="absolute border border-blue-400 pointer-events-none transition-all duration-75"
-          style={{
-            top: hoveredRect.top,
-            left: hoveredRect.left,
-            width: hoveredRect.width,
-            height: hoveredRect.height,
-          }}
-        />
-      )}
+    <div className="absolute inset-0 pointer-events-none z-20">
+      {hoveredRect && <div className="absolute border border-blue-400" style={hoveredRect} />}
       {selectedRect && (
-        <div
-          className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none transition-all duration-75"
-          style={{
-            top: selectedRect.top,
-            left: selectedRect.left,
-            width: selectedRect.width,
-            height: selectedRect.height,
-          }}
-        />
+        <>
+          <div className="absolute border-2 border-blue-500 bg-blue-500/10" style={selectedRect} />
+          <div
+            className="absolute flex gap-1 pointer-events-auto items-center"
+            style={{ top: Math.max(0, selectedRect.top - 28), left: selectedRect.left }}
+          >
+            <button
+              aria-label="Move selected element"
+              className="rounded bg-blue-600 px-2 text-xs text-white cursor-grab"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                if (selected)
+                  setDrag({
+                    source: { type: 'move', nodeId: selected },
+                    x: event.clientX,
+                    y: event.clientY,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    active: false,
+                    resolution: null,
+                  })
+              }}
+            >
+              Move
+            </button>
+            <button
+              aria-label="Duplicate selected element"
+              className="rounded bg-blue-600 px-2 text-xs text-white"
+              onClick={(event) => {
+                event.stopPropagation()
+                duplicateSelected()
+              }}
+            >
+              Copy
+            </button>
+            <button
+              aria-label="Delete selected element"
+              className="rounded bg-red-600 px-2 text-xs text-white"
+              onClick={(event) => {
+                event.stopPropagation()
+                deleteSelected()
+              }}
+            >
+              Delete
+            </button>
+            {canResize && (
+              <input
+                aria-label="Resize selected column"
+                className="w-20"
+                type="range"
+                min="1000"
+                max="9000"
+                step="100"
+                value={selectedNode?.layout.basis ?? 5000}
+                onChange={(event) => selected && resize(selected, Number(event.target.value))}
+              />
+            )}
+          </div>
+        </>
       )}
-      {dropLine && (
+      {dropRect && (
         <div
-          className={`absolute rounded pointer-events-none transition-all duration-75 ${dragResolution?.intent.startsWith('wrap') ? 'bg-blue-500/20 border-2 border-blue-500 border-dashed' : 'bg-blue-600 rounded-full shadow-[0_0_0_2px_white]'}`}
-          style={{
-            top: dropLine.top,
-            left: dropLine.left,
-            width: dropLine.width,
-            height: dropLine.height,
-          }}
+          className={
+            plan?.preview === 'split'
+              ? 'absolute border-2 border-dashed border-blue-500 bg-blue-500/15'
+              : 'absolute bg-blue-600 rounded'
+          }
+          style={dropRect}
         />
       )}
     </div>

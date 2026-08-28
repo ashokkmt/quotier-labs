@@ -274,12 +274,15 @@ function toInspectorNode(node: Block): BuilderNode {
     node.widget_type === 'container' ? 'container' : `field.${node.widget_type ?? 'text'}`
   return {
     id: node.id,
-    kind: node.kind,
-    widget,
+    role:
+      node.kind === 'row' || node.kind === 'column' || node.kind === 'section'
+        ? 'container'
+        : 'widget',
+    type: widget,
     parentId: null,
     children: node.children.map((child) => child.id),
     props: { ...(node.settings ?? {}) },
-    style: {},
+    layout: {},
     meta: { visible: node.visible, optional: node.optional },
   }
 }

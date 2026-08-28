@@ -1,23 +1,28 @@
+import { useCallback, type PointerEvent as ReactPointerEvent } from 'react'
 import { FileText } from 'lucide-react'
 import { Button } from '../../../components/ui/button'
 import { listWidgets } from '../../../builder/registry/registry'
 import { useBuilderStore } from '../../../builder/document/store'
-import type { PointerEvent as ReactPointerEvent } from 'react'
 
 export function BlockLibraryPanel() {
   const widgets = listWidgets()
-  const beginDrag = useBuilderStore((s) => {
-    return (e: ReactPointerEvent | PointerEvent, widgetType: string) => {
+  const setDrag = useBuilderStore((state) => state.setDrag)
+  const beginDrag = useCallback(
+    (e: ReactPointerEvent | PointerEvent, widgetType: string) => {
       if (e.button !== 0) return
       e.preventDefault()
-      s.setDrag({
+      setDrag({
         source: { type: 'create', widget: widgetType },
         x: (e as any).clientX,
         y: (e as any).clientY,
+        startX: (e as any).clientX,
+        startY: (e as any).clientY,
+        active: false,
         resolution: null,
       })
-    }
-  })
+    },
+    [setDrag],
+  )
 
   // Group widgets by category
   const categories = {
@@ -32,7 +37,7 @@ export function BlockLibraryPanel() {
   }
 
   return (
-    <aside className="w-60 shrink-0 border-r pr-3 overflow-y-auto" aria-label="Widget library">
+    <aside className="pr-3 overflow-y-auto" aria-label="Widget library">
       <h2 className="font-semibold mb-4 text-sm px-2">Widgets</h2>
       {Object.entries(categories).map(([category, items]) => {
         if (!items.length) return null

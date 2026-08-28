@@ -1,6 +1,8 @@
-import type { BuilderNode } from '../document/model'
+import type { BuilderNode, NodeRole } from '../document/model'
 import type { WidgetDefinition } from './types'
+
 const definitions = new Map<string, WidgetDefinition>()
+
 export function registerWidget(definition: WidgetDefinition) {
   definitions.set(definition.type, definition)
 }
@@ -10,7 +12,33 @@ export function getWidget(type: string) {
 export function listWidgets() {
   return [...definitions.values()]
 }
-const fieldTypes = [
+export function canParent(definition: WidgetDefinition, parentRole: NodeRole): boolean {
+  return (
+    definition.capabilities.allowedParents === '*' ||
+    definition.capabilities.allowedParents.includes(parentRole)
+  )
+}
+
+const base = (
+  type: string,
+  label: string,
+  role: WidgetDefinition['role'],
+  category: WidgetDefinition['category'],
+  output: WidgetDefinition['render'],
+  horizontal = true,
+): WidgetDefinition => ({
+  type,
+  category,
+  role,
+  metadata: { label },
+  defaults: () => ({ props: {}, layout: {}, meta: {} }),
+  propSchema: [],
+  layoutSchema: [],
+  capabilities: { allowedParents: '*', horizontal },
+  render: output,
+})
+
+for (const type of [
   'heading',
   'text',
   'textarea',
@@ -19,64 +47,55 @@ const fieldTypes = [
   'date',
   'select',
   'boolean',
-  'image',
-]
-for (const type of fieldTypes)
-  registerWidget({
-    type: `field.${type}`,
-    category: 'field',
-    metadata: { label: type[0].toUpperCase() + type.slice(1) },
-    defaults: () => ({ props: { value: '' } }),
-    propSchema: [
-      {
-        key: 'value',
-        kind:
-          type === 'textarea'
-            ? 'textarea'
-            : type === 'number' || type === 'currency'
-              ? 'number'
-              : type === 'image'
-                ? 'image'
-                : 'text',
-        label: 'Value',
-      },
-    ],
-    styleSchema: [],
-    capabilities: {
-      canHaveChildren: false,
-      allowedParents: ['root', 'section', 'column'],
-      allowedChildren: [],
-    },
-    render: (node: BuilderNode) => ({
-      role: type === 'image' ? 'media' : 'content',
-      text: String(node.props.value ?? ''),
-    }),
-  })
-registerWidget({
-  type: 'container',
-  category: 'structure',
-  metadata: { label: 'Container' },
-  defaults: () => ({ kind: 'section', children: [], props: { direction: 'vertical' } }),
-  propSchema: [
+]) {
+  const def = base(
+    `field.${type}`,
+    type[0].toUpperCase() + type.slice(1),
+    'widget',
+    'field',
+    (node: BuilderNode) => ({ role: 'content', text: String(node.props.value ?? '') }),
+  )
+  def.defaults = () => ({ props: { value: '' }, layout: {}, meta: {} })
+  def.propSchema = [
     {
-      key: 'direction',
-      kind: 'select',
-      label: 'Direction',
-      options: [
-        { value: 'vertical', label: 'Vertical' },
-        { value: 'horizontal', label: 'Horizontal' },
-      ],
+      key: 'value',
+      kind:
+        type === 'textarea'
+          ? 'textarea'
+          : type === 'number' || type === 'currency'
+            ? 'number'
+            : 'text',
+      label: 'Value',
     },
-  ],
-  styleSchema: [{ key: 'spacing', kind: 'token', label: 'Spacing', tokenGroup: 'spacing' }],
-  capabilities: {
-    canHaveChildren: true,
-    allowedParents: ['root', 'section', 'column'],
-    allowedChildren: '*',
-  },
-  render: () => ({ role: 'container' }),
+  ]
+  registerWidget(def)
+}
+
+const container = base('container', 'Container', 'container', 'structure', () => ({
+  role: 'container',
+}))
+container.defaults = () => ({
+  props: {},
+  layout: { direction: 'vertical', gap: 'md', padding: 'sm' },
+  meta: {},
 })
+container.layoutSchema = [
+  {
+    key: 'direction',
+    kind: 'select',
+    label: 'Direction',
+    options: [
+      { value: 'vertical', label: 'Vertical' },
+      { value: 'horizontal', label: 'Horizontal' },
+    ],
+  },
+  { key: 'gap', kind: 'token', label: 'Gap', tokenGroup: 'spacing' },
+  { key: 'padding', kind: 'token', label: 'Padding', tokenGroup: 'spacing' },
+]
+registerWidget(container)
+
 for (const type of [
+  'image',
   'divider',
   'spacer',
   'table',
@@ -89,16 +108,38 @@ for (const type of [
   'warranty',
   'notes',
   'quotation-summary',
-])
-  registerWidget({
+]) {
+  const role =
+    type === 'table'
+      ? 'table'
+      : type === 'divider'
+        ? 'divider'
+        : type === 'image'
+          ? 'media'
+          : 'content'
+  const category =
+    type === 'table' || type === 'divider' || type === 'spacer' || type === 'image'
+      ? 'content'
+      : 'builtin-section'
+  const def = base(
     type,
-    category: type === 'table' ? 'content' : 'builtin-section',
-    metadata: { label: type.replaceAll('-', ' ') },
-    defaults: () => ({ props: {} }),
-    propSchema: [],
-    styleSchema: [],
-    capabilities: { canHaveChildren: false, allowedParents: '*', allowedChildren: [] },
-    render: () => ({
-      role: type === 'divider' ? 'divider' : type === 'table' ? 'table' : 'content',
-    }),
-  })
+    type.replaceAll('-', ' '),
+    'widget',
+    category,
+    (node) => ({ role, text: String(node.props.value ?? '') }),
+    type !== 'divider' && type !== 'spacer',
+  )
+  if (type === 'image') {
+    def.defaults = () => ({ props: { value: '' }, layout: {}, meta: {} })
+    def.propSchema = [
+      {
+        key: 'value',
+        kind: 'image',
+        label: 'Image',
+        accept: ['image/png', 'image/jpeg', 'image/webp'],
+        maxBytes: 5_000_000,
+      },
+    ]
+  }
+  registerWidget(def)
+}

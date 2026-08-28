@@ -21,6 +21,8 @@ type Document struct {
 type PersistedNode struct {
 	ID         string                 `json:"id"`
 	Kind       string                 `json:"kind"`
+	Role       string                 `json:"role,omitempty"`
+	Type       string                 `json:"type,omitempty"`
 	Widget     string                 `json:"widget,omitempty"`
 	WidgetType string                 `json:"widget_type,omitempty"`
 	Children   []PersistedNode        `json:"children,omitempty"`
@@ -28,6 +30,8 @@ type PersistedNode struct {
 	Settings   map[string]interface{} `json:"settings,omitempty"`
 	Visible    *bool                  `json:"visible,omitempty"`
 	Optional   *bool                  `json:"optional,omitempty"`
+	Layout     map[string]interface{} `json:"layout,omitempty"`
+	Meta       map[string]interface{} `json:"meta,omitempty"`
 }
 
 type Row struct {
@@ -112,7 +116,26 @@ func persistedBlock(node PersistedNode) Block {
 	for _, child := range node.Children {
 		children = append(children, persistedBlock(child))
 	}
-	block := Block{ID: node.ID, Kind: domain_template.BlockKind(node.Kind), WidgetType: firstNonEmpty(node.WidgetType, node.Widget), Children: children, Settings: settings, Visible: visible, Optional: optional}
+	kind := domain_template.BlockKind(node.Kind)
+	if node.Role == "container" {
+		kind = domain_template.BlockContainer
+	}
+	if node.Role == "widget" {
+		kind = domain_template.BlockWidget
+	}
+	if node.Meta != nil {
+		if raw, ok := node.Meta["visible"].(bool); ok {
+			visible = raw
+		}
+		if raw, ok := node.Meta["optional"].(bool); ok {
+			optional = raw
+		}
+	}
+	layout := node.Layout
+	if layout == nil {
+		layout = map[string]interface{}{}
+	}
+	block := Block{ID: node.ID, Kind: kind, Role: node.Role, WidgetType: firstNonEmpty(node.Type, node.WidgetType, node.Widget), Children: children, Settings: settings, Layout: layout, Metadata: node.Meta, Visible: visible, Optional: optional}
 	if raw, ok := settings["fields"]; ok {
 		if encoded, err := json.Marshal(raw); err == nil {
 			_ = json.Unmarshal(encoded, &block.Fields)

@@ -6,15 +6,9 @@ import { useBuilderStore } from '../document/store'
 export function usePointerDrag(onCommit: (source: DragSource, resolution: any) => void) {
   const drag = useBuilderStore((s) => s.drag)
   const setDrag = useBuilderStore((s) => s.setDrag)
-  const setDragResolution = useBuilderStore((s) => s.setDragResolution)
 
   const frame = useRef<number | null>(null)
   const pending = useRef<PointerEvent | null>(null)
-
-  // This ref is needed to access current drag state in the pointerup handler
-  // without re-binding the event listener on every drag state change
-  const dragRef = useRef(drag)
-  dragRef.current = drag
 
   useEffect(() => {
     if (!drag) return
@@ -32,8 +26,7 @@ export function usePointerDrag(onCommit: (source: DragSource, resolution: any) =
       })
     }
     const up = () => {
-      const current = dragRef.current
-      if (current) onCommit(current.source, current.resolution)
+      if (drag) onCommit(drag.source, drag.resolution)
       setDrag(null)
     }
 
@@ -45,13 +38,27 @@ export function usePointerDrag(onCommit: (source: DragSource, resolution: any) =
       window.removeEventListener('pointerup', up)
       if (frame.current !== null) cancelAnimationFrame(frame.current)
     }
-  }, [drag !== null, onCommit, setDrag])
+  }, [drag, onCommit, setDrag])
 
   const begin = (event: ReactPointerEvent | PointerEvent, source: DragSource) => {
     if (event.button !== 0) return
     event.preventDefault()
-    setDrag({ source, x: event.clientX, y: event.clientY, resolution: null })
+    setDrag({
+      source,
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      resolution: null,
+    })
   }
 
-  return { drag, begin, setResolution: setDragResolution, cancel: () => setDrag(null) }
+  return {
+    drag,
+    begin,
+    setResolution: (resolution: any) =>
+      setDrag((current) => (current ? { ...current, resolution } : null)),
+    cancel: () => setDrag(null),
+  }
 }

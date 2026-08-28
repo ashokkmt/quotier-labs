@@ -1,131 +1,157 @@
 import { create } from 'zustand'
-import type { BuilderNode, DocumentModel } from './model'
+import { createRoot, type DocumentModel } from './model'
+import {
+  createNode,
+  deleteNode,
+  duplicateSubtree,
+  insertNode,
+  moveNode,
+  resizeSiblings,
+  wrapBeside,
+} from './tree'
+import type { OperationPlan } from '../geometry/placement'
 
-import type { PlacementIntent } from '../geometry/placement'
 export type DragSource = { type: 'create'; widget: string } | { type: 'move'; nodeId: string }
 export type DragState = {
   source: DragSource
   x: number
   y: number
-  resolution: PlacementIntent | null
+  startX: number
+  startY: number
+  active: boolean
+  resolution: OperationPlan | null
 }
-
-type DocumentActions = {
+type BuilderStore = DocumentModel & {
+  selectedNodeId: string | null
+  hoveredNodeId: string | null
+  drag: DragState | null
+  clipboard: string | null
+  lastError: string | null
   setDocument: (doc: DocumentModel) => void
   selectNode: (id: string | null) => void
   hoverNode: (id: string | null) => void
-  addNode: (node: BuilderNode, parentId?: string, index?: number) => void
-  updateNode: (id: string, update: Partial<BuilderNode>) => void
+  setDrag: (drag: DragState | null | ((previous: DragState | null) => DragState | null)) => void
+  commitPlan: (plan: OperationPlan, source: DragSource) => boolean
+  deleteSelected: () => boolean
+  duplicateSelected: () => boolean
+  copySelected: () => boolean
+  pasteIntoSelection: () => boolean
+  resize: (leftId: string, basis: number) => boolean
   updateProp: (id: string, key: string, value: unknown) => void
-  deleteNode: (id: string) => void
-  moveNode: (id: string, parentId: string, index?: number) => void
-  wrapInRow: (targetId: string, newNode: BuilderNode, insertBefore: boolean) => void
-  setDrag: (drag: DragState | null | ((prev: DragState | null) => DragState | null)) => void
-  setDragResolution: (res: PlacementIntent | null) => void
+  updateLayout: (id: string, key: string, value: unknown) => void
 }
-export type BuilderStore = DocumentModel &
-  DocumentActions & {
-    selectedNodeId: string | null
-    hoveredNodeId: string | null
-    drag: DragState | null
-  }
-export const createDocument = (rootId = 'n_root'): DocumentModel => ({
-  schemaVersion: 3,
-  rootId,
-  nodes: {
-    [rootId]: {
-      id: rootId,
-      kind: 'root',
-      widget: 'root',
-      parentId: null,
-      children: [],
-      props: {},
-      style: {},
-      meta: { visible: true, optional: false },
-    },
-  },
-})
-
-function descendants(nodes: Record<string, BuilderNode>, id: string): string[] {
-  return nodes[id].children.flatMap((child) => [child, ...descendants(nodes, child)])
-}
-export const useBuilderStore = create<BuilderStore>((set) => ({
-  ...createDocument(),
+export const useBuilderStore = create<BuilderStore>((set, get) => ({
+  ...createRoot(),
   selectedNodeId: null,
   hoveredNodeId: null,
   drag: null,
-  setDrag: (updater) =>
-    set((state) => ({ drag: typeof updater === 'function' ? updater(state.drag) : updater })),
-  setDragResolution: (resolution) =>
-    set((state) => ({ drag: state.drag ? { ...state.drag, resolution } : null })),
-  setDocument: (doc) => set({ ...doc, selectedNodeId: null, hoveredNodeId: null }),
+  clipboard: null,
+  lastError: null,
+  setDocument: (doc) =>
+    set({
+      ...doc,
+      selectedNodeId: null,
+      hoveredNodeId: null,
+      drag: null,
+      clipboard: null,
+      lastError: null,
+    }),
   selectNode: (selectedNodeId) => set({ selectedNodeId }),
   hoverNode: (hoveredNodeId) => set({ hoveredNodeId }),
-  wrapInRow: (targetId, newNode, insertBefore) =>
-    set((state) => {
-      const target = state.nodes[targetId]
-      if (!target || !target.parentId) return state
-      const parent = state.nodes[target.parentId]
-      const targetIndex = parent.children.indexOf(targetId)
-
-      const rowId = `n_${Math.random().toString(36).substring(2, 9)}`
-      const rowNode: BuilderNode = {
-        id: rowId,
-        kind: 'row',
-        widget: 'container',
-        parentId: parent.id,
-        children: insertBefore ? [newNode.id, target.id] : [target.id, newNode.id],
-        props: { direction: 'horizontal' },
-        style: {},
-        meta: { visible: true, optional: false },
-      }
-
-      const updatedTarget = {
-        ...target,
-        parentId: rowId,
-        style: { ...target.style, width: 'half' as const },
-      }
-      const updatedNewNode = {
-        ...newNode,
-        parentId: rowId,
-        style: { ...newNode.style, width: 'half' as const },
-      }
-
-      const updatedParentChildren = [...parent.children]
-      updatedParentChildren[targetIndex] = rowId
-
-      return {
-        ...state,
-        nodes: {
-          ...state.nodes,
-          [rowId]: rowNode,
-          [targetId]: updatedTarget,
-          [newNode.id]: updatedNewNode,
-          [parent.id]: { ...parent, children: updatedParentChildren },
-        },
-      }
-    }),
-  addNode: (node, parentId, index) =>
-    set((state) => {
-      const parent = state.nodes[parentId ?? state.rootId]
-      if (!parent) return state
-      const nodes = { ...state.nodes, [node.id]: { ...node, parentId: parent.id } }
-      const children = [...parent.children]
-      children.splice(index ?? children.length, 0, node.id)
-      nodes[parent.id] = { ...parent, children }
-      return { ...state, nodes, selectedNodeId: node.id }
-    }),
-  updateNode: (id, update) =>
-    set((state) =>
-      state.nodes[id]
-        ? { ...state, nodes: { ...state.nodes, [id]: { ...state.nodes[id], ...update } } }
-        : state,
-    ),
+  setDrag: (updater) =>
+    set((state) => ({ drag: typeof updater === 'function' ? updater(state.drag) : updater })),
+  commitPlan: (plan, source) => {
+    const doc = get() as DocumentModel
+    const node = source.type === 'create' ? createNode(source.widget) : doc.nodes[source.nodeId]
+    if (!node) {
+      set({ lastError: 'unknown widget or source node' })
+      return false
+    }
+    const result =
+      plan.operation === 'wrap-beside'
+        ? wrapBeside(doc, node, plan.targetId!, plan.side!)
+        : source.type === 'move'
+          ? moveNode(doc, node.id, plan.parentId, plan.index)
+          : insertNode(doc, node, plan.parentId, plan.index)
+    if (!result.ok) {
+      set({ lastError: result.reason })
+      return false
+    }
+    set({ ...result.document, selectedNodeId: node.id, drag: null, lastError: null })
+    return true
+  },
+  deleteSelected: () => {
+    const id = get().selectedNodeId
+    if (!id) return false
+    const result = deleteNode(get(), id)
+    if (!result.ok) {
+      set({ lastError: result.reason })
+      return false
+    }
+    set({ ...result.document, selectedNodeId: null })
+    return true
+  },
+  duplicateSelected: () => {
+    const state = get()
+    const source = state.selectedNodeId ? state.nodes[state.selectedNodeId] : undefined
+    if (!source) return false
+    const result = duplicateSubtree(state, source.id)
+    if (!result.ok) {
+      set({ lastError: result.reason })
+      return false
+    }
+    const parent = result.document.nodes[source.parentId!]
+    set({
+      ...result.document,
+      selectedNodeId: parent.children[parent.children.indexOf(source.id) + 1],
+    })
+    return true
+  },
+  copySelected: () => {
+    const id = get().selectedNodeId
+    if (!id || !get().nodes[id] || get().nodes[id].role === 'root') return false
+    set({ clipboard: id })
+    return true
+  },
+  pasteIntoSelection: () => {
+    const state = get()
+    const sourceId = state.clipboard
+    if (!sourceId || !state.nodes[sourceId]) return false
+    const target = state.selectedNodeId
+      ? state.nodes[state.selectedNodeId]
+      : state.nodes[state.rootId]
+    const parentId =
+      target.role === 'container' || target.role === 'root' ? target.id : target.parentId!
+    const copied = duplicateSubtree(state, sourceId)
+    if (!copied.ok) {
+      set({ lastError: copied.reason })
+      return false
+    }
+    const cloneId =
+      copied.document.nodes[state.nodes[sourceId].parentId!].children[
+        copied.document.nodes[state.nodes[sourceId].parentId!].children.indexOf(sourceId) + 1
+      ]
+    const moved = moveNode(copied.document, cloneId, parentId)
+    if (!moved.ok) {
+      set({ lastError: moved.reason })
+      return false
+    }
+    set({ ...moved.document, selectedNodeId: cloneId })
+    return true
+  },
+  resize: (leftId, basis) => {
+    const result = resizeSiblings(get(), leftId, basis)
+    if (!result.ok) {
+      set({ lastError: result.reason })
+      return false
+    }
+    set(result.document)
+    return true
+  },
   updateProp: (id, key, value) =>
     set((state) =>
       state.nodes[id]
         ? {
-            ...state,
             nodes: {
               ...state.nodes,
               [id]: { ...state.nodes[id], props: { ...state.nodes[id].props, [key]: value } },
@@ -133,45 +159,15 @@ export const useBuilderStore = create<BuilderStore>((set) => ({
           }
         : state,
     ),
-  deleteNode: (id) =>
-    set((state) => {
-      const node = state.nodes[id]
-      if (!node || node.kind === 'root') return state
-      const parent = node.parentId ? state.nodes[node.parentId] : undefined
-      if (!parent) return state
-      const nodes = { ...state.nodes }
-      for (const child of [id, ...descendants(nodes, id)]) delete nodes[child]
-      nodes[parent.id] = { ...parent, children: parent.children.filter((child) => child !== id) }
-      return {
-        ...state,
-        nodes,
-        selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
-      }
-    }),
-  moveNode: (id, parentId, index) =>
-    set((state) => {
-      const node = state.nodes[id]
-      const parent = state.nodes[parentId]
-      if (!node || !parent || id === parentId || descendants(state.nodes, id).includes(parentId))
-        return state
-      const oldParent = node.parentId ? state.nodes[node.parentId] : undefined
-      if (!oldParent) return state
-      const nodes = {
-        ...state.nodes,
-        [oldParent.id]: {
-          ...oldParent,
-          children: oldParent.children.filter((child) => child !== id),
-        },
-        [parent.id]: {
-          ...parent,
-          children: [
-            ...parent.children.slice(0, index ?? parent.children.length),
-            id,
-            ...parent.children.slice(index ?? parent.children.length),
-          ],
-        },
-      }
-      nodes[id] = { ...node, parentId }
-      return { ...state, nodes }
-    }),
+  updateLayout: (id, key, value) =>
+    set((state) =>
+      state.nodes[id]
+        ? {
+            nodes: {
+              ...state.nodes,
+              [id]: { ...state.nodes[id], layout: { ...state.nodes[id].layout, [key]: value } },
+            },
+          }
+        : state,
+    ),
 }))

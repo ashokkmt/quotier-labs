@@ -38,6 +38,6 @@ describe('builder document serialization', () => {
     const restored = deserialize(serialize(model))
     expect(Object.keys(restored.nodes)).toEqual(['root', 'c', 'h'])
     expect(restored.nodes.h.parentId).toBe('c')
-    expect(denormalize(restored).root.children[0].children[0].widget).toBe('field.heading')
+    expect(denormalize(restored).root.children[0].children[0].type).toBe('field.heading')
   })
 })

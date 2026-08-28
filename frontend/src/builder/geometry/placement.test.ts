@@ -1,31 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { alignmentGuides, predictPlacement } from './placement'
-import type { BuilderNode } from '../document/model'
-
-const node = (id: string): BuilderNode => ({
-  id,
-  kind: 'section',
-  widget: 'field.text',
-  parentId: 'root',
-  children: [],
-  props: {},
-  style: {},
-  meta: { visible: true, optional: false },
-})
+import { alignmentGuides, resolvePlacement } from './placement'
+import { createRoot } from '../document/model'
 describe('engine geometry placement', () => {
   it('predicts insertion along the container axis', () => {
-    const parent = { ...node('p'), widget: 'container', props: { direction: 'horizontal' } }
+    const document = createRoot('root')
+    document.nodes.p = {
+      id: 'p',
+      role: 'container',
+      type: 'container',
+      parentId: 'root',
+      children: ['a', 'b'],
+      props: {},
+      layout: { direction: 'horizontal' },
+      meta: { visible: true, optional: false },
+    }
+    document.nodes.a = {
+      id: 'a',
+      role: 'widget',
+      type: 'field.text',
+      parentId: 'p',
+      children: [],
+      props: {},
+      layout: {},
+      meta: { visible: true, optional: false },
+    }
+    document.nodes.b = { ...document.nodes.a, id: 'b' }
+    document.nodes.root.children = ['p']
     expect(
-      predictPlacement(
-        parent,
-        [node('a'), node('b')],
+      resolvePlacement(
+        document,
+        { type: 'create', widget: 'field.text' },
         {
+          p: { left: 0, top: 0, width: 100, height: 20 },
           a: { left: 0, top: 0, width: 50, height: 20 },
           b: { left: 50, top: 0, width: 50, height: 20 },
         },
         { x: 10, y: 5 },
       ),
-    ).toMatchObject({ intent: 'before', index: 0, parentId: 'p' })
+    ).toMatchObject({ operation: 'insert', index: 0, parentId: 'p' })
   })
   it('returns nearby edge and center guides', () => {
     expect(
