@@ -40,7 +40,8 @@ export function QuotationBuilder({ quotationId, onBack }: { quotationId: string,
         const res = await GetQuotation(quotationId)
         setQuotation(res)
         if (res.document) {
-          const parsed = JSON.parse(res.document)
+           const parsed = JSON.parse(res.document)
+           if (!parsed.children) parsed.children = []
           const recovery = checkRecovery()
           // In a real app we'd ask user, here we just restore it if it's there
           if (recovery && recovery.document) {

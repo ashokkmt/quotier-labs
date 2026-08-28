@@ -8,6 +8,7 @@ import (
 type FieldType string
 
 const (
+	TypeHeading  FieldType = "Heading"
 	TypeText     FieldType = "Text"
 	TypeTextarea FieldType = "Textarea"
 	TypeNumber   FieldType = "Number"
@@ -135,7 +136,7 @@ func ValidateSchema(s *Schema) error {
 
 func isValidFieldType(t FieldType) bool {
 	switch t {
-	case TypeText, TypeTextarea, TypeNumber, TypeCurrency, TypeDate, TypeSelect, TypeBoolean, TypeImage, TypeComputed:
+	case TypeHeading, TypeText, TypeTextarea, TypeNumber, TypeCurrency, TypeDate, TypeSelect, TypeBoolean, TypeImage, TypeComputed:
 		return true
 	}
 	return false

@@ -205,6 +205,23 @@ func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input Sa
 	if err != nil {
 		return nil, fmt.Errorf("invalid quotation document: %w", err)
 	}
+	if len(doc.Children) > 0 {
+		layoutJSON, err := json.Marshal(map[string]interface{}{"schema_version": 1, "children": doc.Children})
+		if err != nil {
+			return nil, err
+		}
+		t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: string(layoutJSON), SchemaVersion: 1, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
+		if err := s.templateRepo.Create(txCtx, t); err != nil {
+			return nil, err
+		}
+		if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: 1, CreatedAt: t.CreatedAt}); err != nil {
+			return nil, err
+		}
+		if err := s.txManager.Commit(txCtx); err != nil {
+			return nil, err
+		}
+		return t, nil
+	}
 	layout := make([]map[string]interface{}, 0, len(doc.Rows))
 	for _, row := range doc.Rows {
 		cols := make([]map[string]interface{}, 0, len(row.Columns))

@@ -1,88 +1,52 @@
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Plus, Trash2, Copy, GripVertical } from "lucide-react"
 import { FieldInput } from "./FieldInput"
 import { TableEditor } from "./TableEditor"
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Plus, Trash2, Columns2 } from "lucide-react"
-import { ListSectionDefinitions } from "../../../wailsjs/go/wails/SectionHandler"
+import { BlockLibraryPanel, createLibraryBlock } from "./components/BlockLibraryPanel"
+import { blockLibrary } from "./model/library"
+import { canContain, validateChildren, type Block, type DocumentModel } from "./model/block"
+import type { LibraryEntry } from "./model/library"
 
-export function DocumentCanvas({ document, onChange, readOnly }: any) {
-  const [definitions, setDefinitions] = useState<any[]>([])
-  useEffect(() => { if (!readOnly) ListSectionDefinitions().then(setDefinitions).catch(() => setDefinitions([])) }, [readOnly])
+const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
+function insert(children: Block[], parentId: string | null, block: Block): Block[] {
+  if (!parentId) return [...children, block]
+  return children.map(parent => parent.id === parentId ? { ...parent, children: [...parent.children, block] } : { ...parent, children: insert(parent.children, parentId, block) })
+}
+function remove(children: Block[], id: string): [Block[], Block | null] {
+  for (let i = 0; i < children.length; i++) { if (children[i].id === id) return [[...children.slice(0, i), ...children.slice(i + 1)], children[i]]; const [nested, found] = remove(children[i].children, id); if (found) return [children.map((b, n) => n === i ? { ...b, children: nested } : b), found] }
+  return [children, null]
+}
+function find(children: Block[], id: string): Block | null { for (const b of children) { if (b.id === id) return b; const found = find(b.children, id); if (found) return found } return null }
+function move(children: Block[], sourceId: string, targetId: string): Block[] | null { if (sourceId === targetId || find(find(children, sourceId)?.children ?? [], targetId)) return null; const [without, source] = remove(children, sourceId); if (!source) return null; const target = find(without, targetId); if (!target || !canContain(target.kind, source.kind)) return null; return insert(without, targetId, source) }
+
+export function DocumentCanvas({ document, onChange, readOnly }: { document: DocumentModel; onChange: (document: DocumentModel) => void; readOnly: boolean }) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [dropError, setDropError] = useState("")
+  const add = (entry: LibraryEntry, parentId: string | null = null) => { const block = createLibraryBlock(entry); const parent = parentId ? find(document.children, parentId) : null; if (parent && !canContain(parent.kind, block.kind)) return; if (!parent && !canContain("root", block.kind)) return; onChange({ ...document, children: insert(document.children, parentId, block) }); setSelected(block.id) }
+  const change = (id: string, update: (block: Block) => Block) => onChange({ ...document, children: document.children.map(b => updateTree(b, id, update)) })
+  const updateTree = (block: Block, id: string, update: (block: Block) => Block): Block => block.id === id ? update(block) : { ...block, children: block.children.map(child => updateTree(child, id, update)) }
+  const deleteBlock = (id: string) => { const [children] = remove(document.children, id); onChange({ ...document, children }); setSelected(null) }
+  const duplicate = (id: string) => { const source = find(document.children, id); if (!source) return; const clone = (b: Block): Block => ({ ...copy(b), id: crypto.randomUUID(), children: b.children.map(clone) }); const [children] = remove(document.children, id); onChange({ ...document, children: insert(children, null, clone(source)) }) }
   if (!document) return null
-  const clone = () => JSON.parse(JSON.stringify(document))
-  const addRow = () => { const d = clone(); d.rows.push({ id:`row_${Date.now()}`, order:d.rows.length, columns:[{ id:`col_${Date.now()}`, order:0, width:"100%", sections:[] }] }); onChange(d) }
-  const addSection = (rIndex:number, cIndex:number) => { const def = definitions[0]; if (!def) return; const d=clone(); d.rows[rIndex].columns[cIndex].sections.push({ id:`section_${Date.now()}`, section_definition_id:def.id, title:def.name, visibility:true, optional:false, fields:[], tables:[] }); onChange(d) }
-  if (document.rows.length === 0) return <div className="space-y-4"><div className="p-8 text-center text-muted-foreground border-2 border-dashed rounded-lg">Empty Document</div>{!readOnly && <Button onClick={addRow}><Plus className="w-4 h-4 mr-2" /> Add Row</Button>}</div>
+  const reparent = (sourceId: string, targetId: string | null) => { let children: Block[] | null; if (!targetId) { const [remaining, source] = remove(document.children, sourceId); children = source && canContain("root", source.kind) ? [...remaining, source] : null } else children = move(document.children, sourceId, targetId); if (!children) { setDropError("That block cannot be placed there."); return } const reason = validateChildren(children); if (reason) { setDropError(reason); return } setDropError(""); onChange({ ...document, children }) }
+  return <div className="flex gap-5 max-w-7xl mx-auto">
+    {!readOnly && <BlockLibraryPanel onAdd={entry => add(entry)} />}
+    <main className="flex-1 space-y-4 min-h-[700px]" onDragOver={e => e.preventDefault()} onDrop={e => { const existing = e.dataTransfer.getData("application/x-existing-block"); if (existing) { reparent(existing, null); return } const label = e.dataTransfer.getData("application/x-block"); const entry = (requireLibrary(label)); if (entry) add(entry) }}>
+      {dropError && <p role="alert" className="text-sm text-destructive">{dropError}</p>}
+      {document.children.length === 0 && <div className="p-12 text-center text-muted-foreground border-2 border-dashed rounded-lg">Empty document. Add a block from the library.</div>}
+      {document.children.map(block => <BlockView key={block.id} block={block} selected={selected} readOnly={readOnly} onSelect={setSelected} onDelete={deleteBlock} onDuplicate={duplicate} onChange={change} onAdd={add} onMove={reparent} />)}
+    </main>
+  </div>
+}
+function requireLibrary(label: string): LibraryEntry | undefined { return blockLibrary.find(entry => entry.label === label) }
 
-  const updateSectionField = (rIndex: number, cIndex: number, sIndex: number, fIndex: number, value: any) => {
-    const newDoc = clone()
-    newDoc.rows[rIndex].columns[cIndex].sections[sIndex].fields[fIndex].value = value
-    onChange(newDoc)
-  }
-
-  const updateSectionTable = (rIndex: number, cIndex: number, sIndex: number, tIndex: number, rows: any[]) => {
-    const newDoc = clone()
-    newDoc.rows[rIndex].columns[cIndex].sections[sIndex].tables[tIndex].rows = rows
-    onChange(newDoc)
-  }
-
-  return (
-    <div className="space-y-6 max-w-5xl mx-auto bg-background p-8 rounded-lg shadow-sm border min-h-[800px]">
-      {document.rows.map((row: any, rIndex: number) => (
-        <div key={row.id} className="space-y-2">
-        <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" disabled={readOnly} onClick={() => { const d=clone(); d.rows.splice(rIndex,1); onChange(d) }}><Trash2 className="w-3 h-3 mr-1" /> Remove row</Button><Button variant="outline" size="sm" disabled={readOnly} onClick={() => { const d=clone(); const cols=d.rows[rIndex].columns; cols.push({id:`col_${Date.now()}`,order:cols.length,width:cols.length===1?"50%":"33%",sections:[]}); if(cols.length===2) cols[0].width="50%"; onChange(d) }}><Columns2 className="w-3 h-3 mr-1" /> Add column</Button></div>
-        <div className="flex flex-wrap md:flex-nowrap gap-6">
-          {row.columns.map((col: any, cIndex: number) => (
-            <div 
-              key={col.id} 
-              className="flex flex-col gap-6"
-              style={{ width: col.width }}
-            >
-              {col.sections.filter((s: any) => s.visibility !== false).map((sec: any, sIndex: number) => (
-                <div key={sec.id} className="space-y-4">
-                  {sec.title && <h3 className="text-xl font-bold font-heading text-primary border-b pb-2">{sec.title}</h3>}
-                  
-              {sec.fields && sec.fields.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {sec.fields.map((f: any, fIndex: number) => (
-                        <div key={f.id} className="space-y-1">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">{f.label}</label>
-                          <FieldInput 
-                            field={f} 
-                            value={f.value} 
-                            readOnly={readOnly}
-                            onChange={(val: any) => updateSectionField(rIndex, cIndex, sIndex, fIndex, val)} 
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-              {sec.tables && sec.tables.length > 0 && (
-                    <div className="space-y-4 pt-2">
-                      {sec.tables.map((t: any, tIndex: number) => (
-                        <div key={t.id}>
-                          {t.name && <h4 className="font-semibold mb-2">{t.name}</h4>}
-                          <TableEditor 
-                            tableDef={t} 
-                            rows={t.rows || []} 
-                            readOnly={readOnly}
-                            onChange={(rows: any[]) => updateSectionTable(rIndex, cIndex, sIndex, tIndex, rows)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-              )}
-              {!readOnly && sec.fields?.length === 0 && sec.tables?.length === 0 && <p className="text-sm text-muted-foreground">Empty section. Configure this section in the Section Library.</p>}
-            </div>
-          ))}
-          {!readOnly && <Button variant="outline" size="sm" onClick={() => addSection(rIndex, cIndex)} disabled={definitions.length === 0}><Plus className="w-3 h-3 mr-1" /> Add section</Button>}
-          </div>
-        ))}
-      </div>
-      {!readOnly && rIndex === document.rows.length - 1 && <Button onClick={addRow}><Plus className="w-4 h-4 mr-2" /> Add row</Button>}
-      </div>
-      ))}
-    </div>
-  )
+function BlockView({ block, selected, readOnly, onSelect, onDelete, onDuplicate, onChange, onAdd, onMove }: any) {
+  return <section draggable={!readOnly} className={`border rounded-lg p-4 space-y-3 ${selected === block.id ? "ring-2 ring-primary" : ""}`} onClick={() => onSelect(block.id)} onDragStart={e => e.dataTransfer.setData("application/x-existing-block", block.id)} onDragOver={e => e.preventDefault()} onDrop={e => { e.stopPropagation(); const id = e.dataTransfer.getData("application/x-existing-block"); if (id) onMove(id, block.id); else { const entry = requireLibrary(e.dataTransfer.getData("application/x-block")); if (entry) onAdd(entry, block.id) } }}>
+    <header className="flex items-center gap-2"><GripVertical className="w-4 h-4 text-muted-foreground" /><strong>{block.title || `${block.kind} block`}</strong><span className="text-xs text-muted-foreground">{block.kind}</span>{!readOnly && <span className="ml-auto flex gap-1"><Button variant="ghost" size="icon" aria-label="Duplicate block" onClick={e => { e.stopPropagation(); onDuplicate(block.id) }}><Copy /></Button><Button variant="ghost" size="icon" aria-label="Delete block" onClick={e => { e.stopPropagation(); onDelete(block.id) }}><Trash2 /></Button></span>}</header>
+    {block.kind === "section" && <div className="space-y-3">{!readOnly && selected === block.id && <Input aria-label="Section title" value={block.title ?? ""} onChange={e => onChange(block.id, (b: Block) => ({ ...b, title: e.target.value }))} />}{(block.fields ?? []).map((field: any, i: number) => <label key={field.id} className="block space-y-1"><span className="text-xs font-semibold">{field.label}</span><div className="flex gap-2"><Input value={field.label} readOnly={readOnly} aria-label={`${field.label} label`} onChange={e => onChange(block.id, (b: Block) => ({ ...b, fields: b.fields?.map((f, n) => n === i ? { ...f, label: e.target.value } : f) }))} /><FieldInput field={field} value={field.value} readOnly={readOnly} onChange={(value: unknown) => onChange(block.id, (b: Block) => ({ ...b, fields: b.fields?.map((f, n) => n === i ? { ...f, value } : f) }))} /></div></label>)}{!readOnly && selected === block.id && <Button variant="outline" size="sm" onClick={() => onChange(block.id, (b: Block) => ({ ...b, fields: [...(b.fields ?? []), { id: crypto.randomUUID(), label: "New field", type: "Text", required: false }] }))}><Plus className="w-3 h-3 mr-1" /> Add field</Button>}{(block.tables ?? []).map((table: any) => <TableEditor key={table.id} tableDef={table} rows={table.rows ?? []} readOnly={readOnly} onChange={(rows: any[]) => onChange(block.id, (b: Block) => ({ ...b, tables: b.tables?.map(t => t.id === table.id ? { ...t, rows } : t) }))} />)}</div>}
+    {block.children.map((child: Block) => <BlockView key={child.id} block={child} selected={selected} readOnly={readOnly} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} onChange={onChange} onAdd={onAdd} onMove={onMove} />)}
+    {!readOnly && block.kind !== "row" && <Button variant="outline" size="sm" onClick={() => onAdd({ label: "Section", blockKind: "section" }, block.id)}><Plus className="w-3 h-3 mr-1" /> Add section</Button>}
+  </section>
 }

@@ -2,6 +2,7 @@ package template
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -222,6 +223,12 @@ func (s *Service) DuplicateTemplate(ctx context.Context, companyID, sourceID str
 			UpdatedAt: time.Now().UTC(),
 			Version:   1,
 		},
+	}
+	if layout, parseErr := domain_template.ParseLayout(source.Layout); parseErr == nil && len(layout.Children) > 0 {
+		layout.Children = domain_template.CloneWithFreshIDs(layout.Children, s.idGen.Generate)
+		if encoded, marshalErr := json.Marshal(layout); marshalErr == nil {
+			clone.Layout = string(encoded)
+		}
 	}
 
 	if err := s.repo.Create(txCtx, clone); err != nil {

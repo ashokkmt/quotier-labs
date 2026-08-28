@@ -12,6 +12,8 @@ import { QuotationList } from './features/quotations/QuotationList'
 import { SettingsPage } from './features/settings/SettingsPage'
 import { CompanyProfile } from './features/company/CompanyProfile'
 import { NewQuotation } from './features/quotations/NewQuotation'
+import { TemplateBuilder } from './features/templates/TemplateBuilder'
+import { FocusedWorkspaceLayout } from './layouts/FocusedWorkspaceLayout'
 import { useParams, useNavigate } from 'react-router-dom'
 
 import '@fontsource/dm-sans/400.css'
@@ -45,15 +47,17 @@ const router = createBrowserRouter([
         path: 'quotations',
         element: <QuotationList />
       },
-      { path: 'quotations/new', element: <NewQuotation /> },
+      { path: 'quotations/new', element: <FocusedWorkspaceLayout />, children: [{ index: true, element: <NewQuotation /> }] },
       {
         path: 'quotations/:id/edit',
-        element: <QuotationBuilderWrapper />,
+        element: <FocusedWorkspaceLayout />,
+        children: [{ index: true, element: <QuotationBuilderWrapper /> }],
       },
       {
         path: 'templates',
         element: <TemplateList />,
       },
+      { path: 'templates/:id/edit', element: <FocusedWorkspaceLayout />, children: [{ index: true, element: <TemplateBuilderWrapper /> }] },
       {
         path: 'customers',
         element: <CustomerList />,
@@ -76,6 +80,7 @@ function QuotationBuilderWrapper() {
   const navigate = useNavigate()
   return <QuotationBuilder quotationId={id!} onBack={() => navigate('/quotations')} />
 }
+function TemplateBuilderWrapper() { const { id } = useParams(); const navigate = useNavigate(); return <TemplateBuilder templateId={id!} onBack={() => navigate('/templates')} /> }
 
 function App() {
   return (

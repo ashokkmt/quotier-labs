@@ -3,9 +3,17 @@ package quotation
 import (
 	"encoding/json"
 	"errors"
+	domain_template "quotierlabs/backend/domain/template"
 )
 
+// Block is shared with templates so the persisted document and template trees
+// cannot drift apart. Values are carried by the field nodes in the same tree.
+type Block = domain_template.Block
+
 type Document struct {
+	SchemaVersion int     `json:"schema_version,omitempty"`
+	Children      []Block `json:"children,omitempty"`
+	// Rows is retained only to read documents written before the recursive model.
 	Rows []Row `json:"rows"`
 }
 
@@ -60,7 +68,7 @@ type TableColumn struct {
 
 func ParseDocument(docStr string) (*Document, error) {
 	if docStr == "" {
-		return &Document{Rows: []Row{}}, nil
+		return &Document{SchemaVersion: 1, Children: []Block{}, Rows: []Row{}}, nil
 	}
 	var doc Document
 	if err := json.Unmarshal([]byte(docStr), &doc); err != nil {
@@ -80,6 +88,12 @@ func (d *Document) ToJSON() (string, error) {
 func ValidateDocument(d *Document) error {
 	if d == nil {
 		return errors.New("document is nil")
+	}
+	if len(d.Children) > 0 {
+		if err := domain_template.ValidateRoot(d.Children); err != nil {
+			return err
+		}
+		return nil
 	}
 	// Basic structural validation
 	for _, row := range d.Rows {

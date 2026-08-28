@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"quotierlabs/backend/domain"
-	domain_template "quotierlabs/backend/domain/template"
 	domain_section "quotierlabs/backend/domain/section"
+	domain_template "quotierlabs/backend/domain/template"
 )
 
 type TemplateResolver struct {
@@ -20,16 +20,30 @@ func NewTemplateResolver(sectionRepo domain.SectionDefinitionRepository) *Templa
 
 func (r *TemplateResolver) Resolve(ctx context.Context, template *domain.Template) (*Document, error) {
 	if template.Layout == "" {
-		return &Document{Rows: []Row{}}, nil
+		return &Document{SchemaVersion: 1, Children: []Block{}}, nil
 	}
 
 	layout, err := domain_template.ParseLayout(template.Layout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template layout: %w", err)
 	}
+	if len(layout.Children) > 0 {
+		// Recursive layouts already contain their structured content. Definitions
+		// are resolved at authoring time; clone the tree so quotation edits cannot
+		// mutate the template value held by the repository.
+		b, err := json.Marshal(layout.Children)
+		if err != nil {
+			return nil, err
+		}
+		var children []Block
+		if err := json.Unmarshal(b, &children); err != nil {
+			return nil, err
+		}
+		return &Document{SchemaVersion: 1, Children: children}, nil
+	}
 
 	doc := &Document{Rows: make([]Row, len(layout.Rows))}
-	
+
 	for i, tRow := range layout.Rows {
 		doc.Rows[i] = Row{
 			ID:      tRow.ID,
