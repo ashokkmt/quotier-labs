@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { GetQuotationPreviewPDF } from '../../../../wailsjs/go/wails/DocumentHandler'
 import { Loader2 } from 'lucide-react'
 
@@ -10,7 +10,8 @@ interface PreviewProps {
 }
 
 export function Preview({ companyId, quotationId, version }: PreviewProps) {
-  const [pdfDataUri, setPdfDataUri] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const pdfUrlRef = useRef<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,7 +23,12 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
       try {
         const base64Data = await GetQuotationPreviewPDF(companyId, quotationId)
         if (isMounted) {
-          setPdfDataUri(`data:application/pdf;base64,${base64Data}`)
+          const binary = atob(base64Data)
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+          const nextUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+          if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current)
+          pdfUrlRef.current = nextUrl
+          setPdfUrl(nextUrl)
         }
       } catch (err: any) {
         if (isMounted) {
@@ -42,6 +48,13 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
       clearTimeout(timer)
     }
   }, [companyId, quotationId, version])
+
+  useEffect(
+    () => () => {
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current)
+    },
+    [],
+  )
 
   if (error) {
     return (
@@ -64,10 +77,12 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
           </div>
         </div>
       )}
-      {pdfDataUri && (
-        <object data={pdfDataUri} type="application/pdf" className="w-full h-full min-h-[800px]">
-          <p>It appears your browser does not support PDFs. Please download the PDF to view it.</p>
-        </object>
+      {pdfUrl && (
+        <iframe
+          src={pdfUrl}
+          title="Printable quotation preview"
+          className="h-full min-h-[800px] w-full border-0 bg-white"
+        />
       )}
     </div>
   )

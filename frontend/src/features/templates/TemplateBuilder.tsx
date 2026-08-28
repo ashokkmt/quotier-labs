@@ -55,7 +55,7 @@ export function TemplateBuilder({
       </div>
     )
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       <header className="flex items-center gap-3 p-3 border-b bg-background z-10 relative">
         <Input
           aria-label="Template name"

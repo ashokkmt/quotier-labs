@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/hooks/use-toast'
 import { CustomerCreateDialog } from '../../shared/components/CustomerCreateDialog'
+import { DeleteConfirmDialog } from '../../shared/components/DeleteConfirmDialog'
 
 import { ListCustomers, DeleteCustomer } from '../../../wailsjs/go/wails/CustomerHandler'
 import { customer } from '../../../wailsjs/go/models'
@@ -19,6 +20,8 @@ export function CustomerList() {
   const [customers, setCustomers] = useState<customer.CustomerDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
 
   const loadCustomers = async () => {
@@ -40,14 +43,17 @@ export function CustomerList() {
   }, [])
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this customer? This cannot be undone.')) return
+    setDeleting(true)
     try {
       await DeleteCustomer(id)
+      setCustomers((current) => current.filter((customer) => customer.id !== id))
+      setDeleteId(null)
       toast({ title: 'Customer deleted successfully' })
-      loadCustomers()
     } catch (err) {
       console.error(err)
       toast({ title: 'Failed to delete customer', variant: 'destructive' })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -125,7 +131,7 @@ export function CustomerList() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
-                          onClick={() => handleDelete(c.id)}
+                          onClick={() => setDeleteId(c.id)}
                         >
                           <Trash className="w-4 h-4 mr-2" /> Delete
                         </DropdownMenuItem>
@@ -149,6 +155,14 @@ export function CustomerList() {
           }}
         />
       )}
+      <DeleteConfirmDialog
+        open={Boolean(deleteId)}
+        title="Delete customer?"
+        description="This customer will be permanently deleted. This cannot be undone."
+        deleting={deleting}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+      />
     </div>
   )
 }

@@ -14,6 +14,10 @@ export function GetActiveCompany() {
   return window['go']['wails']['CompanyHandler']['GetActiveCompany']();
 }
 
+export function GetImageDataURI(arg1) {
+  return window['go']['wails']['CompanyHandler']['GetImageDataURI'](arg1);
+}
+
 export function IsFirstRun() {
   return window['go']['wails']['CompanyHandler']['IsFirstRun']();
 }

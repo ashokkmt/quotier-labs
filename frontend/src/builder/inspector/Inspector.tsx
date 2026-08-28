@@ -1,6 +1,13 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { SelectImage } from '../../../wailsjs/go/wails/CompanyHandler'
 import type { BuilderNode } from '../document/model'
 import type { SchemaField } from '../registry/types'
@@ -62,7 +69,9 @@ export function Inspector({
       </aside>
     )
   const definition = getWidget(node.type)
-  const fields = [...(definition?.propSchema ?? []), ...(definition?.layoutSchema ?? [])]
+  const fields = [...(definition?.propSchema ?? []), ...(definition?.layoutSchema ?? [])].filter(
+    (field) => field.key !== 'value',
+  )
   return (
     <aside className="w-64 border-l p-4 space-y-4" aria-label="Properties">
       <h2 className="font-semibold">{definition?.metadata.label ?? node.type}</h2>
@@ -89,20 +98,21 @@ function InspectorField({
 }) {
   if (field.kind === 'select')
     return (
-      <label className="block space-y-1">
+      <div className="block space-y-1">
         <Label>{field.label}</Label>
-        <select
-          className="w-full border rounded-md h-9 px-2 text-sm"
-          value={String(value)}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {field.options?.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
+        <Select value={String(value)} onValueChange={onChange}>
+          <SelectTrigger className="w-full bg-background">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {field.options?.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     )
   if (field.kind === 'boolean')
     return (
@@ -136,20 +146,21 @@ function InspectorField({
   if (field.kind === 'token') {
     const options = field.tokenGroup ? tokenOptions[field.tokenGroup] : []
     return (
-      <label className="block space-y-1">
+      <div className="block space-y-1">
         <Label>{field.label}</Label>
-        <select
-          className="w-full border rounded-md h-9 px-2 text-sm"
-          value={String(value)}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {options.map(([optionValue, label]) => (
-            <option key={optionValue} value={optionValue}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
+        <Select value={String(value)} onValueChange={onChange}>
+          <SelectTrigger className="w-full bg-background">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map(([optionValue, label]) => (
+              <SelectItem key={optionValue} value={optionValue}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     )
   }
   return (

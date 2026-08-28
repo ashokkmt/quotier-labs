@@ -1,5 +1,5 @@
 import { useCallback, type PointerEvent as ReactPointerEvent } from 'react'
-import { FileText, Plus } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import { Button } from '../../../components/ui/button'
 import { listWidgets } from '../../../builder/registry/registry'
 import { useBuilderStore } from '../../../builder/document/store'
@@ -7,7 +7,6 @@ import { useBuilderStore } from '../../../builder/document/store'
 export function BlockLibraryPanel() {
   const widgets = listWidgets()
   const setDrag = useBuilderStore((state) => state.setDrag)
-  const addWidget = useBuilderStore((state) => state.addWidget)
   const beginDrag = useCallback(
     (e: ReactPointerEvent | PointerEvent, widgetType: string) => {
       if (e.button !== 0) return
@@ -49,31 +48,16 @@ export function BlockLibraryPanel() {
             </h3>
             <div className="grid grid-cols-2 gap-2">
               {items.map((widget) => (
-                <div key={widget.type} className="relative">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-20 w-full flex-col gap-1 px-6 text-xs hover:border-primary hover:bg-primary/5 cursor-grab active:cursor-grabbing"
-                    onPointerDown={(e) => beginDrag(e, widget.type)}
-                  >
-                    <FileText className="h-5 w-5" aria-hidden="true" />
-                    <span className="text-center line-clamp-2">{widget.metadata.label}</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="secondary"
-                    aria-label={`Add ${widget.metadata.label}`}
-                    className="absolute right-1 top-1 h-6 w-6 rounded-full"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      addWidget(widget.type)
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                <Button
+                  key={widget.type}
+                  type="button"
+                  variant="outline"
+                  className="h-20 w-full flex-col gap-1 px-2 text-xs hover:border-primary hover:bg-primary/5 cursor-grab active:cursor-grabbing"
+                  onPointerDown={(e) => beginDrag(e, widget.type)}
+                >
+                  <FileText className="h-5 w-5" aria-hidden="true" />
+                  <span className="text-center line-clamp-2">{widget.metadata.label}</span>
+                </Button>
               ))}
             </div>
           </section>

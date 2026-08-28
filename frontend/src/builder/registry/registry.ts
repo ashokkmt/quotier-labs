@@ -170,7 +170,10 @@ for (const type of [
     type !== 'divider' && type !== 'spacer',
   )
   if (type === 'image') {
-    def.render = (node) => ({ role: 'media', text: String(node.props.src ?? '') })
+    def.render = (node) => ({
+      role: 'media',
+      text: String(node.props.src ?? node.props.value ?? ''),
+    })
     def.defaults = () => ({
       props: { src: '', alt: '' },
       layout: { imageWidth: 100, imageFit: 'contain' },

@@ -51,7 +51,7 @@ export function QuotationBuilder({
   const [readOnly, setReadOnly] = useState(false)
   const { toast } = useToast()
 
-  const { checkRecovery, clearRecovery } = useRecovery(quotationId, document)
+  const { clearRecovery } = useRecovery(quotationId, document)
   useNavigationGuard(dirty)
 
   useEffect(() => {
@@ -64,15 +64,10 @@ export function QuotationBuilder({
         }
         if (res.document) {
           const parsed = normalize(JSON.parse(res.document))
-          const recovery = checkRecovery()
-          // In a real app we'd ask user, here we just restore it if it's there
-          if (recovery && recovery.document) {
-            setDocument(normalize(recovery.document))
-            setDirty(true)
-            toast({ title: 'Draft recovered', description: 'Unsaved changes were restored.' })
-          } else {
-            setDocument(parsed)
-          }
+          // Never replace persisted content silently with a local checkpoint.
+          // A stale checkpoint previously made an existing quotation appear empty.
+          setDocument(parsed)
+          setDirty(false)
         }
         if (res.status !== 'DRAFT') setReadOnly(true)
       } catch (err: any) {
@@ -127,6 +122,26 @@ export function QuotationBuilder({
       toast({ title: 'Quotation Finalized' })
     } catch (err: any) {
       toast({ title: 'Failed to finalize', description: err.toString(), variant: 'destructive' })
+    }
+  }
+
+  const handlePreviewMode = async () => {
+    if (readOnly) {
+      setReadOnly(false)
+      return
+    }
+    try {
+      // The PDF preview is intentionally rendered from the persisted V4
+      // document, so save the current builder state before switching modes.
+      await executeSave(document)
+      setDirty(false)
+      setReadOnly(true)
+    } catch (err) {
+      toast({
+        title: 'Could not prepare preview',
+        description: String(err),
+        variant: 'destructive',
+      })
     }
   }
 
@@ -190,14 +205,14 @@ export function QuotationBuilder({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-muted/20">
+    <div className="flex flex-col h-full min-h-0 bg-muted/20">
       <BuilderHeader
         quotation={quotation}
         onBack={onBack}
         onSave={forceSave}
         saving={saveState === 'Saving...'}
         readOnly={readOnly}
-        onToggleReadOnly={() => setReadOnly(!readOnly)}
+        onToggleReadOnly={handlePreviewMode}
         onCustomerChange={handleCustomerChange}
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={
@@ -208,7 +223,7 @@ export function QuotationBuilder({
         onSaveAsTemplate={handleSaveAsTemplate}
       />
 
-      <div className="flex-1 overflow-y-auto p-6 flex gap-6">
+      <div className="flex-1 min-h-0 overflow-hidden p-6 flex gap-6">
         <div className="flex-1">
           {readOnly ? (
             <Preview
@@ -227,9 +242,11 @@ export function QuotationBuilder({
           )}
         </div>
 
-        <aside className="w-80 shrink-0 space-y-6">
-          <CalculationDisplay result={calculationResult} />
-        </aside>
+        {!readOnly && (
+          <aside className="w-80 shrink-0 space-y-6">
+            <CalculationDisplay result={calculationResult} />
+          </aside>
+        )}
       </div>
     </div>
   )

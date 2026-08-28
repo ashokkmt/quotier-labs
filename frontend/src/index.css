@@ -73,6 +73,11 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+  html,
+  body,
+  #root {
+    @apply h-full min-h-0 overflow-hidden;
+  }
   h1,
   h2,
   h3,

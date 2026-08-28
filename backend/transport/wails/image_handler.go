@@ -1,6 +1,7 @@
 package wails
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,36 @@ import (
 
 	wails_runtime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// GetImageDataURI exposes only images previously copied into the application's
+// managed image directory. It prevents a document's stored path from becoming
+// an arbitrary local-file read in the webview.
+func (h *CompanyHandler) GetImageDataURI(path string) (string, error) {
+	appDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve image directory")
+	}
+	imagesDir := filepath.Join(appDir, "QuotierLabs", "images")
+	cleanPath := filepath.Clean(path)
+	rel, err := filepath.Rel(imagesDir, cleanPath)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("image path is outside the managed directory")
+	}
+	ext := strings.ToLower(filepath.Ext(cleanPath))
+	mime := map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}[ext]
+	if mime == "" {
+		return "", fmt.Errorf("unsupported image format")
+	}
+	info, err := os.Stat(cleanPath)
+	if err != nil || info.Size() > 5*1024*1024 {
+		return "", fmt.Errorf("image is unavailable or exceeds the size limit")
+	}
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read managed image")
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
 
 func (h *CompanyHandler) SelectImage(dialogTitle string) (string, error) {
 	selectedFile, err := wails_runtime.OpenFileDialog(h.ctx, wails_runtime.OpenDialogOptions{
@@ -44,7 +75,7 @@ func (h *CompanyHandler) SelectImage(dialogTitle string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get config dir: %v", err)
 	}
-	
+
 	destDir := filepath.Join(appDir, "QuotierLabs", "images")
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create image directory: %v", err)

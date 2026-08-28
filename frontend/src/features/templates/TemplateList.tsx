@@ -4,6 +4,7 @@ import { Plus, LayoutTemplate, Copy, Trash, Edit2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
+import { DeleteConfirmDialog } from '@/shared/components/DeleteConfirmDialog'
 import { CreateQuotationDraft } from '../../../wailsjs/go/wails/QuotationHandler'
 import { ListCustomers } from '../../../wailsjs/go/wails/CustomerHandler'
 import {
@@ -12,12 +13,12 @@ import {
   DuplicateTemplate,
   DeleteTemplate,
 } from '../../../wailsjs/go/wails/TemplateHandler'
-import { TemplateBuilder } from './TemplateBuilder'
 
 export function TemplateList() {
   const [templates, setTemplates] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
 
   const navigate = useNavigate()
@@ -67,8 +68,7 @@ export function TemplateList() {
         layout: JSON.stringify({ schema_version: 1, children: [] }),
       })
       toast({ title: 'Template created' })
-      setEditingId(res.id)
-      loadTemplates()
+      navigate(`/templates/${res.id}/edit`)
     } catch (err: any) {
       toast({ title: 'Failed to create', description: err.toString(), variant: 'destructive' })
     }
@@ -85,26 +85,17 @@ export function TemplateList() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this template?')) return
+    setDeleting(true)
     try {
       await DeleteTemplate(id)
+      setTemplates((current) => current.filter((template) => template.id !== id))
+      setDeleteId(null)
       toast({ title: 'Template deleted' })
-      loadTemplates()
     } catch (err: any) {
       toast({ title: 'Failed to delete', description: err.toString(), variant: 'destructive' })
+    } finally {
+      setDeleting(false)
     }
-  }
-
-  if (editingId) {
-    return (
-      <TemplateBuilder
-        templateId={editingId}
-        onBack={() => {
-          setEditingId(null)
-          loadTemplates()
-        }}
-      />
-    )
   }
 
   return (
@@ -170,14 +161,18 @@ export function TemplateList() {
                     <Button variant="ghost" size="sm" onClick={() => handleDuplicate(t.id)}>
                       <Copy className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setEditingId(t.id)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate(`/templates/${t.id}/edit`)}
+                    >
                       <Edit2 className="w-4 h-4 mr-2" /> Edit
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDelete(t.id)}
+                      onClick={() => setDeleteId(t.id)}
                     >
                       <Trash className="w-4 h-4" />
                     </Button>
@@ -188,6 +183,14 @@ export function TemplateList() {
           ))}
         </div>
       )}
+      <DeleteConfirmDialog
+        open={Boolean(deleteId)}
+        title="Delete template?"
+        description="This template will be permanently deleted. Existing quotations will not be changed."
+        deleting={deleting}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+      />
     </div>
   )
 }

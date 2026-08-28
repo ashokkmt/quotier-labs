@@ -17,11 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { DeleteConfirmDialog } from '@/shared/components/DeleteConfirmDialog'
 
 export function QuotationList() {
   const [quotations, setQuotations] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Filters and Pagination
   const [page, setPage] = useState(1)
@@ -89,18 +92,21 @@ export function QuotationList() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this draft? This action cannot be undone.'))
-      return
+    setDeleting(true)
     try {
       await DeleteQuotation(id)
+      setQuotations((current) => current.filter((quotation) => quotation.id !== id))
+      setTotal((current) => Math.max(0, current - 1))
+      setDeleteId(null)
       toast({ title: 'Quotation deleted' })
-      loadQuotations()
     } catch (err: any) {
       toast({
         title: 'Failed to delete quotation',
         description: err.toString(),
         variant: 'destructive',
       })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -270,17 +276,16 @@ export function QuotationList() {
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
-                        {q.status === 'DRAFT' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(q.id)}
-                            title="Delete"
-                            className="text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteId(q.id)}
+                          title={q.status === 'DRAFT' ? 'Delete' : 'Only drafts can be deleted'}
+                          disabled={q.status !== 'DRAFT'}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -316,6 +321,14 @@ export function QuotationList() {
           </div>
         )}
       </div>
+      <DeleteConfirmDialog
+        open={Boolean(deleteId)}
+        title="Delete quotation?"
+        description="This draft and its saved document will be permanently deleted."
+        deleting={deleting}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+      />
     </div>
   )
 }

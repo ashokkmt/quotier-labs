@@ -9,6 +9,8 @@ export function CreateCompany(arg1:company.CompanyCreateDTO):Promise<company.Com
 
 export function GetActiveCompany():Promise<company.CompanyDTO>;
 
+export function GetImageDataURI(arg1:string):Promise<string>;
+
 export function IsFirstRun():Promise<boolean>;
 
 export function SelectImage(arg1:string):Promise<string>;

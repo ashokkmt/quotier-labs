@@ -61,19 +61,26 @@ export function Overlay({
               width: target.width / 2,
             }
           : plan.preview === 'inside'
-            ? { top: target.top + 4, left: target.left + 4, width: target.width - 8, height: 4 }
+            ? {
+                top: target.top + 6,
+                left: target.left + 6,
+                width: target.width - 12,
+                height: Math.max(64, target.height - 12),
+              }
             : plan.axis === 'horizontal'
               ? {
                   top: target.top,
-                  left: target.left + (plan.linePosition === 'before' ? -2 : target.width - 2),
-                  width: 4,
+                  left:
+                    target.left +
+                    (plan.linePosition === 'before' ? -Math.min(target.width, 96) : target.width),
+                  width: Math.min(target.width, 96),
                   height: target.height,
                 }
               : {
-                  top: target.top + (plan.linePosition === 'before' ? -2 : target.height - 2),
+                  top: target.top + (plan.linePosition === 'before' ? -36 : target.height),
                   left: target.left,
                   width: target.width,
-                  height: 4,
+                  height: 36,
                 },
       )
     }
@@ -90,7 +97,11 @@ export function Overlay({
           <div className="absolute border-2 border-blue-500 bg-blue-500/10" style={selectedRect} />
           <div
             className="absolute flex gap-1 pointer-events-auto items-center"
-            style={{ top: Math.max(0, selectedRect.top - 28), left: selectedRect.left }}
+            style={{
+              top: Math.max(0, selectedRect.top - 28),
+              left: selectedRect.left + selectedRect.width / 2,
+              transform: 'translateX(-50%)',
+            }}
           >
             <button
               aria-label="Move selected element"
@@ -132,6 +143,23 @@ export function Overlay({
             >
               Delete
             </button>
+            {(selectedNode?.role === 'container' || selectedNode?.role === 'root') && (
+              <button
+                aria-label="Add content to selected container"
+                className="rounded bg-blue-600 px-2 text-xs text-white"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (selected)
+                    window.dispatchEvent(
+                      new CustomEvent('builder:add', {
+                        detail: { id: selected, x: event.clientX, y: event.clientY },
+                      }),
+                    )
+                }}
+              >
+                +
+              </button>
+            )}
             {canResize && (
               <input
                 aria-label="Resize selected column"
@@ -185,9 +213,9 @@ export function Overlay({
       {dropRect && (
         <div
           className={
-            plan?.preview === 'split'
+            plan?.preview === 'split' || plan?.preview === 'line' || plan?.preview === 'inside'
               ? 'absolute border-2 border-dashed border-blue-500 bg-blue-500/15'
-              : 'absolute bg-blue-600 rounded'
+              : 'absolute border-2 border-dashed border-blue-500 bg-blue-500/15'
           }
           style={dropRect}
         />
