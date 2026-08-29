@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { GetTemplate, UpdateTemplate } from '../../../wailsjs/go/wails/TemplateHandler'
-import { BuilderEngine } from '../../builder'
+import { MigrateDocumentToV5 } from '../../../wailsjs/go/wails/DocumentHandler'
+import { BuilderEngine, V5BuilderEngine } from '../../builder'
+import { isFreeformV5Enabled } from '../../builder/feature'
+import type { V5Document } from '../../builder/v5/model'
 import { normalize, serialize } from '../../builder'
-import type { DocumentModel } from '../../builder'
 
 export function TemplateBuilder({
   templateId,
@@ -15,7 +17,7 @@ export function TemplateBuilder({
   templateId: string
   onBack: () => void
 }) {
-  const [document, setDocument] = useState<DocumentModel>(() => normalize({}))
+  const [document, setDocument] = useState<any>(() => normalize({}))
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
@@ -23,10 +25,16 @@ export function TemplateBuilder({
   const { toast } = useToast()
   useEffect(() => {
     GetTemplate(templateId)
-      .then((res) => {
+      .then(async (res) => {
         setName(res.name)
         setDescription(res.description || '')
-        setDocument(normalize(res.layout ? JSON.parse(res.layout) : {}))
+        const raw = res.layout || JSON.stringify(normalize({}))
+        const parsed = JSON.parse(raw)
+        setDocument(
+          isFreeformV5Enabled() && parsed?.schema_version !== 5
+            ? JSON.parse(await MigrateDocumentToV5(raw))
+            : parsed,
+        )
       })
       .catch((err) =>
         toast({
@@ -40,7 +48,8 @@ export function TemplateBuilder({
   const save = async () => {
     setSaving(true)
     try {
-      await UpdateTemplate({ id: templateId, name, description, layout: serialize(document) })
+      const layout = document?.schema_version === 5 ? JSON.stringify(document) : serialize(document)
+      await UpdateTemplate({ id: templateId, name, description, layout })
       toast({ title: 'Template saved' })
     } catch (err) {
       toast({ title: 'Failed to save', description: String(err), variant: 'destructive' })
@@ -71,7 +80,11 @@ export function TemplateBuilder({
         </Button>
       </header>
       <div className="flex-1 relative overflow-hidden">
-        <BuilderEngine document={document} onChange={setDocument} />
+        {isFreeformV5Enabled() && document?.schema_version === 5 ? (
+          <V5BuilderEngine document={document as V5Document} onChange={setDocument} />
+        ) : (
+          <BuilderEngine document={document} onChange={setDocument} />
+        )}
       </div>
     </div>
   )

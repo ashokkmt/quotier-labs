@@ -63,6 +63,13 @@ function NodeView({
         cursor: node.locked ? 'not-allowed' : 'move',
       }}
     >
+      {node.kind === 'text'
+        ? String(node.props?.text ?? node.name ?? '')
+        : node.kind === 'table'
+          ? 'Table'
+          : node.role === 'flow-frame'
+            ? 'Flow frame'
+            : null}
       {node.children?.map((child) => (
         <NodeView
           key={child.id}

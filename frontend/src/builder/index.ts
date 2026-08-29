@@ -12,3 +12,4 @@ export * from './interaction/usePointerDrag'
 export * from './canvas/Canvas'
 
 export * from './BuilderEngine'
+export * from './v5/V5BuilderEngine'

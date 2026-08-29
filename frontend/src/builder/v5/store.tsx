@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { V5History, type V5Command } from './history'
 import { serializeV5, parseV5 } from './serialization'
 import type { V5Document } from './model'
@@ -111,7 +111,7 @@ export function V5SessionProvider({
   initial: V5Document
   children: ReactNode
 }) {
-  const session = useMemo(() => new V5Session(initial), [initial])
+  const [session] = useState(() => new V5Session(initial))
   return <V5SessionContext.Provider value={session}>{children}</V5SessionContext.Provider>
 }
 export function useV5Session() {

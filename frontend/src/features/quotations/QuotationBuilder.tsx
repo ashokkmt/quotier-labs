@@ -7,8 +7,11 @@ import {
   UpdateQuotationCustomer,
   SaveAsTemplate,
 } from '../../../wailsjs/go/wails/QuotationHandler'
+import { MigrateDocumentToV5 } from '../../../wailsjs/go/wails/DocumentHandler'
 import { BuilderHeader } from './BuilderHeader'
-import { BuilderEngine } from '../../builder'
+import { BuilderEngine, V5BuilderEngine } from '../../builder'
+import { isFreeformV5Enabled } from '../../builder/feature'
+import type { V5Document } from '../../builder/v5/model'
 import { Preview } from './components/Preview'
 import { CalculationDisplay } from './CalculationDisplay'
 import { useUndoRedo } from './hooks/useUndoRedo'
@@ -63,7 +66,13 @@ export function QuotationBuilder({
           setCalculationResult(res)
         }
         if (res.document) {
-          const parsed = normalize(JSON.parse(res.document))
+          const raw = JSON.parse(res.document)
+          const parsed =
+            isFreeformV5Enabled() && raw?.schema_version !== 5
+              ? JSON.parse(await MigrateDocumentToV5(res.document))
+              : raw?.schema_version === 5
+                ? raw
+                : normalize(raw)
           // Never replace persisted content silently with a local checkpoint.
           // A stale checkpoint previously made an existing quotation appear empty.
           setDocument(parsed)
@@ -101,7 +110,9 @@ export function QuotationBuilder({
 
   const executeSave = async (docToSave: any) => {
     if (!docToSave) return
-    const res = await SaveQuotationDocument({ id: quotationId, document: serialize(docToSave) })
+    const encoded =
+      docToSave?.schema_version === 5 ? JSON.stringify(docToSave) : serialize(docToSave)
+    const res = await SaveQuotationDocument({ id: quotationId, document: encoded })
     setQuotation(res)
     clearRecovery()
     await handleRecalculate()
@@ -231,6 +242,14 @@ export function QuotationBuilder({
               quotationId={quotation.id}
               // eslint-disable-next-line react/purity
               version={lastSaved ? lastSaved.getTime() : new Date().getTime()}
+            />
+          ) : isFreeformV5Enabled() && document?.schema_version === 5 ? (
+            <V5BuilderEngine
+              document={document as V5Document}
+              onChange={(newDoc) => {
+                setDocument(newDoc)
+                setDirty(true)
+              }}
             />
           ) : (
             <BuilderEngine

@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { GetQuotationPreviewPDF } from '../../../../wailsjs/go/wails/DocumentHandler'
+import {
+  GetQuotationLayoutDiagnostics,
+  GetQuotationPreviewPDF,
+} from '../../../../wailsjs/go/wails/DocumentHandler'
 import { Loader2 } from 'lucide-react'
 
 interface PreviewProps {
@@ -14,6 +17,9 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
   const pdfUrlRef = useRef<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [diagnostics, setDiagnostics] = useState<
+    Array<{ code: string; nodeId: string; message: string }>
+  >([])
 
   useEffect(() => {
     let isMounted = true
@@ -21,7 +27,10 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
       setIsLoading(true)
       setError(null)
       try {
-        const base64Data = await GetQuotationPreviewPDF(companyId, quotationId)
+        const [base64Data, resolvedDiagnostics] = await Promise.all([
+          GetQuotationPreviewPDF(companyId, quotationId),
+          GetQuotationLayoutDiagnostics(companyId, quotationId),
+        ])
         if (isMounted) {
           const binary = atob(base64Data)
           const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
@@ -29,6 +38,7 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
           if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current)
           pdfUrlRef.current = nextUrl
           setPdfUrl(nextUrl)
+          setDiagnostics(resolvedDiagnostics)
         }
       } catch (err: any) {
         if (isMounted) {
@@ -83,6 +93,16 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
           title="Printable quotation preview"
           className="h-full min-h-[800px] w-full border-0 bg-white"
         />
+      )}
+      {diagnostics.length > 0 && (
+        <div
+          role="status"
+          className="absolute bottom-3 left-3 right-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950"
+        >
+          {diagnostics.map((diagnostic) => (
+            <p key={`${diagnostic.code}-${diagnostic.nodeId}`}>{diagnostic.message}</p>
+          ))}
+        </div>
       )}
     </div>
   )

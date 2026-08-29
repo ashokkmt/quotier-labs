@@ -144,6 +144,7 @@ func Validate(d *Document) error {
 	}
 	seen := map[string]string{}
 	stories := map[string]bool{}
+	masters := map[string]bool{}
 	for _, s := range d.Stories {
 		if s.ID == "" || stories[s.ID] {
 			return fmt.Errorf("%w: duplicate or empty story id", ErrInvalid)
@@ -174,8 +175,17 @@ func Validate(d *Document) error {
 			return fmt.Errorf("%w: duplicate id %q", ErrInvalid, m.ID)
 		}
 		seen[m.ID] = "master"
+		masters[m.ID] = true
 		if err := validateChildren(m.Children, m.ChildIDs, "master", 0, seen, stories, &count); err != nil {
 			return err
+		}
+	}
+	if d.Settings.DefaultMasterID != "" && !masters[d.Settings.DefaultMasterID] {
+		return fmt.Errorf("%w: default master %q does not exist", ErrInvalid, d.Settings.DefaultMasterID)
+	}
+	for _, p := range d.Root.Pages {
+		if p.MasterID != "" && !masters[p.MasterID] {
+			return fmt.Errorf("%w: page %q references missing master %q", ErrInvalid, p.ID, p.MasterID)
 		}
 	}
 	if count > MaxNodes {

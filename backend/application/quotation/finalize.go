@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-		domain_quotation "quotierlabs/backend/domain/quotation"
+	"quotierlabs/backend/domain/calculation"
+	"quotierlabs/backend/domain/documentmodel"
+	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
 func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID string) (*QuotationDTO, error) {
@@ -25,19 +27,33 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 	}
 
 	// 1. Validate Document Structure
-	doc, err := domain_quotation.ParseDocument(q.Document)
+	version, err := domain_quotation.DocumentSchemaVersion(q.Document)
 	if err != nil {
 		return nil, err
 	}
-	if err := domain_quotation.ValidateDocument(doc); err != nil {
-		return nil, err
+	var lines []calculation.LineItemInput
+	if version == documentmodel.SchemaVersion {
+		v5, parseErr := documentmodel.Parse([]byte(q.Document))
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		lines = domain_quotation.ExtractV5LineItems(v5)
+	} else {
+		doc, parseErr := domain_quotation.ParseDocument(q.Document)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if err := domain_quotation.ValidateDocument(doc); err != nil {
+			return nil, err
+		}
+		lines = domain_quotation.ExtractLineItems(doc)
 	}
 
 	// 2. Authoritative Recalculation
 	// RecalculateQuotation uses its own transaction, but since we are within txCtx, we should extract the core recalculation logic
 	// Actually, we can just call it on the struct directly without saving.
 	// Wait, we need to do this carefully.
-	
+
 	comp, err := s.companyRepo.GetByID(txCtx, companyID)
 	if err != nil {
 		return nil, err
@@ -48,12 +64,11 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 	}
 
 	// (We can use CalculatePreview internally to avoid nested transactions)
-	lines := domain_quotation.ExtractLineItems(doc)
 	res, err := s.CalculatePreview(txCtx, companyID, lines, cust.State)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	q.Subtotal = res.Subtotal
 	q.DiscountTotal = res.DiscountTotal
 	q.TaxableTotal = res.TaxableTotal

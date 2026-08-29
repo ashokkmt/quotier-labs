@@ -74,6 +74,10 @@ export function validateV5(document: unknown): string | null {
       if (!node.id || ids.has(node.id)) return `duplicate or empty node id: ${node.id}`
       ids.add(node.id)
       if (!node.kind || !node.role) return `node ${node.id} requires kind and role`
+      if (node.role !== 'group') {
+        const known = ['text', 'image', 'table', 'flow-frame']
+        if (!known.includes(node.kind)) return `unknown widget ${node.kind}`
+      }
       const g = node.geometry
       if (!g || g.width <= 0 || g.height <= 0 || g.x < 0 || g.y < 0)
         return `invalid geometry: ${node.id}`

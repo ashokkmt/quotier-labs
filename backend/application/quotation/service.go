@@ -286,7 +286,7 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 	if err != nil {
 		return nil, &domain.ValidationError{Field: "document", Message: "invalid JSON document"}
 	}
-	if version > 4 {
+	if version > 5 {
 		return nil, &domain.ValidationError{Field: "document", Message: "unsupported document schema version"}
 	}
 	q.Document = input.Document

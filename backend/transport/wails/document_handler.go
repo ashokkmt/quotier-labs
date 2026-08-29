@@ -29,11 +29,19 @@ func (h *DocumentHandler) GetQuotationPreviewPDF(companyID, quotationID string) 
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Convert to base64 for easy transport to JS
 	return base64.StdEncoding.EncodeToString(bytes), nil
 }
 
 func (h *DocumentHandler) GeneratePDF(companyID, quotationID string) (string, error) {
 	return h.docService.GenerateFinalPDF(h.ctx, companyID, quotationID)
+}
+
+func (h *DocumentHandler) GetQuotationLayoutDiagnostics(companyID, quotationID string) (interface{}, error) {
+	return h.docService.ResolveQuotationLayoutDiagnostics(h.ctx, companyID, quotationID)
+}
+
+func (h *DocumentHandler) MigrateDocumentToV5(raw string) (string, error) {
+	return h.docService.MigrateDocumentToV5(raw)
 }

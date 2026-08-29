@@ -41,3 +41,11 @@ func TestValidateFlowFrameRequiresStoryAndOrderedChildren(t *testing.T) {
 		t.Fatal("expected child order error")
 	}
 }
+
+func TestValidateRejectsUnknownMasterReference(t *testing.T) {
+	d := validDocument()
+	d.Root.Pages[0].MasterID = "missing"
+	if err := Validate(d); err == nil {
+		t.Fatal("expected missing master error")
+	}
+}

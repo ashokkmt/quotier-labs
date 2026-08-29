@@ -34,8 +34,9 @@ describe('V5 model', () => {
     expect(
       validateV5({ ...fixture(), root: { pages: [{ ...fixture().root.pages[0], width: du(1) }] } }),
     ).toContain('dimensions'))
-  it('provides the 500-row baseline fixture without editor state', () =>
-    expect((largeTableFixture().stories?.[0].content as { rows: unknown[] }).rows).toHaveLength(
-      500,
-    ))
+  it('provides the 500-row baseline fixture without editor state', () => {
+    const story = largeTableFixture().stories?.[0]
+    expect(story).toBeDefined()
+    expect((story!.content as { rows: unknown[] }).rows).toHaveLength(500)
+  })
 })

@@ -2,6 +2,9 @@ import { apply, geometryMatrix, invert, quantizeGeometry } from './geometry'
 import { du, type V5Document, type V5Geometry, type V5Node } from './model'
 import { parseV5, serializeV5 } from './serialization'
 import type { V5Command } from './history'
+import { cloneNode, findPlacement } from './placement'
+import { getV5Widget } from './registry'
+import { distribute } from './snapping'
 
 type NodeLocation = { node: V5Node; siblings: V5Node[]; parent: V5Node | null; pageId: string }
 const clone = (document: V5Document) => parseV5(serializeV5(document))
@@ -295,7 +298,103 @@ export const rotateNode = (id: string, degrees: number, snap = false) =>
   snapshotCommand('Rotate node', (d) =>
     updateNode(d, id, (node) => {
       if (node.role === 'flow-frame') throw new Error('flow frames cannot rotate')
+      if (node.role === 'element' && !getV5Widget(node.kind)?.canRotate)
+        throw new Error(`widget ${node.kind} cannot rotate`)
       const rotation = snap ? Math.round(degrees / 15) * 15 : degrees
       node.geometry = quantizeGeometry({ ...node.geometry, rotation: rotation * 100 })
     }),
   )
+
+export const duplicateNode = (
+  id: string,
+  nextID: (prefix: string) => string,
+  preferred?: { x: number; y: number },
+) =>
+  snapshotCommand('Duplicate node', (d) => {
+    const source = locate(d, id)
+    if (!source || source.node.locked) throw new Error('node cannot be duplicated')
+    const page = d.root.pages.find((candidate) => candidate.id === source.pageId)!
+    const clone = cloneNode(source.node, nextID, { x: 0, y: 0 })
+    const placement = findPlacement(
+      page,
+      clone.geometry,
+      preferred ?? { x: source.node.geometry.x + 1200, y: source.node.geometry.y + 1200 },
+      page.children.filter((node) => node.id !== source.node.id).map((node) => node.geometry),
+    )
+    if (!placement) throw new Error('no printable placement is available')
+    clone.geometry = { ...clone.geometry, x: placement.x, y: placement.y }
+    const index = source.siblings.indexOf(source.node) + 1
+    source.siblings.splice(index, 0, clone)
+    syncChildIDs(source.parent)
+    return d
+  })
+
+export const alignNodes = (
+  ids: string[],
+  mode: 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom',
+) =>
+  snapshotCommand('Align selection', (d) => {
+    const nodes = ids
+      .map((id) => locate(d, id)?.node)
+      .filter((node): node is V5Node => !!node && !node.locked)
+    if (nodes.length < 2) return d
+    const horizontal = mode === 'left' || mode === 'center-x' || mode === 'right'
+    const value = horizontal
+      ? mode === 'left'
+        ? Math.min(...nodes.map((node) => node.geometry.x))
+        : mode === 'right'
+          ? Math.max(...nodes.map((node) => node.geometry.x + node.geometry.width))
+          : (Math.min(...nodes.map((node) => node.geometry.x)) +
+              Math.max(...nodes.map((node) => node.geometry.x + node.geometry.width))) /
+            2
+      : mode === 'top'
+        ? Math.min(...nodes.map((node) => node.geometry.y))
+        : mode === 'bottom'
+          ? Math.max(...nodes.map((node) => node.geometry.y + node.geometry.height))
+          : (Math.min(...nodes.map((node) => node.geometry.y)) +
+              Math.max(...nodes.map((node) => node.geometry.y + node.geometry.height))) /
+            2
+    for (const node of nodes)
+      node.geometry = quantizeGeometry(
+        horizontal
+          ? {
+              ...node.geometry,
+              x:
+                mode === 'center-x'
+                  ? value - node.geometry.width / 2
+                  : mode === 'right'
+                    ? value - node.geometry.width
+                    : value,
+            }
+          : {
+              ...node.geometry,
+              y:
+                mode === 'center-y'
+                  ? value - node.geometry.height / 2
+                  : mode === 'bottom'
+                    ? value - node.geometry.height
+                    : value,
+            },
+      )
+    return d
+  })
+export const distributeNodes = (ids: string[], axis: 'x' | 'y') =>
+  snapshotCommand('Distribute selection', (d) => {
+    const nodes = ids
+      .map((id) => locate(d, id)?.node)
+      .filter((node): node is V5Node => !!node && !node.locked)
+    const positions = distribute(
+      axis,
+      nodes.map((node) => ({
+        id: node.id,
+        x: node.geometry.x,
+        y: node.geometry.y,
+        width: node.geometry.width,
+        height: node.geometry.height,
+      })),
+    )
+    for (const node of nodes)
+      if (positions[node.id] !== undefined)
+        node.geometry = quantizeGeometry({ ...node.geometry, [axis]: positions[node.id] })
+    return d
+  })

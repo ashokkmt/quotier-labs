@@ -36,3 +36,13 @@ func TestMigrateRejectsUnknownVersion(t *testing.T) {
 		t.Fatal("expected unsupported version")
 	}
 }
+
+func TestMigrateMapsLegacyWidgetKindsToControlledV5Kinds(t *testing.T) {
+	doc, err := Migrate([]byte(`{"schema_version":4,"root":{"id":"root","role":"root","type":"root","children":[{"id":"heading","role":"widget","type":"field.heading","meta":{"visible":true},"children":[]}]}}`), testIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.Root.Pages[0].Children[0].Kind; got != "text" {
+		t.Fatalf("kind = %q", got)
+	}
+}

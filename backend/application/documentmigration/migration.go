@@ -121,7 +121,7 @@ func convertBlock(b domain_template.Block, newID func(string, string) string) do
 		role, kind = "group", "group"
 	}
 	if b.Kind == domain_template.BlockWidget && b.WidgetType != "" {
-		kind = b.WidgetType
+		kind = migratedWidgetKind(b.WidgetType)
 	}
 	children := make([]documentmodel.Node, len(b.Children))
 	ids := make([]string, len(b.Children))
@@ -135,6 +135,17 @@ func convertBlock(b domain_template.Block, newID func(string, string) string) do
 		vis = "shown"
 	}
 	return documentmodel.Node{ID: newID(b.ID, "node"), Kind: kind, Role: role, Geometry: documentmodel.Geometry{Width: documentmodel.A4WidthDU, Height: 1000}, LayoutMode: "fixed", Visibility: vis, Optional: b.Optional, ChildIDs: ids, Children: children, Props: props}
+}
+
+func migratedWidgetKind(legacy string) string {
+	switch legacy {
+	case "image", "table":
+		return legacy
+	default:
+		// V5 keeps one controlled text renderer for legacy field/content widgets. The original
+		// widget/settings payload remains in props for later specialized editing.
+		return "text"
+	}
 }
 
 func convertRow(row domain_quotation.Row, newID func(string, string) string) documentmodel.Node {

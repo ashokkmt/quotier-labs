@@ -1,6 +1,7 @@
 package template_test
 
 import (
+	"errors"
 	"testing"
 
 	"quotierlabs/backend/domain"
@@ -40,7 +41,7 @@ func TestValidateTemplate(t *testing.T) {
 		{
 			name: "invalid layout schema",
 			tmpl: domain.Template{
-				Name: "Test",
+				Name:   "Test",
 				Layout: `{"rows":[{"id":"","columns":[]}]}`,
 			},
 			wantErr: nil, // We'll assert error exists
@@ -60,5 +61,12 @@ func TestValidateTemplate(t *testing.T) {
 				t.Errorf("expected error %v, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestValidateTemplateRejectsInvalidV5Layout(t *testing.T) {
+	tmpl := domain.Template{Name: "V5", Layout: `{"schema_version":5,"root":{"pages":[]},"settings":{"page_size":"A4","orientation":"portrait"}}`}
+	if err := template.ValidateTemplate(&tmpl); !errors.Is(err, template.ErrInvalidLayout) {
+		t.Fatalf("expected invalid V5 layout, got %v", err)
 	}
 }
