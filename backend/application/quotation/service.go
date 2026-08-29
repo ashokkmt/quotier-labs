@@ -205,6 +205,22 @@ func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input Sa
 	if err != nil {
 		return nil, fmt.Errorf("invalid quotation document: %w", err)
 	}
+	if doc.SchemaVersion >= 4 {
+		// V4/V5 layouts are already complete document snapshots. Preserve them exactly;
+		// flattening into the legacy rows envelope would lose geometry and layer order.
+		layoutJSON := q.Document
+		t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: layoutJSON, SchemaVersion: doc.SchemaVersion, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
+		if err := s.templateRepo.Create(txCtx, t); err != nil {
+			return nil, err
+		}
+		if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: t.SchemaVersion, CreatedAt: t.CreatedAt}); err != nil {
+			return nil, err
+		}
+		if err := s.txManager.Commit(txCtx); err != nil {
+			return nil, err
+		}
+		return t, nil
+	}
 	if len(doc.Children) > 0 {
 		layoutJSON, err := json.Marshal(map[string]interface{}{"schema_version": 1, "children": doc.Children})
 		if err != nil {
@@ -266,10 +282,15 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 		return nil, ErrQuotationNotDraft
 	}
 
-	q.Document = input.Document
-	if strings.Contains(input.Document, `"schema_version":3`) {
-		q.SchemaVersion = 3
+	version, err := domain_quotation.DocumentSchemaVersion(input.Document)
+	if err != nil {
+		return nil, &domain.ValidationError{Field: "document", Message: "invalid JSON document"}
 	}
+	if version > 4 {
+		return nil, &domain.ValidationError{Field: "document", Message: "unsupported document schema version"}
+	}
+	q.Document = input.Document
+	q.SchemaVersion = version
 	q.UpdatedAt = time.Now().UTC()
 
 	if err := domain_quotation.ValidateQuotation(q); err != nil {

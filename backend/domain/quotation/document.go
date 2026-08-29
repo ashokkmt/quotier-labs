@@ -3,6 +3,7 @@ package quotation
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	domain_template "quotierlabs/backend/domain/template"
 )
 
@@ -81,6 +82,27 @@ type TableColumn struct {
 	Type    string `json:"type"`
 	Formula string `json:"formula,omitempty"`
 	Width   string `json:"width,omitempty"`
+}
+
+// DocumentSchemaVersion reads only the version envelope. It is intentionally separate from
+// ParseDocument so services can select an explicit compatibility adapter before decoding a body.
+func DocumentSchemaVersion(docStr string) (int, error) {
+	if docStr == "" {
+		return 1, nil
+	}
+	var envelope struct {
+		SchemaVersion *int `json:"schema_version"`
+	}
+	if err := json.Unmarshal([]byte(docStr), &envelope); err != nil {
+		return 0, err
+	}
+	if envelope.SchemaVersion == nil {
+		return 1, nil
+	}
+	if *envelope.SchemaVersion < 1 {
+		return 0, fmt.Errorf("invalid document schema version %d", *envelope.SchemaVersion)
+	}
+	return *envelope.SchemaVersion, nil
 }
 
 func ParseDocument(docStr string) (*Document, error) {
