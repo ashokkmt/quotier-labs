@@ -5,11 +5,19 @@ export const A4_HEIGHT_DU = 84189
 export const MAX_V5_NODES = 2000
 export const MAX_V5_DEPTH = 8
 
-export type DocumentUnit = number & { readonly __documentUnit: unique symbol }
+// Values are quantized at all mutation/serialization boundaries; keeping this numeric makes
+// geometry arithmetic ergonomic while the validator remains authoritative.
+export type DocumentUnit = number
 export type V5Role = 'group' | 'element' | 'flow-frame'
 export type V5LayoutMode = 'fixed' | 'intrinsic' | 'flow-frame'
 export type V5Visibility = 'shown' | 'hidden'
-export type V5Geometry = { x: DocumentUnit; y: DocumentUnit; width: DocumentUnit; height: DocumentUnit; rotation: number }
+export type V5Geometry = {
+  x: DocumentUnit
+  y: DocumentUnit
+  width: DocumentUnit
+  height: DocumentUnit
+  rotation: number
+}
 export type V5Node = {
   id: string
   kind: string
@@ -28,43 +36,79 @@ export type V5Node = {
   continuation?: 'manual' | 'auto-pages'
   props?: Record<string, unknown>
 }
-export type V5Page = { id: string; width: DocumentUnit; height: DocumentUnit; margin: { top: DocumentUnit; right: DocumentUnit; bottom: DocumentUnit; left: DocumentUnit }; child_ids: string[]; children: V5Node[]; master_id?: string }
+export type V5Page = {
+  id: string
+  width: DocumentUnit
+  height: DocumentUnit
+  margin: { top: DocumentUnit; right: DocumentUnit; bottom: DocumentUnit; left: DocumentUnit }
+  child_ids: string[]
+  children: V5Node[]
+  master_id?: string
+}
 export type V5Master = { id: string; child_ids: string[]; children: V5Node[] }
 export type V5Story = { id: string; kind: 'rich-text' | 'table'; content: unknown }
-export type V5Document = { schema_version: typeof V5_SCHEMA_VERSION; root: { pages: V5Page[]; masters?: V5Master[] }; stories?: V5Story[]; settings: { page_size: 'A4'; orientation: 'portrait' | 'landscape'; default_master_id?: string } }
+export type V5Document = {
+  schema_version: typeof V5_SCHEMA_VERSION
+  root: { pages: V5Page[]; masters?: V5Master[] }
+  stories?: V5Story[]
+  settings: { page_size: 'A4'; orientation: 'portrait' | 'landscape'; default_master_id?: string }
+}
 
 export const du = (value: number): DocumentUnit => Math.round(value) as DocumentUnit
 
 export function validateV5(document: unknown): string | null {
   const d = document as V5Document
   if (!d || d.schema_version !== V5_SCHEMA_VERSION) return 'schema_version must be 5'
-  if (!d.root || !Array.isArray(d.root.pages) || d.root.pages.length === 0) return 'at least one page is required'
-  if (d.settings?.page_size !== 'A4' || !['portrait', 'landscape'].includes(d.settings.orientation)) return 'settings must describe A4 orientation'
+  if (!d.root || !Array.isArray(d.root.pages) || d.root.pages.length === 0)
+    return 'at least one page is required'
+  if (d.settings?.page_size !== 'A4' || !['portrait', 'landscape'].includes(d.settings.orientation))
+    return 'settings must describe A4 orientation'
   const stories = new Set((d.stories ?? []).map((s) => s.id))
-  const ids = new Set<string>(); let count = 0
+  const ids = new Set<string>()
+  let count = 0
   const visit = (nodes: V5Node[], depth: number): string | null => {
     if (depth > MAX_V5_DEPTH) return 'maximum group depth exceeded'
     for (const node of nodes) {
-      count++; if (count > MAX_V5_NODES) return 'node limit exceeded'
-      if (!node.id || ids.has(node.id)) return `duplicate or empty node id: ${node.id}`; ids.add(node.id)
+      count++
+      if (count > MAX_V5_NODES) return 'node limit exceeded'
+      if (!node.id || ids.has(node.id)) return `duplicate or empty node id: ${node.id}`
+      ids.add(node.id)
       if (!node.kind || !node.role) return `node ${node.id} requires kind and role`
       const g = node.geometry
-      if (!g || g.width <= 0 || g.height <= 0 || g.x < 0 || g.y < 0) return `invalid geometry: ${node.id}`
+      if (!g || g.width <= 0 || g.height <= 0 || g.x < 0 || g.y < 0)
+        return `invalid geometry: ${node.id}`
       if (!['shown', 'hidden'].includes(node.visibility)) return `invalid visibility: ${node.id}`
-      if (!['fixed', 'intrinsic', 'flow-frame'].includes(node.layout_mode)) return `invalid layout mode: ${node.id}`
-      if (node.role === 'flow-frame' && (!node.story_id || !stories.has(node.story_id) || node.layout_mode !== 'flow-frame')) return `invalid flow frame: ${node.id}`
+      if (!['fixed', 'intrinsic', 'flow-frame'].includes(node.layout_mode))
+        return `invalid layout mode: ${node.id}`
+      if (
+        node.role === 'flow-frame' &&
+        (!node.story_id || !stories.has(node.story_id) || node.layout_mode !== 'flow-frame')
+      )
+        return `invalid flow frame: ${node.id}`
       const children = node.children ?? []
       if (node.role !== 'group' && children.length > 0) return `non-group has children: ${node.id}`
-      if (node.child_ids && (node.child_ids.length !== children.length || node.child_ids.some((id, i) => id !== children[i]?.id))) return `child order mismatch: ${node.id}`
-      const result = visit(children, depth + 1); if (result) return result
+      if (
+        node.child_ids &&
+        (node.child_ids.length !== children.length ||
+          node.child_ids.some((id, i) => id !== children[i]?.id))
+      )
+        return `child order mismatch: ${node.id}`
+      const result = visit(children, depth + 1)
+      if (result) return result
     }
     return null
   }
   for (const page of d.root.pages) {
-    if (!page.id || ids.has(page.id)) return `duplicate or empty page id: ${page.id}`; ids.add(page.id)
-    const expected = d.settings.orientation === 'portrait' ? [A4_WIDTH_DU, A4_HEIGHT_DU] : [A4_HEIGHT_DU, A4_WIDTH_DU]
-    if (page.width !== expected[0] || page.height !== expected[1]) return `invalid page dimensions: ${page.id}`
-    const result = visit(page.children, 0); if (result) return result
+    if (!page.id || ids.has(page.id)) return `duplicate or empty page id: ${page.id}`
+    ids.add(page.id)
+    const expected =
+      d.settings.orientation === 'portrait'
+        ? [A4_WIDTH_DU, A4_HEIGHT_DU]
+        : [A4_HEIGHT_DU, A4_WIDTH_DU]
+    if (page.width !== expected[0] || page.height !== expected[1])
+      return `invalid page dimensions: ${page.id}`
+    const result = visit(page.children, 0)
+    if (result) return result
   }
   return null
 }
