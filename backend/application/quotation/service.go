@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/documentmodel"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
@@ -17,14 +19,15 @@ var (
 )
 
 type Service struct {
-	repo         domain.QuotationRepository
-	templateRepo domain.TemplateRepository
-	customerRepo domain.CustomerRepository
-	companyRepo  domain.CompanyRepository
-	seqRepo      domain.NumberSequenceRepository
-	resolver     *domain_quotation.TemplateResolver
-	txManager    domain.TxManager
-	idGen        domain.IDGenerator
+	repo          domain.QuotationRepository
+	templateRepo  domain.TemplateRepository
+	customerRepo  domain.CustomerRepository
+	companyRepo   domain.CompanyRepository
+	seqRepo       domain.NumberSequenceRepository
+	resolver      *domain_quotation.TemplateResolver
+	txManager     domain.TxManager
+	idGen         domain.IDGenerator
+	layoutMetrics layoutir.Metrics
 }
 
 func NewService(
@@ -36,16 +39,21 @@ func NewService(
 	resolver *domain_quotation.TemplateResolver,
 	txManager domain.TxManager,
 	idGen domain.IDGenerator,
+	layoutMetrics layoutir.Metrics,
 ) *Service {
+	if layoutMetrics == nil {
+		layoutMetrics = layoutir.DefaultMetrics{}
+	}
 	return &Service{
-		repo:         repo,
-		templateRepo: templateRepo,
-		customerRepo: customerRepo,
-		companyRepo:  companyRepo,
-		seqRepo:      seqRepo,
-		resolver:     resolver,
-		txManager:    txManager,
-		idGen:        idGen,
+		repo:          repo,
+		templateRepo:  templateRepo,
+		customerRepo:  customerRepo,
+		companyRepo:   companyRepo,
+		seqRepo:       seqRepo,
+		resolver:      resolver,
+		txManager:     txManager,
+		idGen:         idGen,
+		layoutMetrics: layoutMetrics,
 	}
 }
 
@@ -58,6 +66,7 @@ func mapToDTO(q *domain.Quotation) QuotationDTO {
 		Number:        q.Number,
 		Status:        q.Status,
 		Document:      q.Document,
+		SchemaVersion: q.SchemaVersion,
 		Subtotal:      q.Subtotal,
 		DiscountTotal: q.DiscountTotal,
 		TaxableTotal:  q.TaxableTotal,
@@ -106,16 +115,15 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 		return nil, fmt.Errorf("company not found: %w", err)
 	}
 
-	var doc *domain_quotation.Document
+	var docJSON string
+	var docVersion int
 	if tmpl != nil {
-		doc, err = s.resolver.Resolve(txCtx, tmpl)
+		docJSON, docVersion, err = s.resolveDraftDocument(txCtx, tmpl)
 	} else {
-		doc = &domain_quotation.Document{Rows: []domain_quotation.Row{}}
+		doc := &domain_quotation.Document{Rows: []domain_quotation.Row{}}
+		docJSON, err = doc.ToJSON()
+		docVersion = 1
 	}
-	if err != nil {
-		return nil, err
-	}
-	docJSON, err := doc.ToJSON()
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +168,7 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 		CompanySnapshot:  &compSnapStr,
 		CustomerSnapshot: custSnapStr,
 		TemplateSnapshot: tmplSnapStr,
-		SchemaVersion:    1,
+		SchemaVersion:    docVersion,
 		AuditMetadata: domain.AuditMetadata{
 			CreatedAt: time.Now().UTC(),
 			UpdatedAt: time.Now().UTC(),
@@ -182,6 +190,37 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 
 	dto := mapToDTO(q)
 	return &dto, nil
+}
+
+// resolveDraftDocument builds the starting document for a new draft. A V5 template resolves to an
+// independent, validated deep copy of its layout so quotation edits can never mutate the template;
+// legacy templates keep their existing resolution path.
+func (s *Service) resolveDraftDocument(ctx context.Context, tmpl *domain.Template) (string, int, error) {
+	if version, err := domain_quotation.DocumentSchemaVersion(tmpl.Layout); err == nil && version == documentmodel.SchemaVersion {
+		parsed, err := documentmodel.Parse([]byte(tmpl.Layout))
+		if err != nil {
+			return "", 0, fmt.Errorf("invalid V5 template layout: %w", err)
+		}
+		var deepCopy documentmodel.Document
+		encoded, err := json.Marshal(parsed)
+		if err != nil {
+			return "", 0, err
+		}
+		if err := json.Unmarshal(encoded, &deepCopy); err != nil {
+			return "", 0, err
+		}
+		out, err := json.Marshal(&deepCopy)
+		if err != nil {
+			return "", 0, err
+		}
+		return string(out), documentmodel.SchemaVersion, nil
+	}
+	doc, err := s.resolver.Resolve(ctx, tmpl)
+	if err != nil {
+		return "", 0, err
+	}
+	docJSON, err := doc.ToJSON()
+	return docJSON, 1, err
 }
 
 func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input SaveAsTemplateDTO) (*domain.Template, error) {

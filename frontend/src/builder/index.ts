@@ -3,11 +3,7 @@ export * from './document/serialization'
 export * from './document/store'
 export * from './registry/registry'
 export * from './registry/types'
-export * from './layout/resolve'
-export * from './geometry/hitTest'
 export * from './geometry/placement'
-export * from './history/history'
-export * from './interaction/usePointerDrag'
 
 export * from './canvas/Canvas'
 

@@ -43,6 +43,7 @@ func TestGeneratePDFBytes(t *testing.T) {
 		&mockCompanyRepo{c: &domain.Company{ID: "co1", Name: "Test Co"}},
 		&mockCustomerRepo{c: &domain.Customer{ID: "c1", Name: "Test Cust"}},
 		pdf.NewGenerator(),
+		pdf.NewLayoutMetrics(),
 	)
 
 	exportService := document.NewExportService(

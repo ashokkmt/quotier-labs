@@ -35,7 +35,8 @@ func (s *Service) DuplicateQuotation(ctx context.Context, companyID, quotationID
 		CustomerID:    q.CustomerID,
 		Number:        formattedSeq,
 		Status:        string(domain_quotation.StatusDraft),
-		Document:      q.Document, // Keep the document state
+		Document:      q.Document, // Keep the document state, including its schema version.
+		SchemaVersion: q.SchemaVersion,
 		Subtotal:      q.Subtotal,
 		DiscountTotal: q.DiscountTotal,
 		TaxableTotal:  q.TaxableTotal,
@@ -48,6 +49,11 @@ func (s *Service) DuplicateQuotation(ctx context.Context, companyID, quotationID
 			UpdatedAt: time.Now().UTC(),
 			Version:   1,
 		},
+	}
+
+	// The duplicate is an independent draft that must satisfy the same document contract.
+	if err := domain_quotation.ValidateQuotation(newQ); err != nil {
+		return nil, fmt.Errorf("duplicate document invalid: %w", err)
 	}
 
 	if err := s.repo.Create(txCtx, newQ); err != nil {

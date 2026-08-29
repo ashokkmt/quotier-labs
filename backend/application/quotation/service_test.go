@@ -57,7 +57,7 @@ func TestQuotationService(t *testing.T) {
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
 
-	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen)
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen, nil)
 	ctx := context.Background()
 
 	// 1. Create Draft
@@ -107,7 +107,7 @@ func TestCreateQuotationDraftFromScratch(t *testing.T) {
 		infra_sqlite.NewQuotationRepository(dborm), infra_sqlite.NewTemplateRepository(dborm),
 		infra_sqlite.NewCustomerRepository(dborm), infra_sqlite.NewCompanyRepository(dborm),
 		infra_sqlite.NewNumberSequenceRepository(dborm), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(dborm)),
-		infra_sqlite.NewGormTxManager(dborm), infra_id.NewULIDGenerator(),
+		infra_sqlite.NewGormTxManager(dborm), infra_id.NewULIDGenerator(), nil,
 	)
 	q, err := svc.CreateQuotationDraft(context.Background(), "scratch-comp", quotation.QuotationCreateDTO{})
 	if err != nil {
@@ -129,7 +129,7 @@ func TestSaveQuotationAsTemplate(t *testing.T) {
 	db.Exec("INSERT INTO section_definitions (id, name, schema, schema_version, is_builtin, created_at, updated_at, version) VALUES ('def-1', 'Notes', '{\"elements\":[]}', 1, 1, ?, ?, 1)", now, now)
 	repo := infra_sqlite.NewQuotationRepository(db)
 	templateRepo := infra_sqlite.NewTemplateRepository(db)
-	svc := quotation.NewService(repo, templateRepo, infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(db)), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator())
+	svc := quotation.NewService(repo, templateRepo, infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(db)), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator(), nil)
 	q, err := svc.CreateQuotationDraft(context.Background(), "template-comp", quotation.QuotationCreateDTO{})
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestRecalculateQuotation(t *testing.T) {
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
 
-	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen)
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen, nil)
 	ctx := context.Background()
 
 	// 1. Create Draft
@@ -222,7 +222,7 @@ func TestFinalizeAndStatusTransitions(t *testing.T) {
 	resolver := domain_quotation.NewTemplateResolver(sectionRepo)
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
-	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen)
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen, nil)
 	ctx := context.Background()
 
 	// 1. Create Draft

@@ -6,12 +6,16 @@ export function GeneratePDF(arg1, arg2) {
   return window['go']['wails']['DocumentHandler']['GeneratePDF'](arg1, arg2);
 }
 
-export function GetQuotationPreviewPDF(arg1, arg2) {
-  return window['go']['wails']['DocumentHandler']['GetQuotationPreviewPDF'](arg1, arg2);
+export function GetDocumentLayoutDiagnostics(arg1, arg2, arg3) {
+  return window['go']['wails']['DocumentHandler']['GetDocumentLayoutDiagnostics'](arg1, arg2, arg3);
 }
 
 export function GetQuotationLayoutDiagnostics(arg1, arg2) {
-	return window['go']['wails']['DocumentHandler']['GetQuotationLayoutDiagnostics'](arg1, arg2);
+  return window['go']['wails']['DocumentHandler']['GetQuotationLayoutDiagnostics'](arg1, arg2);
+}
+
+export function GetQuotationPreviewPDF(arg1, arg2) {
+  return window['go']['wails']['DocumentHandler']['GetQuotationPreviewPDF'](arg1, arg2);
 }
 
 export function MigrateDocumentToV5(arg1) {

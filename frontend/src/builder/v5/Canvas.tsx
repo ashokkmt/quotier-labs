@@ -3,6 +3,7 @@ import { moveNodes, resizeNode, rotateNode, type ResizeHandle } from './commands
 import { bounds, corners } from './geometry'
 import { SelectionOverlay } from './SelectionOverlay'
 import { useV5Session } from './store'
+import { V5_COLOR_HEX, type V5ColorToken, type V5ShapeProps, type V5TextProps } from './tokens'
 import type { V5Geometry, V5Node } from './model'
 
 type Gesture = {
@@ -16,6 +17,31 @@ type Gesture = {
 }
 function flatten(nodes: V5Node[]): V5Node[] {
   return nodes.flatMap((node) => [node, ...flatten(node.children ?? [])])
+}
+
+/** Editor projection of controlled props. Points map to pixels via pt-per-px = zoom * 100. */
+const ptToPx = (pt: number, zoom: number) => pt * zoom * 100
+
+function shapeStyle(node: V5Node, zoom: number): React.CSSProperties {
+  const props = node.props as unknown as V5ShapeProps
+  const fill = props.fill && props.fill !== 'none' ? V5_COLOR_HEX[props.fill] : 'transparent'
+  const stroke =
+    props.stroke && props.stroke !== 'none' ? V5_COLOR_HEX[props.stroke] : 'transparent'
+  const widthPt = Number(props.strokeWidth ?? 1)
+  const style = String(props.strokeStyle ?? 'solid')
+  return {
+    background: fill,
+    ...(props.variant === 'ellipse'
+      ? { borderRadius: '50%', border: `${ptToPx(widthPt, zoom)}px ${style} ${stroke}` }
+      : props.variant === 'line'
+        ? {
+            background: 'transparent',
+            borderTop: `${ptToPx(widthPt, zoom)}px ${style} ${stroke}`,
+            height: 0,
+            marginTop: (node.geometry.height * zoom) / 2,
+          }
+        : { border: `${ptToPx(widthPt, zoom)}px ${style} ${stroke}` }),
+  }
 }
 
 function NodeView({
@@ -63,13 +89,22 @@ function NodeView({
         cursor: node.locked ? 'not-allowed' : 'move',
       }}
     >
-      {node.kind === 'text'
-        ? String(node.props?.text ?? node.name ?? '')
-        : node.kind === 'table'
-          ? 'Table'
-          : node.role === 'flow-frame'
-            ? 'Flow frame'
-            : null}
+      {node.kind === 'text' ? (
+        renderText(node, zoom)
+      ) : node.kind === 'shape' ? (
+        <div
+          aria-hidden="true"
+          style={{ width: '100%', height: '100%', ...shapeStyle(node, zoom) }}
+        />
+      ) : node.kind === 'table' ? (
+        'Table'
+      ) : node.kind === 'image' ? (
+        node.props?.source ? null : (
+          'Image'
+        )
+      ) : node.role === 'flow-frame' ? (
+        'Flow frame'
+      ) : null}
       {node.children?.map((child) => (
         <NodeView
           key={child.id}
@@ -82,6 +117,27 @@ function NodeView({
         />
       ))}
     </div>
+  )
+}
+
+function renderText(node: V5Node, zoom: number) {
+  const props = node.props as unknown as V5TextProps
+  const color = V5_COLOR_HEX[(props.color ?? 'black') as V5ColorToken] ?? V5_COLOR_HEX.black
+  return (
+    <span
+      style={{
+        display: 'block',
+        color,
+        fontSize: ptToPx(Number(props.fontSize ?? 11), zoom),
+        fontWeight: props.bold ? 700 : 400,
+        textAlign: (props.align ?? 'left') as 'left' | 'center' | 'right',
+        whiteSpace: 'pre-wrap',
+        overflow: 'hidden',
+        width: '100%',
+      }}
+    >
+      {String(props.text ?? '')}
+    </span>
   )
 }
 

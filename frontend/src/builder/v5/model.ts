@@ -34,6 +34,7 @@ export type V5Node = {
   story_id?: string
   next_frame_id?: string
   continuation?: 'manual' | 'auto-pages'
+  continuation_master_id?: string
   props?: Record<string, unknown>
 }
 export type V5Page = {
@@ -64,6 +65,7 @@ export function validateV5(document: unknown): string | null {
   if (d.settings?.page_size !== 'A4' || !['portrait', 'landscape'].includes(d.settings.orientation))
     return 'settings must describe A4 orientation'
   const stories = new Set((d.stories ?? []).map((s) => s.id))
+  const masterIds = new Set((d.root.masters ?? []).map((m) => m.id))
   const ids = new Set<string>()
   let count = 0
   const visit = (nodes: V5Node[], depth: number): string | null => {
@@ -75,7 +77,7 @@ export function validateV5(document: unknown): string | null {
       ids.add(node.id)
       if (!node.kind || !node.role) return `node ${node.id} requires kind and role`
       if (node.role !== 'group') {
-        const known = ['text', 'image', 'table', 'flow-frame']
+        const known = ['text', 'image', 'table', 'shape', 'flow-frame']
         if (!known.includes(node.kind)) return `unknown widget ${node.kind}`
       }
       const g = node.geometry
@@ -89,6 +91,16 @@ export function validateV5(document: unknown): string | null {
         (!node.story_id || !stories.has(node.story_id) || node.layout_mode !== 'flow-frame')
       )
         return `invalid flow frame: ${node.id}`
+      if (node.role === 'flow-frame') {
+        if (
+          node.continuation &&
+          node.continuation !== 'manual' &&
+          node.continuation !== 'auto-pages'
+        )
+          return `invalid continuation policy: ${node.id}`
+        if (node.continuation_master_id && !masterIds.has(node.continuation_master_id))
+          return `missing continuation master: ${node.id}`
+      }
       const children = node.children ?? []
       if (node.role !== 'group' && children.length > 0) return `non-group has children: ${node.id}`
       if (

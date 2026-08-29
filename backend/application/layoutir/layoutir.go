@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
@@ -28,14 +28,34 @@ type ResolveInput struct {
 	Customer  *domain.Customer
 	Quotation *domain.Quotation
 }
+
 type Box struct {
-	ID, Kind, Text      string
-	StoryID             string
-	Continuation        string
-	Table               *TableFragment
-	Image               *Image
-	X, Y, Width, Height float64
-	Rotation            int32
+	ID, Kind, Text       string
+	StoryID              string
+	Continuation         string
+	ContinuationMasterID string
+	Table                *TableFragment
+	Image                *Image
+	Shape                *Shape
+	X, Y, Width, Height  float64
+	Rotation             int32
+	FontSizePt           float64
+	Bold                 bool
+	Align                string
+	TextColor            string
+}
+
+// Shape carries the controlled fill/stroke tokens resolved from node props.
+type Shape struct {
+	Variant string
+	Fill    string // color token or "none"
+	Stroke  *Stroke
+}
+
+type Stroke struct {
+	Color   string // color token or "none"
+	Style   string // solid | dashed | dotted
+	WidthPt float64
 }
 type TableFragment struct {
 	Headers        []string
@@ -55,22 +75,41 @@ type Layout struct {
 	Diagnostics []Diagnostic
 }
 
+// maxDerivedPages bounds resource use for auto-pages continuation regardless of story content.
+const maxDerivedPages = 100
+
 func Resolve(doc *documentmodel.Document) (*Layout, error) {
 	return ResolveWithInput(context.Background(), doc, ResolveInput{})
 }
 
 // ResolveWithInput resolves a V5 document into a deterministic, physical-unit scene. It checks
 // cancellation between nodes and never treats document content as executable code or markup.
+// Identical inputs always produce an identical Layout.
 func ResolveWithInput(ctx context.Context, doc *documentmodel.Document, input ResolveInput) (*Layout, error) {
+	return resolveWithMetrics(ctx, doc, input, DefaultMetrics{})
+}
+
+// ResolveWithMetrics resolves using an injected metrics adapter so that layout decisions match
+// the renderer that will draw the IR. The adapter must be deterministic.
+func ResolveWithMetrics(ctx context.Context, doc *documentmodel.Document, input ResolveInput, metrics Metrics) (*Layout, error) {
+	if metrics == nil {
+		metrics = DefaultMetrics{}
+	}
+	return resolveWithMetrics(ctx, doc, input, metrics)
+}
+
+func resolveWithMetrics(ctx context.Context, doc *documentmodel.Document, input ResolveInput, m Metrics) (*Layout, error) {
 	if err := documentmodel.Validate(doc); err != nil {
 		return nil, err
 	}
-	result := &Layout{Pages: make([]Page, 0, len(doc.Root.Pages))}
+	// Diagnostics is always non-nil so transport layers marshal a clean resolution as [] rather
+	// than null, and callers can index it without nil checks.
+	result := &Layout{Pages: make([]Page, 0, len(doc.Root.Pages)), Diagnostics: []Diagnostic{}}
 	masters := make(map[string]documentmodel.Master, len(doc.Root.Masters))
 	for _, master := range doc.Root.Masters {
 		masters[master.ID] = master
 	}
-	for _, source := range doc.Root.Pages {
+	for i, source := range doc.Root.Pages {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -81,20 +120,22 @@ func ResolveWithInput(ctx context.Context, doc *documentmodel.Document, input Re
 		}
 		if masterID != "" {
 			// Master elements paint behind the document page's own children.
-			if err := addNodes(ctx, &page, &result.Diagnostics, masters[masterID].Children, 0, 0, input); err != nil {
+			if err := addNodes(ctx, &page, &result.Diagnostics, masters[masterID].Children, 0, 0, input, m, i+1); err != nil {
 				return nil, err
 			}
 		}
-		if err := addNodes(ctx, &page, &result.Diagnostics, source.Children, 0, 0, input); err != nil {
+		if err := addNodes(ctx, &page, &result.Diagnostics, source.Children, 0, 0, input, m, i+1); err != nil {
 			return nil, err
 		}
 		result.Pages = append(result.Pages, page)
 	}
-	resolveStories(result, doc.Stories)
+	if err := resolveFlowContent(ctx, result, doc, masters, input, m); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
-func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes []documentmodel.Node, parentX, parentY int64, input ResolveInput) error {
+func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes []documentmodel.Node, parentX, parentY int64, input ResolveInput, m Metrics, pageNumber int) error {
 	for _, node := range nodes {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -104,16 +145,24 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 		}
 		x, y := parentX+node.Geometry.X, parentY+node.Geometry.Y
 		if node.Role == "group" {
-			if err := addNodes(ctx, page, diagnostics, node.Children, x, y, input); err != nil {
+			if err := addNodes(ctx, page, diagnostics, node.Children, x, y, input, m, pageNumber); err != nil {
 				return err
 			}
 			continue
 		}
-		text, err := resolveNodeText(node, input)
+		text, err := resolveNodeText(node, input, pageNumber)
 		if err != nil {
+			if !node.Optional {
+				return fmt.Errorf("node %s props: %w", node.ID, err)
+			}
+			// Optional content must not break the whole layout; it is reported instead.
+			*diagnostics = append(*diagnostics, Diagnostic{Code: "unresolved_binding", NodeID: node.ID, Message: "optional content has an unresolved binding"})
+			text = ""
+		}
+		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: float64(x) / DUPerMM, Y: float64(y) / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: node.Geometry.Rotation, FontSizePt: DefaultFontSizePt, Align: "left", TextColor: "black"}
+		if err := applyControlledProps(node, &box); err != nil {
 			return fmt.Errorf("node %s props: %w", node.ID, err)
 		}
-		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, X: float64(x) / DUPerMM, Y: float64(y) / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: node.Geometry.Rotation}
 		if node.Kind == "image" {
 			image, err := resolveImage(node.Props)
 			if err != nil {
@@ -121,8 +170,22 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 			}
 			box.Image = image
 		}
-		if node.Role != "flow-frame" && text != "" && textCapacity(box) < utf8.RuneCountInString(text) {
-			*diagnostics = append(*diagnostics, Diagnostic{Code: "overset_text", NodeID: node.ID, Message: "fixed text exceeds its authored box"})
+		switch {
+		case node.Role != "flow-frame" && node.LayoutMode == "intrinsic" && text != "":
+			// Intrinsic text has authored width and measured height; it may grow only inside
+			// the page bounds. The resolved box reports the measured height.
+			height := measuredHeightMM(text, box.Width, DefaultFontSizePt, m)
+			if height > box.Height {
+				box.Height = height
+			}
+			if box.Y+box.Height > page.Height {
+				*diagnostics = append(*diagnostics, Diagnostic{Code: "intrinsic_overflow", NodeID: node.ID, Message: "intrinsic text grows beyond the page bounds"})
+			}
+		case node.Role != "flow-frame" && text != "":
+			// Fixed text is never silently clipped: overset is reported.
+			if needed := float64(len(wrapText(text, box.Width, box.FontSizePt, m))) * m.LineHeightMM(box.FontSizePt); needed > box.Height {
+				*diagnostics = append(*diagnostics, Diagnostic{Code: "overset_text", NodeID: node.ID, Message: "fixed text exceeds its authored box"})
+			}
 		}
 		page.Boxes = append(page.Boxes, box)
 	}
@@ -161,7 +224,7 @@ func resolveImage(raw json.RawMessage) (*Image, error) {
 	return &Image{MIME: mime, Data: data}, nil
 }
 
-func resolveNodeText(node documentmodel.Node, input ResolveInput) (string, error) {
+func resolveNodeText(node documentmodel.Node, input ResolveInput, pageNumber int) (string, error) {
 	if len(node.Props) == 0 {
 		return "", nil
 	}
@@ -183,6 +246,9 @@ func resolveNodeText(node documentmodel.Node, input ResolveInput) (string, error
 	}
 	if props.Binding == nil || props.Binding.Field == "" {
 		return "", fmt.Errorf("missing controlled binding")
+	}
+	if node.BindingKind == "calculation" && props.Binding.Field == "page_number" {
+		return strconv.Itoa(pageNumber), nil
 	}
 	value, ok := resolveBinding(node.BindingKind, props.Binding.Field, input)
 	if !ok {
@@ -249,101 +315,67 @@ func deref(v *string) string {
 	return *v
 }
 
-func textCapacity(box Box) int {
-	// Stable metric: 10pt text, a 0.55em average glyph width and 1.2 line height. The fpdf
-	// adapter uses the same 10pt default, keeping diagnostics and output deterministic.
-	charsPerLine := int(box.Width / (10 * 25.4 / 72 * .55))
-	lines := int(box.Height / (10 * 25.4 / 72 * 1.2))
-	if charsPerLine < 1 {
-		charsPerLine = 1
-	}
-	if lines < 1 {
-		lines = 1
-	}
-	return charsPerLine * lines
-}
-
-func resolveStories(layout *Layout, stories []documentmodel.Story) {
-	content := map[string]string{}
-	tables := map[string]tableStory{}
-	for _, story := range stories {
+// resolveFlowContent fills flow frames with story fragments in deterministic page/paint order,
+// then derives continuation pages for `auto-pages` frames. Derived pages and fragments exist only
+// in the resolved layout; the persisted document is never mutated.
+func resolveFlowContent(ctx context.Context, layout *Layout, doc *documentmodel.Document, masters map[string]documentmodel.Master, input ResolveInput, m Metrics) error {
+	for _, story := range doc.Stories {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if story.Kind == "table" {
+			fillTableStory(ctx, layout, doc, masters, story, input, m)
+			continue
+		}
 		var value struct {
 			Text string `json:"text"`
 		}
-		if json.Unmarshal(story.Content, &value) == nil {
-			content[story.ID] = value.Text
+		if err := json.Unmarshal(story.Content, &value); err != nil {
+			continue
 		}
-		if story.Kind == "table" {
-			var table tableStory
-			if json.Unmarshal(story.Content, &table) == nil {
-				tables[story.ID] = table
-			}
-		}
+		fillTextStory(ctx, layout, doc, masters, story.ID, value.Text, input, m)
 	}
-	remaining := make(map[string]string, len(content))
-	for id, text := range content {
-		remaining[id] = text
-	}
+	return nil
+}
+
+func fillTextStory(ctx context.Context, layout *Layout, doc *documentmodel.Document, masters map[string]documentmodel.Master, storyID, text string, input ResolveInput, m Metrics) {
+	remaining := text
 	for pi := range layout.Pages {
+		if remaining == "" {
+			return
+		}
 		for bi := range layout.Pages[pi].Boxes {
 			box := &layout.Pages[pi].Boxes[bi]
-			if box.StoryID == "" {
+			if box.StoryID != storyID || remaining == "" {
 				continue
 			}
-			text := remaining[box.StoryID]
-			if text == "" {
-				continue
-			}
-			limit := textCapacity(*box)
-			if utf8.RuneCountInString(text) <= limit {
-				box.Text = text
-				remaining[box.StoryID] = ""
-				continue
-			}
-			runes := []rune(text)
-			cut := limit
-			for cut > 0 && cut < len(runes) && runes[cut] != ' ' && runes[cut] != '\n' {
-				cut--
-			}
-			if cut == 0 {
-				cut = limit
-			}
-			box.Text = strings.TrimSpace(string(runes[:cut]))
-			remaining[box.StoryID] = strings.TrimSpace(string(runes[cut:]))
+			remaining = fillTextBox(box, remaining, m)
 		}
 	}
-	for storyID, text := range remaining {
-		for pageCount := 0; text != "" && pageCount < 100; pageCount++ {
-			pageIndex, frame, ok := continuationFrame(layout, storyID)
-			if !ok {
-				break
-			}
-			page := Page{Width: layout.Pages[pageIndex].Width, Height: layout.Pages[pageIndex].Height}
-			fragment := frame
-			fragment.ID = fmt.Sprintf("%s-derived-%d", frame.ID, pageCount+1)
-			limit := textCapacity(fragment)
-			runes := []rune(text)
-			if len(runes) <= limit {
-				fragment.Text, text = text, ""
-			} else {
-				cut := limit
-				for cut > 0 && runes[cut] != ' ' && runes[cut] != '\n' {
-					cut--
-				}
-				if cut == 0 {
-					cut = limit
-				}
-				fragment.Text, text = strings.TrimSpace(string(runes[:cut])), strings.TrimSpace(string(runes[cut:]))
-			}
-			page.Boxes = []Box{fragment}
-			layout.Pages = append(layout.Pages, page)
-		}
-		remaining[storyID] = text
-		if text != "" {
-			layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_story", NodeID: storyID, Message: "story content does not fit its available flow frames"})
-		}
+	deriveContinuationPages(ctx, layout, doc, masters, storyID, func(fragment *Box, m Metrics) bool {
+		next := remaining
+		remaining = ""
+		remaining = fillTextBox(fragment, next, m)
+		return remaining == ""
+	}, input, m)
+	if remaining != "" {
+		layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_story", NodeID: storyID, Message: "story content does not fit its available flow frames"})
 	}
-	resolveTables(layout, tables)
+}
+
+// fillTextBox writes as much text as fits into the box and returns the remainder.
+func fillTextBox(box *Box, text string, m Metrics) string {
+	if text == "" {
+		return ""
+	}
+	_, fitsLines := capacityFor(box.Width, box.Height, box.FontSizePt, m)
+	wrapped := wrapText(text, box.Width, box.FontSizePt, m)
+	if len(wrapped) <= fitsLines {
+		box.Text = text
+		return ""
+	}
+	box.Text = strings.Join(wrapped[:fitsLines], " ")
+	return strings.Join(wrapped[fitsLines:], " ")
 }
 
 type tableStory struct {
@@ -351,29 +383,85 @@ type tableStory struct {
 	Rows    [][]string `json:"rows"`
 }
 
-func resolveTables(layout *Layout, tables map[string]tableStory) {
-	for storyID, table := range tables {
-		row := 0
-		for pi := range layout.Pages {
-			for bi := range layout.Pages[pi].Boxes {
-				box := &layout.Pages[pi].Boxes[bi]
-				if box.StoryID != storyID {
-					continue
-				}
-				capacity := int(box.Height / 5)
-				if capacity < 1 {
-					capacity = 1
-				}
-				end := row + capacity
-				if end > len(table.Rows) {
-					end = len(table.Rows)
-				}
-				box.Table = &TableFragment{Headers: table.Headers, Rows: table.Rows[row:end], RepeatedHeader: row > 0}
-				row = end
+func fillTableStory(ctx context.Context, layout *Layout, doc *documentmodel.Document, masters map[string]documentmodel.Master, story documentmodel.Story, input ResolveInput, m Metrics) {
+	var table tableStory
+	if err := json.Unmarshal(story.Content, &table); err != nil {
+		return
+	}
+	if len(table.Headers) == 0 {
+		return
+	}
+	row := 0
+	for pi := range layout.Pages {
+		for bi := range layout.Pages[pi].Boxes {
+			box := &layout.Pages[pi].Boxes[bi]
+			if box.StoryID != story.ID {
+				continue
+			}
+			fragment, next := tableFragment(box, table, row)
+			box.Table = fragment
+			row = next
+		}
+	}
+	if row >= len(table.Rows) {
+		return
+	}
+	deriveContinuationPages(ctx, layout, doc, masters, story.ID, func(fragment *Box, m Metrics) bool {
+		f, next := tableFragment(fragment, table, row)
+		fragment.Table = f
+		row = next
+		return row >= len(table.Rows)
+	}, input, m)
+	if row < len(table.Rows) {
+		layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_table", NodeID: story.ID, Message: "table rows do not fit their available flow frames"})
+	}
+}
+
+// tableFragment returns the fragment for the next rows of a table inside a frame and the next
+// unconsumed row index. Headers repeat on every fragment after the first.
+func tableFragment(box *Box, table tableStory, row int) (*TableFragment, int) {
+	rowsPerFrame := int((box.Height - TableRowHeightMM) / TableRowHeightMM)
+	if rowsPerFrame < 1 {
+		rowsPerFrame = 1
+	}
+	end := row + rowsPerFrame
+	if end > len(table.Rows) {
+		end = len(table.Rows)
+	}
+	return &TableFragment{Headers: table.Headers, Rows: table.Rows[row:end], RepeatedHeader: row > 0}, end
+}
+
+// deriveContinuationPages appends derived pages while fill reports unfinished content and an
+// earlier frame declared `auto-pages`. fill receives a copy of the continuation frame, fills it,
+// and returns true when the story is exhausted. The persisted document is never touched.
+func deriveContinuationPages(ctx context.Context, layout *Layout, doc *documentmodel.Document, masters map[string]documentmodel.Master, storyID string, fill func(fragment *Box, m Metrics) bool, input ResolveInput, m Metrics) {
+	for pageCount := 0; pageCount < maxDerivedPages; pageCount++ {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+		_, frame, ok := continuationFrame(layout, storyID)
+		if !ok {
+			break
+		}
+		page := Page{Width: layout.Pages[len(layout.Pages)-1].Width, Height: layout.Pages[len(layout.Pages)-1].Height}
+		pageNumber := len(layout.Pages) + 1
+		masterID := frame.ContinuationMasterID
+		if masterID == "" {
+			masterID = doc.Settings.DefaultMasterID
+		}
+		if masterID != "" {
+			// Derived continuation pages repeat the chosen page master, including page numbers.
+			if err := addNodes(ctx, &page, &layout.Diagnostics, masters[masterID].Children, 0, 0, input, m, pageNumber); err != nil {
+				break
 			}
 		}
-		if row < len(table.Rows) {
-			layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_table", NodeID: storyID, Message: "table rows do not fit their available flow frames"})
+		fragment := frame
+		fragment.ID = fmt.Sprintf("%s-derived-%d", frame.ID, pageCount+1)
+		done := fill(&fragment, m)
+		page.Boxes = append(page.Boxes, fragment)
+		layout.Pages = append(layout.Pages, page)
+		if done {
+			break
 		}
 	}
 }

@@ -61,10 +61,11 @@ func InitializeApp() (*App, error) {
 	templateService := template.NewService(templateRepository, txManager, idGenerator)
 	templateHandler := wails.NewTemplateHandler(service, templateService)
 	templateResolver := quotation.NewTemplateResolver(sectionDefinitionRepository)
-	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, templateResolver, txManager, idGenerator)
+	metrics := pdf.NewLayoutMetrics()
+	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, templateResolver, txManager, idGenerator, metrics)
 	quotationHandler := wails.NewQuotationHandler(service, quotationService)
 	pdfGenerator := pdf.NewGenerator()
-	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator)
+	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics)
 	documentHandler := wails.NewDocumentHandler(documentService)
 	exportService := document.NewExportService(documentService, quotationRepository, customerRepository)
 	printService := os.NewPrintService()
@@ -115,7 +116,7 @@ func ProvideCurrentDBPath() string {
 }
 
 var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB,
-	ProvideCurrentDBPath, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
+	ProvideCurrentDBPath, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
 )
 
 var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager)

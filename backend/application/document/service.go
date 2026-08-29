@@ -8,7 +8,7 @@ import (
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
-	"quotierlabs/backend/domain/quotation"
+	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
 // MigrateDocumentToV5 is a pure compatibility boundary used by the guarded frontend cutover.
@@ -32,6 +32,7 @@ type Service struct {
 	companyRepo   domain.CompanyRepository
 	customerRepo  domain.CustomerRepository
 	pdfGenerator  PDFGenerator
+	metrics       layoutir.Metrics
 }
 
 // ResolveQuotationLayoutDiagnostics exposes safe, renderer-derived V5 diagnostics for preview UI.
@@ -41,7 +42,29 @@ func (s *Service) ResolveQuotationLayoutDiagnostics(ctx context.Context, company
 	if err != nil {
 		return nil, fmt.Errorf("get quotation: %w", err)
 	}
-	version, err := quotation.DocumentSchemaVersion(q.Document)
+	return s.resolveDiagnostics(ctx, q, companyID, q.Document)
+}
+
+// ResolveDocumentLayoutDiagnostics resolves diagnostics for an in-progress document without
+// persisting it, letting the editor surface authoritative warnings between autosaves. The raw
+// document is size-bounded and strictly validated; only typed diagnostics are returned.
+func (s *Service) ResolveDocumentLayoutDiagnostics(ctx context.Context, companyID, quotationID, rawDocument string) ([]layoutir.Diagnostic, error) {
+	const maxDocumentBytes = 8 << 20
+	if len(rawDocument) == 0 || len(rawDocument) > maxDocumentBytes {
+		return nil, &domain.ValidationError{Field: "document", Message: "document size is out of bounds"}
+	}
+	q, err := s.quotationRepo.GetByID(ctx, quotationID, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("get quotation: %w", err)
+	}
+	if q.Status != string(domain_quotation.StatusDraft) {
+		return nil, domain.ErrInvalidTransition
+	}
+	return s.resolveDiagnostics(ctx, q, companyID, rawDocument)
+}
+
+func (s *Service) resolveDiagnostics(ctx context.Context, q *domain.Quotation, companyID, rawDocument string) ([]layoutir.Diagnostic, error) {
+	version, err := domain_quotation.DocumentSchemaVersion(rawDocument)
 	if err != nil {
 		return nil, fmt.Errorf("inspect document: %w", err)
 	}
@@ -56,11 +79,11 @@ func (s *Service) ResolveQuotationLayoutDiagnostics(ctx context.Context, company
 	if q.CustomerID != "" {
 		customer, _ = s.customerRepo.GetByID(ctx, q.CustomerID, companyID)
 	}
-	doc, err := documentmodel.Parse([]byte(q.Document))
+	doc, err := documentmodel.Parse([]byte(rawDocument))
 	if err != nil {
 		return nil, fmt.Errorf("parse V5 document: %w", err)
 	}
-	layout, err := layoutir.ResolveWithInput(ctx, doc, layoutir.ResolveInput{Company: company, Customer: customer, Quotation: q})
+	layout, err := layoutir.ResolveWithMetrics(ctx, doc, layoutir.ResolveInput{Company: company, Customer: customer, Quotation: q}, s.metrics)
 	if err != nil {
 		return nil, fmt.Errorf("resolve V5 layout: %w", err)
 	}
@@ -72,11 +95,16 @@ func NewService(
 	companyRepo domain.CompanyRepository,
 	customerRepo domain.CustomerRepository,
 	pdfGenerator PDFGenerator,
+	metrics layoutir.Metrics,
 ) *Service {
+	if metrics == nil {
+		metrics = layoutir.DefaultMetrics{}
+	}
 	return &Service{
 		quotationRepo: quotationRepo,
 		companyRepo:   companyRepo,
 		customerRepo:  customerRepo,
 		pdfGenerator:  pdfGenerator,
+		metrics:       metrics,
 	}
 }

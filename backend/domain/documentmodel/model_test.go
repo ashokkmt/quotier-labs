@@ -49,3 +49,12 @@ func TestValidateRejectsUnknownMasterReference(t *testing.T) {
 		t.Fatal("expected missing master error")
 	}
 }
+
+func TestValidateRejectsUnknownWidgetKind(t *testing.T) {
+	doc := &Document{SchemaVersion: SchemaVersion, Settings: Settings{PageSize: "A4", Orientation: "portrait"}, Root: Root{Pages: []Page{{ID: "p", Width: A4WidthDU, Height: A4HeightDU, ChildIDs: []string{"n"}, Children: []Node{
+		{ID: "n", Kind: "iframe", Role: "element", Geometry: Geometry{Width: 1000, Height: 1000}, Visibility: "shown", LayoutMode: "fixed"},
+	}}}}}
+	if err := Validate(doc); err == nil {
+		t.Fatal("expected unknown widget kind to be rejected")
+	}
+}

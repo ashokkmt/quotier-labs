@@ -4,9 +4,11 @@ import {context} from '../models';
 
 export function GeneratePDF(arg1:string,arg2:string):Promise<string>;
 
-export function GetQuotationPreviewPDF(arg1:string,arg2:string):Promise<string>;
+export function GetDocumentLayoutDiagnostics(arg1:string,arg2:string,arg3:string):Promise<any>;
 
-export function GetQuotationLayoutDiagnostics(arg1:string,arg2:string):Promise<Array<{code:string; nodeId:string; message:string}>>;
+export function GetQuotationLayoutDiagnostics(arg1:string,arg2:string):Promise<any>;
+
+export function GetQuotationPreviewPDF(arg1:string,arg2:string):Promise<string>;
 
 export function MigrateDocumentToV5(arg1:string):Promise<string>;
 

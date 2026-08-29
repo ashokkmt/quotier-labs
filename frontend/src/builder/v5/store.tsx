@@ -9,6 +9,8 @@ export type V5SessionSnapshot = {
   revision: number
   acknowledgedRevision: number
   saveStatus: V5SaveStatus
+  canUndo: boolean
+  canRedo: boolean
   selectedNodeId: string | null
   selectedNodeIds: string[]
   editScopeId: string | null
@@ -21,24 +23,35 @@ export class V5Session {
   private selectedNodeId: string | null = null
   private selectedNodeIds: string[] = []
   private editScopeId: string | null = null
+  private cachedSnapshot: V5SessionSnapshot | null = null
   private listeners = new Set<() => void>()
   constructor(initial: V5Document) {
     this.history = new V5History(initial)
   }
-  getSnapshot = (): V5SessionSnapshot => ({
-    document: this.history.document,
-    revision: this.history.revision,
-    acknowledgedRevision: this.acknowledgedRevision,
-    saveStatus: this.saveStatus,
-    selectedNodeId: this.selectedNodeId,
-    selectedNodeIds: this.selectedNodeIds,
-    editScopeId: this.editScopeId,
-  })
+  // useSyncExternalStore compares snapshots by identity, so this must return the same cached
+  // object until the next emit; rebuilding it per call would re-render forever.
+  getSnapshot = (): V5SessionSnapshot => {
+    if (this.cachedSnapshot === null) {
+      this.cachedSnapshot = {
+        document: this.history.document,
+        revision: this.history.revision,
+        acknowledgedRevision: this.acknowledgedRevision,
+        saveStatus: this.saveStatus,
+        canUndo: this.history.canUndo,
+        canRedo: this.history.canRedo,
+        selectedNodeId: this.selectedNodeId,
+        selectedNodeIds: this.selectedNodeIds,
+        editScopeId: this.editScopeId,
+      }
+    }
+    return this.cachedSnapshot
+  }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
   private emit() {
+    this.cachedSnapshot = null
     this.listeners.forEach((listener) => listener())
   }
   execute(command: V5Command) {
@@ -57,6 +70,12 @@ export class V5Session {
       this.saveStatus = 'unsaved'
       this.emit()
     }
+  }
+  canUndo(): boolean {
+    return this.history.canUndo
+  }
+  canRedo(): boolean {
+    return this.history.canRedo
   }
   beginSave(): { revision: number; document: string } {
     this.saveStatus = 'saving'
@@ -131,5 +150,7 @@ export function useV5Session() {
     selectNodes: session.selectNodes.bind(session),
     enterGroup: session.enterGroup.bind(session),
     exitGroup: session.exitGroup.bind(session),
+    canUndo: session.canUndo.bind(session),
+    canRedo: session.canRedo.bind(session),
   }
 }

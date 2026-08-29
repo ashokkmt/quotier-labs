@@ -10,6 +10,7 @@ type QuotationDTO struct {
 	Number        string     `json:"number"`
 	Status        string     `json:"status"`
 	Document      string     `json:"document"`
+	SchemaVersion int        `json:"schema_version"`
 	Subtotal      int64      `json:"subtotal"`
 	DiscountTotal int64      `json:"discount_total"`
 	TaxableTotal  int64      `json:"taxable_total"`

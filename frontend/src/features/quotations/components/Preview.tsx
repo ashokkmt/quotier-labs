@@ -38,7 +38,8 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
           if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current)
           pdfUrlRef.current = nextUrl
           setPdfUrl(nextUrl)
-          setDiagnostics(resolvedDiagnostics)
+          // Wails may deliver a null slice from Go; never trust the transport type.
+          setDiagnostics(Array.isArray(resolvedDiagnostics) ? resolvedDiagnostics : [])
         }
       } catch (err: any) {
         if (isMounted) {

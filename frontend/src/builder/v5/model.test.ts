@@ -40,3 +40,39 @@ describe('V5 model', () => {
     expect((story!.content as { rows: unknown[] }).rows).toHaveLength(500)
   })
 })
+
+describe('V5 flow-frame continuation validation', () => {
+  const frameDoc = (overrides: Record<string, unknown>): V5Document => {
+    const base = fixture()
+    base.stories = [{ id: 'story-1', kind: 'rich-text', content: { text: 'hi' } }]
+    base.root.pages[0].child_ids = ['frame']
+    base.root.pages[0].children = [
+      {
+        id: 'frame',
+        kind: 'flow-frame',
+        role: 'flow-frame',
+        story_id: 'story-1',
+        geometry: { x: du(0), y: du(0), width: du(100), height: du(100), rotation: 0 },
+        layout_mode: 'flow-frame',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+      },
+    ]
+    Object.assign(base.root.pages[0].children[0], overrides)
+    return base
+  }
+  it('rejects an unknown continuation master', () => {
+    const doc = frameDoc({ continuation: 'auto-pages', continuation_master_id: 'missing' })
+    expect(validateV5(doc)).toMatch(/missing continuation master/)
+  })
+  it('rejects an invalid continuation policy', () => {
+    const doc = frameDoc({ continuation: 'magic' })
+    expect(validateV5(doc)).toMatch(/invalid continuation policy/)
+  })
+  it('accepts a valid continuation master reference', () => {
+    const doc = frameDoc({ continuation: 'auto-pages', continuation_master_id: 'master-1' })
+    doc.root.masters = [{ id: 'master-1', child_ids: [], children: [] }]
+    expect(validateV5(doc)).toBeNull()
+  })
+})

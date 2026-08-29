@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getV5Widget, validateNodeContract } from './registry'
+import type { V5Node } from './model'
 import { createFlowFrame, createStory, storyOverset, validateStoryChains } from './stories'
 import { emptyV5Fixture } from './fixtures'
 describe('V5 registry and stories', () => {
@@ -20,5 +21,51 @@ describe('V5 registry and stories', () => {
     d.root.pages[0].child_ids = ['f']
     expect(validateStoryChains(d)).toBeNull()
     expect(storyOverset(d.stories[0], [frame])).toBe(true)
+  })
+})
+
+describe('shape widget contract', () => {
+  const shape = (props: Record<string, unknown>): V5Node => ({
+    id: 's1',
+    kind: 'shape',
+    role: 'element',
+    geometry: { x: 0, y: 0, width: 10000, height: 5000, rotation: 0 },
+    layout_mode: 'fixed',
+    locked: false,
+    visibility: 'shown',
+    optional: false,
+    props,
+  })
+  it('accepts controlled fill and stroke tokens', () => {
+    expect(
+      validateNodeContract(
+        shape({
+          variant: 'rect',
+          fill: 'primary',
+          stroke: 'black',
+          strokeStyle: 'dashed',
+          strokeWidth: 2,
+        }),
+      ),
+    ).toBeNull()
+    expect(validateNodeContract(shape({ variant: 'ellipse', fill: 'none' }))).toBeNull()
+    expect(
+      validateNodeContract(shape({ variant: 'line', fill: 'none', stroke: 'black' })),
+    ).toBeNull()
+  })
+  it('rejects arbitrary colors, variants, and out-of-bounds widths', () => {
+    expect(validateNodeContract(shape({ variant: 'rect', fill: '#00ff00' }))).toMatch(
+      /invalid fill/,
+    )
+    expect(validateNodeContract(shape({ variant: 'blob' }))).toMatch(/invalid shape variant/)
+    expect(validateNodeContract(shape({ variant: 'rect', strokeStyle: 'zigzag' }))).toMatch(
+      /invalid stroke style/,
+    )
+    expect(validateNodeContract(shape({ variant: 'rect', strokeWidth: 99 }))).toMatch(
+      /out of bounds/,
+    )
+    expect(validateNodeContract(shape({ variant: 'rect', stroke: '#000' }))).toMatch(
+      /invalid stroke/,
+    )
   })
 })

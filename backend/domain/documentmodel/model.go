@@ -47,22 +47,23 @@ type Master struct {
 }
 
 type Node struct {
-	ID           string          `json:"id"`
-	Kind         string          `json:"kind"`
-	Role         string          `json:"role"`
-	Name         string          `json:"name,omitempty"`
-	Geometry     Geometry        `json:"geometry"`
-	LayoutMode   string          `json:"layout_mode"`
-	BindingKind  string          `json:"binding_kind,omitempty"`
-	Locked       bool            `json:"locked"`
-	Visibility   string          `json:"visibility"`
-	Optional     bool            `json:"optional"`
-	ChildIDs     []string        `json:"child_ids,omitempty"`
-	Children     []Node          `json:"children,omitempty"`
-	StoryID      string          `json:"story_id,omitempty"`
-	NextFrameID  string          `json:"next_frame_id,omitempty"`
-	Continuation string          `json:"continuation,omitempty"`
-	Props        json.RawMessage `json:"props,omitempty"`
+	ID                   string          `json:"id"`
+	Kind                 string          `json:"kind"`
+	Role                 string          `json:"role"`
+	Name                 string          `json:"name,omitempty"`
+	Geometry             Geometry        `json:"geometry"`
+	LayoutMode           string          `json:"layout_mode"`
+	BindingKind          string          `json:"binding_kind,omitempty"`
+	Locked               bool            `json:"locked"`
+	Visibility           string          `json:"visibility"`
+	Optional             bool            `json:"optional"`
+	ChildIDs             []string        `json:"child_ids,omitempty"`
+	Children             []Node          `json:"children,omitempty"`
+	StoryID              string          `json:"story_id,omitempty"`
+	NextFrameID          string          `json:"next_frame_id,omitempty"`
+	Continuation         string          `json:"continuation,omitempty"`
+	ContinuationMasterID string          `json:"continuation_master_id,omitempty"`
+	Props                json.RawMessage `json:"props,omitempty"`
 }
 
 type Geometry struct {
@@ -116,6 +117,16 @@ var (
 	ErrInvalid       = errors.New("invalid V5 document")
 )
 
+// allowedKinds is the closed widget registry. Unknown kinds fail validation so unsupported
+// content can never reach persistence or the PDF renderer.
+var allowedKinds = map[string]bool{
+	"text":       true,
+	"image":      true,
+	"table":      true,
+	"shape":      true,
+	"flow-frame": true,
+}
+
 func Parse(data []byte) (*Document, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -151,6 +162,18 @@ func Validate(d *Document) error {
 		}
 		stories[s.ID] = true
 	}
+	// Masters are registered before pages so page children may reference them for masters and
+	// continuation policies.
+	for _, m := range d.Root.Masters {
+		if m.ID == "" {
+			return fmt.Errorf("%w: master id is required", ErrInvalid)
+		}
+		if _, ok := seen[m.ID]; ok {
+			return fmt.Errorf("%w: duplicate id %q", ErrInvalid, m.ID)
+		}
+		seen[m.ID] = "master"
+		masters[m.ID] = true
+	}
 	count := 0
 	for _, p := range d.Root.Pages {
 		if p.ID == "" {
@@ -163,20 +186,12 @@ func Validate(d *Document) error {
 			return fmt.Errorf("%w: duplicate id %q", ErrInvalid, p.ID)
 		}
 		seen[p.ID] = "page"
-		if err := validateChildren(p.Children, p.ChildIDs, "page", 0, seen, stories, &count); err != nil {
+		if err := validateChildren(p.Children, p.ChildIDs, "page", 0, seen, stories, masters, &count); err != nil {
 			return err
 		}
 	}
 	for _, m := range d.Root.Masters {
-		if m.ID == "" {
-			return fmt.Errorf("%w: master id is required", ErrInvalid)
-		}
-		if _, ok := seen[m.ID]; ok {
-			return fmt.Errorf("%w: duplicate id %q", ErrInvalid, m.ID)
-		}
-		seen[m.ID] = "master"
-		masters[m.ID] = true
-		if err := validateChildren(m.Children, m.ChildIDs, "master", 0, seen, stories, &count); err != nil {
+		if err := validateChildren(m.Children, m.ChildIDs, "master", 0, seen, stories, masters, &count); err != nil {
 			return err
 		}
 	}
@@ -203,7 +218,7 @@ func validatePageSize(w, h int64, orientation string) error {
 	}
 	return nil
 }
-func validateChildren(children []Node, ids []string, parent string, depth int, seen map[string]string, stories map[string]bool, count *int) error {
+func validateChildren(children []Node, ids []string, parent string, depth int, seen map[string]string, stories map[string]bool, masters map[string]bool, count *int) error {
 	if len(ids) > 0 {
 		if len(ids) != len(children) {
 			return fmt.Errorf("%w: child_ids length mismatch", ErrInvalid)
@@ -218,6 +233,9 @@ func validateChildren(children []Node, ids []string, parent string, depth int, s
 		(*count)++
 		if n.ID == "" || n.Role == "" || n.Kind == "" {
 			return fmt.Errorf("%w: node id, kind, and role are required", ErrInvalid)
+		}
+		if n.Role != "group" && !allowedKinds[n.Kind] {
+			return fmt.Errorf("%w: unknown widget kind %q", ErrInvalid, n.Kind)
 		}
 		if _, ok := seen[n.ID]; ok {
 			return fmt.Errorf("%w: duplicate id %q", ErrInvalid, n.ID)
@@ -242,11 +260,17 @@ func validateChildren(children []Node, ids []string, parent string, depth int, s
 			if n.LayoutMode != "flow-frame" {
 				return fmt.Errorf("%w: flow frame %q must use flow-frame layout", ErrInvalid, n.ID)
 			}
+			if n.Continuation != "" && n.Continuation != "manual" && n.Continuation != "auto-pages" {
+				return fmt.Errorf("%w: flow frame %q has invalid continuation policy", ErrInvalid, n.ID)
+			}
+			if n.ContinuationMasterID != "" && !masters[n.ContinuationMasterID] {
+				return fmt.Errorf("%w: flow frame %q references missing continuation master %q", ErrInvalid, n.ID, n.ContinuationMasterID)
+			}
 		}
 		if n.Role != "group" && len(n.Children) > 0 {
 			return fmt.Errorf("%w: only groups may contain children", ErrInvalid)
 		}
-		if err := validateChildren(n.Children, n.ChildIDs, n.ID, depth+1, seen, stories, count); err != nil {
+		if err := validateChildren(n.Children, n.ChildIDs, n.ID, depth+1, seen, stories, masters, count); err != nil {
 			return err
 		}
 	}

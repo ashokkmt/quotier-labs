@@ -550,6 +550,7 @@ export namespace quotation {
 	    number: string;
 	    status: string;
 	    document: string;
+	    schema_version: number;
 	    subtotal: number;
 	    discount_total: number;
 	    taxable_total: number;
@@ -578,6 +579,7 @@ export namespace quotation {
 	        this.number = source["number"];
 	        this.status = source["status"];
 	        this.document = source["document"];
+	        this.schema_version = source["schema_version"];
 	        this.subtotal = source["subtotal"];
 	        this.discount_total = source["discount_total"];
 	        this.taxable_total = source["taxable_total"];

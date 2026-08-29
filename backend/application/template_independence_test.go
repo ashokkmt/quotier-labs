@@ -30,7 +30,7 @@ func TestTemplateIndependence(t *testing.T) {
 
 	custSvc := app_cust.NewService(custRepo, idGen)
 	tmplSvc := app_tmpl.NewService(tmplRepo, txManager, idGen)
-	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, resolver, txManager, idGen)
+	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, resolver, txManager, idGen, nil)
 
 	ctx := context.Background()
 

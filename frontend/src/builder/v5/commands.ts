@@ -1,5 +1,5 @@
 import { apply, geometryMatrix, invert, quantizeGeometry } from './geometry'
-import { du, type V5Document, type V5Geometry, type V5Node } from './model'
+import { du, type V5Document, type V5Geometry, type V5Node, type V5Story } from './model'
 import { parseV5, serializeV5 } from './serialization'
 import type { V5Command } from './history'
 import { cloneNode, findPlacement } from './placement'
@@ -122,6 +122,21 @@ export const insertNode = (pageId: string, node: V5Node, index?: number) =>
     if (!page) throw new Error(`unknown page ${pageId}`)
     const at = Math.max(0, Math.min(index ?? page.children.length, page.children.length))
     page.children.splice(at, 0, node)
+    page.child_ids = page.children.map((child) => child.id)
+    return d
+  })
+
+/** Inserts a flow frame together with the story it displays; stories exist only with a frame. */
+export const insertStoryFrame = (pageId: string, node: V5Node, story: V5Story) =>
+  snapshotCommand('Insert flow frame', (d) => {
+    const page = d.root.pages.find((candidate) => candidate.id === pageId)
+    if (!page) throw new Error(`unknown page ${pageId}`)
+    if (node.role !== 'flow-frame' || node.story_id !== story.id)
+      throw new Error('frame must reference the inserted story')
+    if (d.stories?.some((existing) => existing.id === story.id))
+      throw new Error(`duplicate story ${story.id}`)
+    d.stories = [...(d.stories ?? []), story]
+    page.children.push(node)
     page.child_ids = page.children.map((child) => child.id)
     return d
   })

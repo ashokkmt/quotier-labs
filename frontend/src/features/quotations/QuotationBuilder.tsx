@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import {
@@ -7,13 +7,15 @@ import {
   UpdateQuotationCustomer,
   SaveAsTemplate,
 } from '../../../wailsjs/go/wails/QuotationHandler'
-import { MigrateDocumentToV5 } from '../../../wailsjs/go/wails/DocumentHandler'
+import {
+  GetDocumentLayoutDiagnostics,
+  MigrateDocumentToV5,
+} from '../../../wailsjs/go/wails/DocumentHandler'
 import { BuilderHeader } from './BuilderHeader'
-import { BuilderEngine, V5BuilderEngine } from '../../builder'
+import { BuilderEngine, V5BuilderEngine, type V5EngineHandle } from '../../builder'
 import { isFreeformV5Enabled } from '../../builder/feature'
 import type { V5Document } from '../../builder/v5/model'
 import { Preview } from './components/Preview'
-import { CalculationDisplay } from './CalculationDisplay'
 import { useUndoRedo } from './hooks/useUndoRedo'
 import { useAutosave } from './hooks/useAutosave'
 import { useRecovery } from './hooks/useRecovery'
@@ -21,11 +23,7 @@ import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { SnapshotCommand } from './commands/base'
 import { UndoRedoControls } from './components/UndoRedoControls'
 import { SaveIndicator } from './components/SaveIndicator'
-import {
-  RecalculateQuotation,
-  FinalizeQuotation,
-  UpdateQuotationStatus,
-} from '../../../wailsjs/go/wails/QuotationHandler'
+import { FinalizeQuotation, UpdateQuotationStatus } from '../../../wailsjs/go/wails/QuotationHandler'
 import { normalize, serialize } from '../../builder'
 
 export function QuotationBuilder({
@@ -47,12 +45,12 @@ export function QuotationBuilder({
     dirty,
     setDirty,
   } = useUndoRedo(null)
-  const [calculationResult, setCalculationResult] = useState<any>(null)
-  const [, setRecalculating] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const [readOnly, setReadOnly] = useState(false)
   const { toast } = useToast()
+  const v5EngineRef = useRef<V5EngineHandle | null>(null)
+  const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
 
   const { clearRecovery } = useRecovery(quotationId, document)
   useNavigationGuard(dirty)
@@ -62,9 +60,6 @@ export function QuotationBuilder({
       try {
         const res = await GetQuotation(quotationId)
         setQuotation(res)
-        if (res.subtotal !== undefined) {
-          setCalculationResult(res)
-        }
         if (res.document) {
           const raw = JSON.parse(res.document)
           const parsed =
@@ -94,28 +89,31 @@ export function QuotationBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quotationId])
 
-  const handleRecalculate = async () => {
-    setRecalculating(true)
-    try {
-      const res = await RecalculateQuotation(quotationId)
-      if (res.subtotal !== undefined) {
-        setCalculationResult(res)
-      }
-    } catch (err: any) {
-      toast({ title: 'Recalculation failed', description: err.toString(), variant: 'destructive' })
-    } finally {
-      setRecalculating(false)
-    }
-  }
-
   const executeSave = async (docToSave: any) => {
     if (!docToSave) return
-    const encoded =
-      docToSave?.schema_version === 5 ? JSON.stringify(docToSave) : serialize(docToSave)
-    const res = await SaveQuotationDocument({ id: quotationId, document: encoded })
-    setQuotation(res)
-    clearRecovery()
-    await handleRecalculate()
+    // For V5 documents the per-instance session serializes the authoritative state, so a save
+    // can never race a pending gesture or mark a newer revision as saved.
+    const v5 = docToSave?.schema_version === 5 ? v5EngineRef.current : null
+    let revision = 0
+    let payload: string
+    if (v5) {
+      const started = v5.beginSave()
+      revision = started.revision
+      payload = started.document
+    } else if (docToSave?.schema_version === 5) {
+      payload = JSON.stringify(docToSave)
+    } else {
+      payload = serialize(docToSave)
+    }
+    try {
+      const res = await SaveQuotationDocument({ id: quotationId, document: payload })
+      v5?.acknowledgeSave(revision)
+      setQuotation(res)
+      clearRecovery()
+    } catch (err) {
+      v5?.failSave()
+      throw err
+    }
   }
 
   const handleFinalize = async () => {
@@ -186,7 +184,6 @@ export function QuotationBuilder({
       })
       setQuotation(res)
       toast({ title: 'Customer updated' })
-      await handleRecalculate()
     } catch (err: any) {
       toast({
         title: 'Failed to update customer',
@@ -227,7 +224,16 @@ export function QuotationBuilder({
         onCustomerChange={handleCustomerChange}
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={
-          <UndoRedoControls onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} />
+          isFreeformV5Enabled() && document?.schema_version === 5 ? (
+            <UndoRedoControls
+              onUndo={() => v5EngineRef.current?.undo()}
+              onRedo={() => v5EngineRef.current?.redo()}
+              canUndo={v5UndoRedo.canUndo}
+              canRedo={v5UndoRedo.canRedo}
+            />
+          ) : (
+            <UndoRedoControls onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} />
+          )
         }
         onFinalize={handleFinalize}
         onStatusChange={handleStatusChange}
@@ -249,7 +255,26 @@ export function QuotationBuilder({
               onChange={(newDoc) => {
                 setDocument(newDoc)
                 setDirty(true)
+                // Functional update with equality bail: a fresh object here would re-render the
+                // parent on every change and re-trigger the engine's change bridge forever.
+                setV5UndoRedo((prev) => {
+                  const canUndo = v5EngineRef.current?.canUndo() ?? false
+                  const canRedo = v5EngineRef.current?.canRedo() ?? false
+                  return prev.canUndo === canUndo && prev.canRedo === canRedo
+                    ? prev
+                    : { canUndo, canRedo }
+                })
               }}
+              onReady={(handle) => {
+                v5EngineRef.current = handle
+              }}
+              resolveDiagnostics={async (doc) =>
+                GetDocumentLayoutDiagnostics(
+                  quotation.company_id,
+                  quotation.id,
+                  JSON.stringify(doc),
+                )
+              }
             />
           ) : (
             <BuilderEngine
@@ -260,12 +285,6 @@ export function QuotationBuilder({
             />
           )}
         </div>
-
-        {!readOnly && (
-          <aside className="w-80 shrink-0 space-y-6">
-            <CalculationDisplay result={calculationResult} />
-          </aside>
-        )}
       </div>
     </div>
   )

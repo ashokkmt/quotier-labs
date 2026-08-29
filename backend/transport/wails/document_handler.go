@@ -42,6 +42,13 @@ func (h *DocumentHandler) GetQuotationLayoutDiagnostics(companyID, quotationID s
 	return h.docService.ResolveQuotationLayoutDiagnostics(h.ctx, companyID, quotationID)
 }
 
+// GetDocumentLayoutDiagnostics resolves layout diagnostics for an unsaved in-editor document.
+// It performs the same ownership and validation checks as persistence and returns only typed,
+// user-safe diagnostic values.
+func (h *DocumentHandler) GetDocumentLayoutDiagnostics(companyID, quotationID, document string) (interface{}, error) {
+	return h.docService.ResolveDocumentLayoutDiagnostics(h.ctx, companyID, quotationID, document)
+}
+
 func (h *DocumentHandler) MigrateDocumentToV5(raw string) (string, error) {
 	return h.docService.MigrateDocumentToV5(raw)
 }

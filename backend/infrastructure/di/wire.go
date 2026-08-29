@@ -51,6 +51,7 @@ var InfrastructureSet = wire.NewSet(
 	sqlite.NewNumberSequenceRepository,
 	sqlite.NewSettingsRepository,
 	pdf.NewGenerator,
+	pdf.NewLayoutMetrics,
 	os_infra.NewPrintService,
 	os_infra.NewShareService,
 	backup_infra.NewSQLiteBackupService,
