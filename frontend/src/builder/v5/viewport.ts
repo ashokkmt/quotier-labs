@@ -1,6 +1,10 @@
 import { A4_HEIGHT_DU, A4_WIDTH_DU, type V5Document } from './model'
 import type { Point } from './geometry'
 
+// Zoom is px per document unit; 100% = 0.01 px/du (1 pt = 1 CSS px). Supported range 10%–800%.
+export const MIN_ZOOM = 0.001
+export const MAX_ZOOM = 0.08
+
 export type Viewport = { zoom: number; pan: Point }
 export function fitPage(
   document: V5Document,
@@ -13,17 +17,17 @@ export function fitPage(
     (viewportWidth - padding * 2) / page.width,
     (viewportHeight - padding * 2) / page.height,
   )
-  return { zoom: Math.max(0.001, zoom), pan: { x: padding, y: padding } }
+  return { zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom)), pan: { x: padding, y: padding } }
 }
 export function fitWidth(document: V5Document, viewportWidth: number, padding = 32): Viewport {
   const page = document.root.pages[0]
   return {
-    zoom: Math.max(0.001, (viewportWidth - padding * 2) / page.width),
+    zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, (viewportWidth - padding * 2) / page.width)),
     pan: { x: padding, y: padding },
   }
 }
 export function zoomAt(viewport: Viewport, nextZoom: number, anchor: Point): Viewport {
-  const zoom = Math.min(8, Math.max(0.001, nextZoom))
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom))
   return {
     zoom,
     pan: {

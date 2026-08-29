@@ -119,7 +119,7 @@ export function TemplateBuilder({
           Close
         </Button>
       </header>
-      <div className="flex-1 relative overflow-hidden">
+      <div className="min-h-0 flex-1 relative overflow-hidden">
         {isFreeformV5Enabled() && document?.schema_version === 5 ? (
           <V5BuilderEngine
             document={document as V5Document}

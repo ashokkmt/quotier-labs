@@ -6,10 +6,12 @@ export function SelectionOverlay({
   bounds,
   onHandlePointerDown,
   onRotatePointerDown,
+  canRotate = true,
 }: {
   bounds: Bounds
   onHandlePointerDown: (handle: ResizeHandle, event: PointerEvent<HTMLButtonElement>) => void
   onRotatePointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  canRotate?: boolean
 }) {
   const handles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
   return (
@@ -26,21 +28,23 @@ export function SelectionOverlay({
         pointerEvents: 'none',
       }}
     >
-      <button
-        type="button"
-        aria-label="Rotate selection"
-        onPointerDown={onRotatePointerDown}
-        style={{
-          position: 'absolute',
-          left: 'calc(50% - 5px)',
-          top: -28,
-          width: 10,
-          height: 10,
-          borderRadius: 99,
-          pointerEvents: 'auto',
-          padding: 0,
-        }}
-      />
+      {canRotate && (
+        <button
+          type="button"
+          aria-label="Rotate selection"
+          onPointerDown={onRotatePointerDown}
+          style={{
+            position: 'absolute',
+            left: 'calc(50% - 5px)',
+            top: -28,
+            width: 10,
+            height: 10,
+            borderRadius: 99,
+            pointerEvents: 'auto',
+            padding: 0,
+          }}
+        />
+      )}
       {handles.map((handle) => (
         <button
           key={handle}

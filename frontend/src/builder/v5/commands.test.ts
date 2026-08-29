@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { emptyV5Fixture } from './fixtures'
 import {
+  addPage,
+  alignToPage,
+  deleteNodes,
+  deletePage,
+  duplicateAndMove,
+  duplicatePage,
   groupNodes,
   insertNode,
   deleteNode,
   moveNodes,
+  reorderExtreme,
   reorderNode,
+  reorderPage,
   resizeGeometry,
   resizeNode,
   rotateNode,
@@ -79,5 +87,281 @@ describe('V5 document commands', () => {
     ])
     session.undo()
     expect(session.getSnapshot().document.root.pages[0].children[0].id).toBe('group-1')
+  })
+})
+
+describe('V5 page commands', () => {
+  const setup = () => {
+    const doc = emptyV5Fixture()
+    doc.root.pages[0].child_ids = ['box']
+    doc.root.pages[0].children = [
+      {
+        id: 'box',
+        kind: 'shape',
+        role: 'element',
+        geometry: { x: 1000, y: 1000, width: 5000, height: 5000, rotation: 0 },
+        layout_mode: 'fixed',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+      },
+    ]
+    return doc
+  }
+  it('adds, reorders, and refuses to delete the last page', () => {
+    const session = new V5Session(setup())
+    session.execute(addPage('page-2', 'portrait'))
+    expect(session.getSnapshot().document.root.pages).toHaveLength(2)
+    session.execute(reorderPage('page-2', 0))
+    expect(session.getSnapshot().document.root.pages[0].id).toBe('page-2')
+    session.execute(deletePage('page-2'))
+    expect(() =>
+      session.execute(deletePage(session.getSnapshot().document.root.pages[0].id)),
+    ).toThrow()
+    expect(session.getSnapshot().document.root.pages).toHaveLength(1)
+  })
+  it('duplicates a page with fresh IDs and remapped stories', () => {
+    const doc = setup()
+    doc.stories = [{ id: 'story', kind: 'rich-text', content: { text: 'hi' } }]
+    doc.root.pages[0].children.push({
+      id: 'frame',
+      kind: 'flow-frame',
+      role: 'flow-frame',
+      story_id: 'story',
+      geometry: { x: 1000, y: 8000, width: 5000, height: 5000, rotation: 0 },
+      layout_mode: 'flow-frame',
+      locked: false,
+      visibility: 'shown',
+      optional: false,
+    })
+    doc.root.pages[0].child_ids = ['box', 'frame']
+    const session = new V5Session(doc)
+    const used: string[] = []
+    session.execute(
+      duplicatePage(doc.root.pages[0].id, 'page-2', (prefix) => {
+        const id = `${prefix}-dup-${used.length}`
+        used.push(id)
+        return id
+      }),
+    )
+    const pages = session.getSnapshot().document.root.pages
+    expect(pages).toHaveLength(2)
+    expect(pages[1].children.map((node) => node.id)).not.toContain('box')
+    const clone = pages[1].children.find((node) => node.role === 'flow-frame')
+    const cloneStories = session.getSnapshot().document.stories ?? []
+    expect(cloneStories).toHaveLength(2)
+    expect(clone?.story_id).not.toBe('story')
+    expect(cloneStories.some((story) => story.id === clone?.story_id)).toBe(true)
+  })
+})
+
+describe('V5 clipboard + duplicate commands', () => {
+  const setup = () => {
+    const doc = emptyV5Fixture()
+    doc.root.pages[0].child_ids = ['a', 'b']
+    doc.root.pages[0].children = ['a', 'b'].map((id) => ({
+      id,
+      kind: 'shape',
+      role: 'element',
+      geometry: { x: 1000, y: 1000, width: 4000, height: 3000, rotation: 0 },
+      layout_mode: 'fixed',
+      locked: false,
+      visibility: 'shown',
+      optional: false,
+    }))
+    return doc
+  }
+  it('copies, pastes with fresh ids and valid placement, and selects the clones', () => {
+    const session = new V5Session(setup())
+    session.selectNode('a')
+    expect(session.copySelection()).toBe(1)
+    const pasted = session.paste('standard')
+    expect(pasted).toHaveLength(1)
+    const document = session.getSnapshot().document
+    const pastedNode = document.root.pages[0].children.find((node) => node.id === pasted[0])
+    expect(pastedNode).toBeDefined()
+    expect(pastedNode!.geometry.x).toBeGreaterThan(0)
+    expect(session.getSnapshot().selectedNodeIds).toEqual(pasted)
+  })
+  it('rejects in-place paste when the original does not fit and leaves the document safe', () => {
+    const session = new V5Session(setup())
+    session.selectNode('a')
+    session.execute(
+      updateNodeGeometry('a', {
+        ...session.getSnapshot().document.root.pages[0].children[0].geometry,
+        x: 58000,
+        width: 4000,
+      }),
+    )
+    session.copySelection()
+    expect(() => session.paste('in-place')).toThrow()
+    expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(2)
+  })
+  it('cut copies then removes in one flow and paste restores it', () => {
+    const session = new V5Session(setup())
+    session.selectNode('a')
+    expect(session.cutSelection()).toBe(1)
+    expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(1)
+    expect(session.paste('standard')).toHaveLength(1)
+    expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(2)
+  })
+  it('duplicateAndMove creates moved clones in one command', () => {
+    const session = new V5Session(setup())
+    const before = session.getSnapshot().revision
+    session.execute(duplicateAndMove(['a'], 1200, 0, (prefix) => `${prefix}-x`))
+    const children = session.getSnapshot().document.root.pages[0].children
+    expect(children).toHaveLength(3)
+    expect(session.getSnapshot().revision).toBe(before + 1)
+    const clone = children.find((node) => node.id === 'node-x')
+    expect(clone?.geometry.x).toBe(2200)
+  })
+  it('rejects moving a selection that contains a locked member atomically', () => {
+    const session = new V5Session(setup())
+    session.execute(setNodeLocked('a', true))
+    expect(() => session.execute(moveNodes(['a', 'b'], 500, 0))).toThrow(/locked/)
+    const children = session.getSnapshot().document.root.pages[0].children
+    expect(children.find((node) => node.id === 'b')?.geometry.x).toBe(1000)
+  })
+  it('blocks mutation of children inside a locked group', () => {
+    const doc = setup()
+    doc.root.pages[0].children = [
+      {
+        id: 'group',
+        kind: 'group',
+        role: 'group',
+        geometry: { x: 0, y: 0, width: 20000, height: 20000, rotation: 0 },
+        layout_mode: 'fixed',
+        locked: true,
+        visibility: 'shown',
+        optional: false,
+        child_ids: ['inner'],
+        children: [
+          {
+            id: 'inner',
+            kind: 'shape',
+            role: 'element',
+            geometry: { x: 1000, y: 1000, width: 4000, height: 3000, rotation: 0 },
+            layout_mode: 'fixed',
+            locked: false,
+            visibility: 'shown',
+            optional: false,
+          },
+        ],
+      },
+    ]
+    doc.root.pages[0].child_ids = ['group']
+    const session = new V5Session(doc)
+    expect(() => session.execute(moveNodes(['inner'], 500, 0))).toThrow(/locked/)
+    expect(() => session.execute(deleteNode('inner'))).toThrow(/locked/)
+    expect(() => session.execute(rotateNode('inner', 45, false))).toThrow(/locked/)
+  })
+  it('reorderExtreme moves nodes to the ends of the sibling list', () => {
+    const session = new V5Session(setup())
+    session.execute(reorderExtreme('a', 'front'))
+    expect(session.getSnapshot().document.root.pages[0].child_ids).toEqual(['b', 'a'])
+    session.execute(reorderExtreme('a', 'back'))
+    expect(session.getSnapshot().document.root.pages[0].child_ids).toEqual(['a', 'b'])
+  })
+})
+
+describe('flow frame duplication stories (tools.md §21–22)', () => {
+  const frameDoc = () => {
+    const doc = emptyV5Fixture()
+    doc.stories = [{ id: 'story', kind: 'rich-text', content: { text: 'hello' } }]
+    doc.root.pages[0].child_ids = ['auto', 'manual']
+    doc.root.pages[0].children = [
+      {
+        id: 'auto',
+        kind: 'flow-frame',
+        role: 'flow-frame',
+        story_id: 'story',
+        continuation: 'auto-pages',
+        geometry: { x: 1000, y: 1000, width: 5000, height: 5000, rotation: 0 },
+        layout_mode: 'flow-frame',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+      },
+      {
+        id: 'manual',
+        kind: 'flow-frame',
+        role: 'flow-frame',
+        story_id: 'story',
+        continuation: 'manual',
+        geometry: { x: 1000, y: 8000, width: 5000, height: 5000, rotation: 0 },
+        layout_mode: 'flow-frame',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+      },
+    ]
+    return doc
+  }
+  it('deep-copies the story for an auto frame and keeps manual frames linked', () => {
+    const session = new V5Session(frameDoc())
+    session.execute(duplicateAndMove(['auto'], 1200, 0, (prefix) => `${prefix}-auto-clone`))
+    const state = session.getSnapshot().document
+    expect(state.stories).toHaveLength(2)
+    const clone = state.root.pages[0].children.find((node) => node.id === 'node-auto-clone')
+    expect(clone?.story_id).not.toBe('story')
+    session.execute(duplicateAndMove(['manual'], 0, 1200, (prefix) => `${prefix}-manual-clone`))
+    const after = session.getSnapshot().document
+    expect(after.stories).toHaveLength(2)
+    const manualClone = after.root.pages[0].children.find((node) => node.id === 'node-manual-clone')
+    expect(manualClone?.story_id).toBe('story')
+  })
+})
+
+describe('align to printable area (tools.md §24)', () => {
+  it('aligns a single object relative to the printable area', () => {
+    const doc = emptyV5Fixture()
+    doc.root.pages[0].margin = { top: du(1000), right: du(1000), bottom: du(1000), left: du(1000) }
+    doc.root.pages[0].child_ids = ['a']
+    doc.root.pages[0].children = [
+      {
+        id: 'a',
+        kind: 'shape',
+        role: 'element',
+        geometry: { x: 30000, y: 30000, width: 5000, height: 5000, rotation: 0 },
+        layout_mode: 'fixed',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+      },
+    ]
+    const session = new V5Session(doc)
+    session.execute(alignToPage('a', 'left'))
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.x).toBe(du(1000))
+    session.execute(alignToPage('a', 'right'))
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.x).toBe(
+      59528 - 1000 - 5000,
+    )
+    session.execute(alignToPage('a', 'center-y'))
+    const geometry = session.getSnapshot().document.root.pages[0].children[0].geometry
+    expect(geometry.y).toBe(du(1000 + (84189 - 2000 - 5000) / 2))
+  })
+})
+
+describe('atomic selection delete (tools.md §23)', () => {
+  it('removes a whole selection in one history entry and restores it with one undo', () => {
+    const doc = emptyV5Fixture()
+    doc.root.pages[0].child_ids = ['a', 'b']
+    doc.root.pages[0].children = ['a', 'b'].map((id) => ({
+      id,
+      kind: 'shape',
+      role: 'element',
+      geometry: { x: du(1000), y: du(1000), width: du(4000), height: du(3000), rotation: 0 },
+      layout_mode: 'fixed',
+      locked: false,
+      visibility: 'shown',
+      optional: false,
+    }))
+    const session = new V5Session(doc)
+    const before = session.getSnapshot().revision
+    session.execute(deleteNodes(['a', 'b']))
+    expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(0)
+    expect(session.getSnapshot().revision).toBe(before + 1)
+    session.undo()
+    expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(2)
   })
 })

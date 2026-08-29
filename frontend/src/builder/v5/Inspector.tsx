@@ -1,5 +1,7 @@
 import { useV5Session } from './store'
 import {
+  alignNodes,
+  distributeNodes,
   renameNode,
   setNodeLocked,
   setNodeVisibility,
@@ -247,7 +249,8 @@ function ImageFields({ node }: { node: V5Node }) {
 
 export function Inspector() {
   const session = useV5Session()
-  const selectedId = session.selectedNodeIds[0]
+  const selectedIds = session.selectedNodeIds
+  const selectedId = selectedIds[0]
   const node = selectedId
     ? findNode(
         session.document.root.pages.flatMap((page) => page.children),
@@ -277,6 +280,50 @@ export function Inspector() {
         />
       </label>
       <GeometryFields node={node} />
+      {selectedIds.length > 1 && (
+        <fieldset className="space-y-1">
+          <legend className="text-xs font-semibold uppercase text-muted-foreground">Arrange</legend>
+          <div className="grid grid-cols-3 gap-1">
+            {(
+              [
+                ['left', '⇤'],
+                ['center-x', '↔'],
+                ['right', '⇥'],
+                ['top', '⇡'],
+                ['center-y', '↕'],
+                ['bottom', '⇣'],
+              ] as const
+            ).map(([mode, glyph]) => (
+              <button
+                key={mode}
+                type="button"
+                aria-label={`Align ${mode.replace('-', ' ')}`}
+                title={`Align ${mode.replace('-', ' ')}`}
+                className="rounded border py-1 text-xs hover:bg-accent"
+                onClick={() => session.execute(alignNodes(selectedIds, mode))}
+              >
+                {glyph}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              className="rounded border py-1 text-xs hover:bg-accent"
+              onClick={() => session.execute(distributeNodes(selectedIds, 'x'))}
+            >
+              Distribute ↔
+            </button>
+            <button
+              type="button"
+              className="rounded border py-1 text-xs hover:bg-accent"
+              onClick={() => session.execute(distributeNodes(selectedIds, 'y'))}
+            >
+              Distribute ↕
+            </button>
+          </div>
+        </fieldset>
+      )}
       {node.kind === 'text' && <TextFields node={node} />}
       {node.kind === 'shape' && <ShapeFields node={node} />}
       {node.kind === 'image' && <ImageFields node={node} />}

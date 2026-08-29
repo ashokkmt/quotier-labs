@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { V5SessionProvider, useV5Session } from './store'
 import { V5Canvas } from './Canvas'
 import { LayersPanel } from './LayersPanel'
-import { ToolPalette } from './ToolPalette'
 import { Inspector } from './Inspector'
+import { PagesPanel } from './PagesPanel'
+import { EditorToolbar } from './EditorToolbar'
 
 export type V5LayoutDiagnostic = { code: string; nodeId: string; message: string }
 
@@ -38,11 +39,13 @@ function SessionHandle({ onReady }: { onReady?: (handle: V5EngineHandle | null) 
   return null
 }
 
-/** Global keyboard undo/redo scoped to the mounted V5 engine instance. */
+/** Global keyboard undo/redo scoped to the mounted V5 engine instance; inputs own their keys. */
 function KeyboardShortcuts() {
   const session = useV5Session()
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       const mod = event.metaKey || event.ctrlKey
       if (!mod) return
       const key = event.key.toLowerCase()
@@ -138,16 +141,19 @@ export function V5BuilderEngine({
       <SessionHandle onReady={onReady} />
       <KeyboardShortcuts />
       <ChangeBridge onChange={onChange} />
-      <div className="flex min-h-0 flex-1">
-        <ToolPalette />
-        <div className="min-h-0 w-56 shrink-0 overflow-y-auto border-r" aria-label="Layers">
-          <LayersPanel />
+      <div className="flex h-full min-h-0 flex-col">
+        <EditorToolbar />
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 w-60 shrink-0 flex-col overflow-y-auto border-r bg-background">
+            <LayersPanel />
+            <PagesPanel />
+          </div>
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <V5Canvas />
+            {resolveDiagnostics && <DiagnosticsBannerHost resolveDiagnostics={resolveDiagnostics} />}
+          </div>
+          <Inspector />
         </div>
-        <div className="relative min-h-0 flex-1 overflow-auto">
-          <V5Canvas />
-          {resolveDiagnostics && <DiagnosticsBannerHost resolveDiagnostics={resolveDiagnostics} />}
-        </div>
-        <Inspector />
       </div>
     </V5SessionProvider>
   )

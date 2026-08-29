@@ -240,8 +240,8 @@ export function QuotationBuilder({
         onSaveAsTemplate={handleSaveAsTemplate}
       />
 
-      <div className="flex-1 min-h-0 overflow-hidden p-6 flex gap-6">
-        <div className="flex-1">
+      <div className="min-h-0 flex-1 overflow-hidden p-6 flex gap-6">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {readOnly ? (
             <Preview
               companyId={quotation.company_id}

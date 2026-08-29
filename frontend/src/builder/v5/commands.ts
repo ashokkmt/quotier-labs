@@ -1,5 +1,14 @@
 import { apply, geometryMatrix, invert, quantizeGeometry } from './geometry'
-import { du, type V5Document, type V5Geometry, type V5Node, type V5Story } from './model'
+import {
+  du,
+  A4_HEIGHT_DU,
+  A4_WIDTH_DU,
+  type V5Document,
+  type V5Geometry,
+  type V5Node,
+  type V5Story,
+} from './model'
+import { remapPayload } from './selectors'
 import { parseV5, serializeV5 } from './serialization'
 import type { V5Command } from './history'
 import { cloneNode, findPlacement } from './placement'
@@ -47,10 +56,39 @@ function snapshotCommand(
 function syncChildIDs(node: V5Node | null) {
   if (node) node.child_ids = (node.children ?? []).map((child) => child.id)
 }
+
+/** Keeps child_ids in sync whether the mutated container is a page or a group. */
+function syncContainerIDs(document: V5Document, found: NodeLocation) {
+  if (found.parent) {
+    syncChildIDs(found.parent)
+    return
+  }
+  const page = document.root.pages.find((candidate) => candidate.children === found.siblings)
+  if (page) page.child_ids = page.children.map((child) => child.id)
+}
+/** A node is effectively locked when it or any ancestor is locked (tools.md §18). */
+function isLockedThroughAncestors(document: V5Document, id: string): boolean {
+  const visit = (nodes: V5Node[], trail: V5Node[]): V5Node[] | null => {
+    for (const node of nodes) {
+      if (node.id === id) return [...trail, node]
+      const found = visit(node.children ?? [], [...trail, node])
+      if (found) return found
+    }
+    return null
+  }
+  for (const page of document.root.pages) {
+    const found = visit(page.children, [])
+    if (found?.some((node) => node.locked)) return true
+  }
+  return false
+}
+function flatten(nodes: V5Node[]): V5Node[] {
+  return nodes.flatMap((node) => [node, ...(node.children ?? [])])
+}
 function updateNode(document: V5Document, id: string, update: (node: V5Node) => void) {
   const found = locate(document, id)
   if (!found) throw new Error(`unknown node ${id}`)
-  if (found.node.locked) throw new Error(`node ${id} is locked`)
+  if (isLockedThroughAncestors(document, id)) throw new Error(`node ${id} is locked`)
   update(found.node)
   return document
 }
@@ -73,14 +111,17 @@ export const updateNodeGeometry = (id: string, geometry: V5Geometry) =>
   )
 export const moveNodes = (ids: string[], dx: number, dy: number) =>
   snapshotCommand('Move selection', (d) => {
+    // Atomic selection move: one locked member rejects the whole gesture (tools.md §9).
+    for (const id of ids)
+      if (isLockedThroughAncestors(d, id))
+        throw new Error('selection contains locked objects and cannot move')
     for (const id of ids) {
-      const found = locate(d, id)
-      if (found && !found.node.locked)
-        found.node.geometry = quantizeGeometry({
-          ...found.node.geometry,
-          x: found.node.geometry.x + dx,
-          y: found.node.geometry.y + dy,
-        })
+      const found = locate(d, id)!
+      found.node.geometry = quantizeGeometry({
+        ...found.node.geometry,
+        x: found.node.geometry.x + dx,
+        y: found.node.geometry.y + dy,
+      })
     }
     return d
   })
@@ -144,9 +185,9 @@ export const deleteNode = (id: string) =>
   snapshotCommand('Delete node', (d) => {
     const found = locate(d, id)
     if (!found) throw new Error(`unknown node ${id}`)
-    if (found.node.locked) throw new Error(`node ${id} is locked`)
+    if (isLockedThroughAncestors(d, id)) throw new Error(`node ${id} is locked`)
     found.siblings.splice(found.siblings.indexOf(found.node), 1)
-    syncChildIDs(found.parent)
+    syncContainerIDs(d, found)
     return d
   })
 export const reorderNode = (id: string, targetIndex: number) =>
@@ -156,7 +197,7 @@ export const reorderNode = (id: string, targetIndex: number) =>
     const from = found.siblings.indexOf(found.node)
     const [node] = found.siblings.splice(from, 1)
     found.siblings.splice(Math.max(0, Math.min(targetIndex, found.siblings.length)), 0, node)
-    syncChildIDs(found.parent)
+    syncContainerIDs(d, found)
     return d
   })
 export const reparentNode = (id: string, targetGroupId: string, index?: number) =>
@@ -170,7 +211,7 @@ export const reparentNode = (id: string, targetGroupId: string, index?: number) 
     if (source.node.locked || target.node.locked || source.pageId !== target.pageId)
       throw new Error('reparent target is unavailable')
     source.siblings.splice(source.siblings.indexOf(source.node), 1)
-    syncChildIDs(source.parent)
+    syncContainerIDs(d, source)
     const m = invert(geometryMatrix(target.node.geometry))
     const local = apply(m, { x: source.node.geometry.x, y: source.node.geometry.y })
     source.node.geometry = quantizeGeometry({
@@ -250,7 +291,7 @@ export const ungroupNode = (id: string) =>
       }
     })
     found.siblings.splice(at, 1, ...children)
-    syncChildIDs(found.parent)
+    syncContainerIDs(d, found)
     return d
   })
 
@@ -340,7 +381,7 @@ export const duplicateNode = (
     clone.geometry = { ...clone.geometry, x: placement.x, y: placement.y }
     const index = source.siblings.indexOf(source.node) + 1
     source.siblings.splice(index, 0, clone)
-    syncChildIDs(source.parent)
+    syncContainerIDs(d, source)
     return d
   })
 
@@ -411,5 +452,198 @@ export const distributeNodes = (ids: string[], axis: 'x' | 'y') =>
     for (const node of nodes)
       if (positions[node.id] !== undefined)
         node.geometry = quantizeGeometry({ ...node.geometry, [axis]: positions[node.id] })
+    return d
+  })
+
+/** Inserts fully-remapped nodes (and their stories) onto a page in one atomic command. */
+export const insertNodes = (pageId: string, nodes: V5Node[], stories: V5Story[]) =>
+  snapshotCommand('Insert content', (d) => {
+    const page = d.root.pages.find((candidate) => candidate.id === pageId)
+    if (!page) throw new Error(`unknown page ${pageId}`)
+    const ids = new Set(nodes.map((node) => node.id))
+    for (const story of stories) {
+      if (d.stories?.some((existing) => existing.id === story.id))
+        throw new Error(`duplicate story ${story.id}`)
+    }
+    d.stories = [...(d.stories ?? []), ...stories]
+    page.children.push(...nodes)
+    page.child_ids = page.children.map((child) => child.id)
+    // Stories that arrived without a referencing frame would leak; drop them.
+    const referenced = new Set(
+      page.children.flatMap((node) => (node.story_id ? [node.story_id] : [])),
+    )
+    d.stories = d.stories.filter((story) => ids.has(story.id) === false || referenced.has(story.id))
+    return d
+  })
+
+/** One-command duplicate-and-move for a whole selection; flow frames get independent stories. */
+export const duplicateAndMove = (
+  ids: string[],
+  dx: number,
+  dy: number,
+  nextID: (prefix: string) => string,
+) =>
+  snapshotCommand('Duplicate and move', (d) => {
+    for (const id of ids)
+      if (isLockedThroughAncestors(d, id)) throw new Error('node cannot be duplicated')
+    for (const id of ids) {
+      const source = locate(d, id)
+      if (!source) throw new Error(`unknown node ${id}`)
+      const clone = cloneNode(source.node, nextID, { x: 0, y: 0 })
+      clone.geometry = quantizeGeometry({
+        ...clone.geometry,
+        x: clone.geometry.x + dx,
+        y: clone.geometry.y + dy,
+      })
+      const index = source.siblings.indexOf(source.node) + 1
+      source.siblings.splice(index, 0, clone)
+      syncContainerIDs(d, source)
+      // Auto-continuation frames deep-copy their stories so edits stay independent;
+      // manual frames keep sharing the story (tools.md §21).
+      for (const cloned of flatten([clone])) {
+        if (!cloned.story_id || cloned.continuation === 'manual') continue
+        const story = d.stories?.find((candidate) => candidate.id === cloned.story_id)
+        if (!story) continue
+        const freshID = nextID('story')
+        d.stories = [...(d.stories ?? []), { ...story, id: freshID, content: JSON.parse(JSON.stringify(story.content)) }]
+        cloned.story_id = freshID
+      }
+    }
+    return d
+  })
+
+/** Keyboard nudge; repeated key presses coalesce into one history entry (tools.md §9). */
+export const nudgeNodes = (ids: string[], dx: number, dy: number) => {
+  const command = moveNodes(ids, dx, dy)
+  return { ...command, label: 'Nudge selection', coalesceKey: `nudge:${[...ids].sort().join(',')}` }
+}
+
+export const reorderExtreme = (id: string, target: 'front' | 'back') =>
+  snapshotCommand(target === 'front' ? 'Bring to front' : 'Send to back', (d) => {
+    const found = locate(d, id)
+    if (!found) throw new Error(`unknown node ${id}`)
+    if (isLockedThroughAncestors(d, id)) throw new Error('locked objects cannot be reordered')
+    const from = found.siblings.indexOf(found.node)
+    const [node] = found.siblings.splice(from, 1)
+    found.siblings.splice(target === 'front' ? found.siblings.length : 0, 0, node)
+    syncContainerIDs(d, found)
+    return d
+  })
+
+// --- Pages (tools.md §16): authored pages are managed as document state -----------------
+
+export const addPage = (pageId: string, orientation: 'portrait' | 'landscape') =>
+  snapshotCommand('Add page', (d) => {
+    const [width, height] =
+      orientation === 'portrait' ? [A4_WIDTH_DU, A4_HEIGHT_DU] : [A4_HEIGHT_DU, A4_WIDTH_DU]
+    d.root.pages.push({
+      id: pageId,
+      width: du(width),
+      height: du(height),
+      margin: { top: du(0), right: du(0), bottom: du(0), left: du(0) },
+      child_ids: [],
+      children: [],
+      ...(d.settings.default_master_id ? { master_id: d.settings.default_master_id } : {}),
+    })
+    return d
+  })
+
+export const deletePage = (pageId: string) =>
+  snapshotCommand('Delete page', (d) => {
+    if (d.root.pages.length <= 1) throw new Error('at least one page is required')
+    const index = d.root.pages.findIndex((page) => page.id === pageId)
+    if (index === -1) throw new Error(`unknown page ${pageId}`)
+    const page = d.root.pages[index]
+    // Story cleanup is atomic: only stories with no remaining referencing frame are removed.
+    const removedStories = new Set(
+      page.children.flatMap((node) => (node.story_id ? [node.story_id] : [])),
+    )
+    d.root.pages.splice(index, 1)
+    const stillReferenced = new Set(
+      d.root.pages.flatMap((remaining) =>
+        flatten(remaining.children).flatMap((node) => (node.story_id ? [node.story_id] : [])),
+      ),
+    )
+    d.stories = (d.stories ?? []).filter(
+      (story) => !removedStories.has(story.id) || stillReferenced.has(story.id),
+    )
+    return d
+  })
+
+export const duplicatePage = (
+  pageId: string,
+  newPageId: string,
+  nextID: (prefix: string) => string,
+) =>
+  snapshotCommand('Duplicate page', (d) => {
+    const index = d.root.pages.findIndex((page) => page.id === pageId)
+    if (index === -1) throw new Error(`unknown page ${pageId}`)
+    const source = d.root.pages[index]
+    const stories = (d.stories ?? []).filter((story) =>
+      flatten(source.children).some((node) => node.story_id === story.id),
+    )
+    const remapped = remapPayload(source.children, stories, nextID)
+    d.stories = [...(d.stories ?? []), ...remapped.stories]
+    d.root.pages.splice(index + 1, 0, {
+      ...source,
+      id: newPageId,
+      child_ids: remapped.nodes.map((node) => node.id),
+      children: remapped.nodes,
+    })
+    return d
+  })
+
+export const reorderPage = (pageId: string, toIndex: number) =>
+  snapshotCommand('Reorder page', (d) => {
+    const from = d.root.pages.findIndex((page) => page.id === pageId)
+    if (from === -1) throw new Error(`unknown page ${pageId}`)
+    const [page] = d.root.pages.splice(from, 1)
+    d.root.pages.splice(Math.max(0, Math.min(toIndex, d.root.pages.length)), 0, page)
+    return d
+  })
+
+/** Single-object alignment against the printable area (tools.md §24). */
+export const alignToPage = (
+  id: string,
+  mode: 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom',
+) =>
+  snapshotCommand('Align to page', (d) => {
+    const found = locate(d, id)
+    if (!found) throw new Error(`unknown node ${id}`)
+    if (isLockedThroughAncestors(d, id)) throw new Error('locked objects cannot be aligned')
+    const page = d.root.pages.find((candidate) => candidate.id === found.pageId)!
+    const area = {
+      x: page.margin.left,
+      y: page.margin.top,
+      width: page.width - page.margin.left - page.margin.right,
+      height: page.height - page.margin.top - page.margin.bottom,
+    }
+    const node = found.node
+    const horizontal = mode === 'left' || mode === 'center-x' || mode === 'right'
+    const target = horizontal
+      ? mode === 'left'
+        ? area.x
+        : mode === 'right'
+          ? area.x + area.width - node.geometry.width
+          : area.x + (area.width - node.geometry.width) / 2
+      : mode === 'top'
+        ? area.y
+        : mode === 'bottom'
+          ? area.y + area.height - node.geometry.height
+          : area.y + (area.height - node.geometry.height) / 2
+    node.geometry = quantizeGeometry(horizontal ? { ...node.geometry, x: target } : { ...node.geometry, y: target })
+    return d
+  })
+
+/** Deletes a whole selection as one atomic history entry (tools.md §23). */
+export const deleteNodes = (ids: string[]) =>
+  snapshotCommand('Delete selection', (d) => {
+    for (const id of ids) {
+      const found = locate(d, id)
+      if (!found) throw new Error(`unknown node ${id}`)
+      if (isLockedThroughAncestors(d, id)) throw new Error(`node ${id} is locked`)
+      found.siblings.splice(found.siblings.indexOf(found.node), 1)
+      syncContainerIDs(d, found)
+    }
     return d
   })

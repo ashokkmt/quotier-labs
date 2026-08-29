@@ -55,3 +55,29 @@ export function distribute(axis: 'x' | 'y', rects: SnapRect[]): Record<string, n
   }
   return result
 }
+
+export type ResizeEdges = { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean }
+
+/** Snaps only the moving edges of a resize preview; returns adjusted rect and guide lines. */
+export function snapResize(
+  rect: SnapRect & { id: string },
+  edges: ResizeEdges,
+  candidates: SnapRect[],
+  thresholdDU: number,
+): SnapResult & { rect: SnapRect } {
+  const result = snapRect(rect, candidates, thresholdDU)
+  let { x, width, y, height } = rect
+  if (edges.left && result.dx) {
+    x += result.dx
+    width -= result.dx
+  } else if (edges.right && result.dx) {
+    width += result.dx
+  }
+  if (edges.top && result.dy) {
+    y += result.dy
+    height -= result.dy
+  } else if (edges.bottom && result.dy) {
+    height += result.dy
+  }
+  return { ...result, rect: { ...rect, x, y, width, height } }
+}
