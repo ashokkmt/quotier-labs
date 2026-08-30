@@ -13,6 +13,23 @@ describe('V5 registry and stories', () => {
       }),
     ).toContain('unsupported binding')
   })
+  it('accepts only the supported text vertical alignments', () => {
+    const text: V5Node = {
+      id: 'text',
+      kind: 'text',
+      role: 'element',
+      geometry: { x: 0, y: 0, width: 10000, height: 3000, rotation: 0 },
+      layout_mode: 'fixed',
+      locked: false,
+      visibility: 'shown',
+      optional: false,
+      props: { text: 'Heading', verticalAlign: 'middle' },
+    }
+    expect(validateNodeContract(text)).toBeNull()
+    expect(
+      validateNodeContract({ ...text, props: { ...text.props, verticalAlign: 'baseline' } }),
+    ).toMatch(/invalid vertical text alignment/)
+  })
   it('validates flow-frame chains and reports overset', () => {
     const d = emptyV5Fixture()
     d.stories = [createStory('s', 'rich-text', { text: 'x'.repeat(1000) })]

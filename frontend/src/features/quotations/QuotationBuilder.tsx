@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import {
   GetQuotation,
@@ -51,6 +61,10 @@ export function QuotationBuilder({
   const [loading, setLoading] = useState(true)
 
   const [readOnly, setReadOnly] = useState(false)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
   const { toast } = useToast()
   const v5EngineRef = useRef<V5EngineHandle | null>(null)
   const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
@@ -120,25 +134,26 @@ export function QuotationBuilder({
   }
 
   const handleFinalize = async () => {
-    if (
-      !confirm(
-        'Are you sure you want to finalize this quotation? It will become read-only and immutable.',
-      )
-    )
-      return
+    setActionBusy(true)
     try {
       await executeSave(document) // ensure latest is saved
       const res = await FinalizeQuotation(quotationId)
       setQuotation(res)
       setReadOnly(true)
+      setFinalizeDialogOpen(false)
       toast({ title: 'Quotation Finalized' })
     } catch (err: any) {
       toast({ title: 'Failed to finalize', description: err.toString(), variant: 'destructive' })
+    } finally {
+      setActionBusy(false)
     }
   }
 
   const handlePreviewMode = async () => {
     if (readOnly) {
+      // Finalized and later statuses are immutable snapshots. Only a draft that was temporarily
+      // switched to Preview may return to editing.
+      if (quotation.status !== 'DRAFT') return
       setReadOnly(false)
       return
     }
@@ -197,13 +212,19 @@ export function QuotationBuilder({
   }
 
   const handleSaveAsTemplate = async () => {
-    const name = window.prompt('Template name')?.trim()
+    const name = templateName.trim()
     if (!name) return
+    setActionBusy(true)
     try {
+      await executeSave(document)
       await SaveAsTemplate({ quotation_id: quotationId, name })
+      setTemplateDialogOpen(false)
+      setTemplateName('')
       toast({ title: 'Template saved', description: 'The quotation structure is now reusable.' })
     } catch (err: any) {
       toast({ title: 'Could not save template', description: String(err), variant: 'destructive' })
+    } finally {
+      setActionBusy(false)
     }
   }
 
@@ -240,14 +261,15 @@ export function QuotationBuilder({
             <UndoRedoControls onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} />
           )
         }
-        onFinalize={handleFinalize}
+        onFinalize={() => setFinalizeDialogOpen(true)}
         onStatusChange={handleStatusChange}
-        onSaveAsTemplate={handleSaveAsTemplate}
+        onSaveAsTemplate={() => {
+          setTemplateName(`${quotation.number || 'Quotation'} template`)
+          setTemplateDialogOpen(true)
+        }}
       />
 
-      <div
-        className={`min-h-0 flex flex-1 gap-6 overflow-hidden ${readOnly || !v5Active ? 'p-6' : ''}`}
-      >
+      <div className={`min-h-0 flex flex-1 overflow-hidden ${!readOnly && !v5Active ? 'p-6' : ''}`}>
         <div className="min-h-0 flex-1 overflow-hidden">
           {readOnly ? (
             <Preview
@@ -293,6 +315,70 @@ export function QuotationBuilder({
           )}
         </div>
       </div>
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save as template</DialogTitle>
+            <DialogDescription>
+              Save the current quotation layout as a reusable template. Customer and quotation
+              records remain independent.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="space-y-2 text-sm font-medium">
+            Template name
+            <Input
+              autoFocus
+              value={templateName}
+              maxLength={120}
+              onChange={(event) => setTemplateName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && templateName.trim() && !actionBusy)
+                  void handleSaveAsTemplate()
+              }}
+            />
+          </label>
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <Button
+              variant="outline"
+              onClick={() => setTemplateDialogOpen(false)}
+              disabled={actionBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleSaveAsTemplate()}
+              disabled={!templateName.trim() || actionBusy}
+            >
+              {actionBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save template
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={finalizeDialogOpen} onOpenChange={setFinalizeDialogOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Finalize quotation?</DialogTitle>
+            <DialogDescription>
+              Finalizing creates immutable document and company/customer snapshots. The quotation
+              will become read-only.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <Button
+              variant="outline"
+              onClick={() => setFinalizeDialogOpen(false)}
+              disabled={actionBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleFinalize()} disabled={actionBusy}>
+              {actionBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Finalize
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

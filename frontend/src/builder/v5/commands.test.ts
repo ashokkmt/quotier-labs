@@ -53,6 +53,23 @@ describe('V5 document commands', () => {
     )
   })
 
+  it('keeps a text selection frame large enough for its painted line', () => {
+    const session = new V5Session(emptyV5Fixture())
+    session.execute(
+      insertNode('page-1', {
+        ...node('text'),
+        geometry: { ...node('text').geometry, height: 200 },
+        props: { text: 'Heading', fontSize: 11 },
+      }),
+    )
+    session.execute(updateNodeProps('text', { fontSize: 36, verticalAlign: 'bottom' }))
+    const text = session.getSnapshot().document.root.pages[0].children[0]
+    expect(text.geometry.height).toBe(Math.round((36 * 1.2 + 2) * 100))
+    expect(text.props?.verticalAlign).toBe('bottom')
+    session.undo()
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.height).toBe(200)
+  })
+
   it('updates blank table structure and derived height atomically', () => {
     const session = new V5Session(emptyV5Fixture())
     const table = createBlankTable(2, 2, 32000)

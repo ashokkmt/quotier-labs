@@ -86,9 +86,6 @@ func (g *generator) generateV5(ctx context.Context, input document.GeneratorInpu
 			}
 			if box.Shape != nil {
 				drawShape(pdf, box)
-			} else {
-				// Non-shape boxes keep a hairline frame so authored rectangles are visible.
-				pdf.Rect(box.X, box.Y, box.Width, box.Height, "D")
 			}
 			if box.Text != "" {
 				drawText(pdf, box, metrics)
@@ -185,11 +182,31 @@ func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
 	if align == "" {
 		align = "L"
 	}
-	// Fixed and flow-frame content has an explicit document-owned rectangle. Clip the painter to
-	// it so an overset diagnostic cannot paint over another layer.
+	padding := layoutir.TextPaddingMM
+	contentWidth := box.Width - 2*padding
+	contentHeight := box.Height - 2*padding
+	if contentWidth < 0.1 {
+		contentWidth = 0.1
+	}
+	if contentHeight < 0 {
+		contentHeight = 0
+	}
+	textHeight := layoutir.MeasuredTextHeightMM(box.Text, contentWidth, fontSize, metrics)
+	y := box.Y + padding
+	switch box.VerticalAlign {
+	case "middle":
+		y += (contentHeight - textHeight) / 2
+	case "bottom":
+		y += contentHeight - textHeight
+	}
+	if y < box.Y+padding {
+		y = box.Y + padding
+	}
+	// The frame is document geometry, not printable decoration. Clip text to it, but never draw
+	// selection/editor outlines into Preview or exported PDFs.
 	pdf.ClipRect(box.X, box.Y, box.Width, box.Height, false)
-	pdf.SetXY(box.X, box.Y)
-	pdf.MultiCell(box.Width, metrics.LineHeightMM(fontSize), box.Text, "", align, false)
+	pdf.SetXY(box.X+padding, y)
+	pdf.MultiCell(contentWidth, metrics.LineHeightMM(fontSize), box.Text, "", align, false)
 	pdf.ClipEnd()
 }
 

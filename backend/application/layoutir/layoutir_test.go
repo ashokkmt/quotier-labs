@@ -137,6 +137,9 @@ func TestResolveBlankHeaderlessTableUsesConfiguredDimensions(t *testing.T) {
 	if len(fragment.ColumnWidthsMM) != 2 || math.Abs(fragment.ColumnWidthsMM[0]-fragment.ColumnWidthsMM[1]) > 0.001 {
 		t.Fatalf("unexpected column widths %#v", fragment.ColumnWidthsMM)
 	}
+	if len(layout.Diagnostics) != 0 {
+		t.Fatalf("an exactly-sized table must not report overset: %#v", layout.Diagnostics)
+	}
 }
 
 func TestResolveIsDeterministic(t *testing.T) {
@@ -378,17 +381,24 @@ func TestResolveRejectsInvalidShapeAndTextTokens(t *testing.T) {
 
 func TestResolveStyledTextCarriesTokens(t *testing.T) {
 	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"h"}, Children: []documentmodel.Node{
-		{ID: "h", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{X: 0, Y: 0, Width: 20000, Height: 3000}, LayoutMode: "fixed", Visibility: "shown", Props: []byte(`{"text":"Invoice","fontSize":18,"bold":true,"align":"center","color":"primary"}`)},
+		{ID: "h", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{X: 0, Y: 0, Width: 20000, Height: 3000}, LayoutMode: "fixed", Visibility: "shown", Props: []byte(`{"text":"Invoice","fontSize":18,"bold":true,"align":"center","verticalAlign":"bottom","color":"primary"}`)},
 	}}}}}
 	layout, err := Resolve(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	box := layout.Pages[0].Boxes[0]
-	if box.FontSizePt != 18 || !box.Bold || box.Align != "center" || box.TextColor != "primary" || box.Text != "Invoice" {
+	if box.FontSizePt != 18 || !box.Bold || box.Align != "center" || box.VerticalAlign != "bottom" || box.TextColor != "primary" || box.Text != "Invoice" {
 		t.Fatalf("styled text box = %#v", box)
 	}
 	if len(layout.Diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics %#v", layout.Diagnostics)
+	}
+}
+
+func TestResolveRejectsInvalidVerticalTextAlignment(t *testing.T) {
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"text"}, Children: []documentmodel.Node{{ID: "text", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{Width: 20000, Height: 3000}, LayoutMode: "fixed", Visibility: "shown", Props: []byte(`{"text":"Invoice","verticalAlign":"baseline"}`)}}}}}}
+	if _, err := Resolve(doc); err == nil {
+		t.Fatal("expected invalid vertical alignment to be rejected")
 	}
 }

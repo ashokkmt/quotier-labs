@@ -45,4 +45,15 @@ describe('V5 snapping', () => {
     expect(edge.rect.width).toBe(20)
     expect(edge.guides.some((guide) => guide.kind === 'size')).toBe(true)
   })
+
+  it('draws alignment guides between the outer selection rectangles', () => {
+    const result = snapRect(
+      { id: 'moving', x: 101, y: 200, width: 50, height: 80 },
+      [{ id: 'anchor', x: 100, y: 20, width: 140, height: 60 }],
+      2,
+    )
+    const vertical = result.guides.find((guide) => guide.axis === 'x')
+    expect(result.dx).toBe(-1)
+    expect(vertical).toMatchObject({ position: 100, from: 20, to: 280 })
+  })
 })

@@ -10,6 +10,7 @@ export function AppLayout() {
   const [isNarrow, setIsNarrow] = useState(false)
   const [loading, setLoading] = useState(true)
   const [initError, setInitError] = useState('')
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
   const navigate = useNavigate()
   const location = useLocation()
   const focused =
@@ -27,18 +28,22 @@ export function AppLayout() {
 
     let cancelled = false
     const bootstrap = async () => {
+      setLoading(true)
+      setInitError('')
       for (let attempt = 0; attempt < 4; attempt++) {
         try {
-          const isFirst = await IsFirstRun()
+          const isFirst = await withTimeout(IsFirstRun(), 3000)
           if (cancelled) return
           if (isFirst) navigate('/onboarding')
           else setLoading(false)
           return
         } catch (err) {
-          if (attempt === 3 && !cancelled)
+          if (attempt === 3 && !cancelled) {
             setInitError(
               `Could not initialize the application. Your local data was not changed. ${String(err)}`,
             )
+            setLoading(false)
+          }
           await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)))
         }
       }
@@ -49,7 +54,7 @@ export function AppLayout() {
       cancelled = true
       window.removeEventListener('resize', handleResize)
     }
-  }, [navigate])
+  }, [bootstrapAttempt, navigate])
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>
@@ -62,9 +67,21 @@ export function AppLayout() {
           <p role="alert" className="text-sm text-destructive">
             {initError}
           </p>
-          <button className="underline" onClick={() => window.location.reload()}>
-            Retry
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button className="underline" onClick={() => setBootstrapAttempt((value) => value + 1)}>
+              Retry
+            </button>
+            <button
+              className="underline"
+              onClick={() => {
+                setInitError('')
+                setLoading(false)
+                navigate('/')
+              }}
+            >
+              Open workspace
+            </button>
+          </div>
           <p className="text-xs text-muted-foreground">
             If this persists, review the desktop logs.
           </p>
@@ -97,4 +114,23 @@ export function AppLayout() {
       </main>
     </div>
   )
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error('The desktop service did not respond in time.')),
+      timeoutMs,
+    )
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeout)
+        resolve(value)
+      },
+      (error) => {
+        window.clearTimeout(timeout)
+        reject(error)
+      },
+    )
+  })
 }

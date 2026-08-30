@@ -14,6 +14,9 @@ import {
   AlignLeft,
   AlignRight,
   AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
   Bold,
   Copy,
   Group,
@@ -68,6 +71,7 @@ import {
   defaultShapeProps,
   defaultTextProps,
   V5_TOOL_PRESETS,
+  V5_TEXT_PADDING_PT,
   type V5ToolPreset,
   type V5ShapeProps,
   type V5TextProps,
@@ -189,18 +193,36 @@ function renderText(node: V5Node, zoom: number) {
   return (
     <span
       style={{
-        display: 'block',
+        display: 'flex',
+        alignItems:
+          props.verticalAlign === 'bottom'
+            ? 'flex-end'
+            : props.verticalAlign === 'middle'
+              ? 'center'
+              : 'flex-start',
         color,
         fontSize: ptToPx(Number(props.fontSize ?? 11), zoom),
         fontWeight: props.bold ? 700 : 400,
-        textAlign: (props.align ?? 'left') as 'left' | 'center' | 'right',
-        whiteSpace: 'pre-wrap',
+        lineHeight: 1.2,
         overflow: 'hidden',
         width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        padding: ptToPx(V5_TEXT_PADDING_PT, zoom),
         pointerEvents: 'none',
       }}
     >
-      {String(props.text ?? '')}
+      <span
+        style={{
+          display: 'block',
+          width: '100%',
+          textAlign: (props.align ?? 'left') as 'left' | 'center' | 'right',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'break-word',
+        }}
+      >
+        {String(props.text ?? '')}
+      </span>
     </span>
   )
 }
@@ -255,6 +277,7 @@ function NodeView({
         transform: `rotate(${rotation / 100}deg)`,
         cursor: interactive ? (locked ? 'not-allowed' : 'move') : 'default',
         userSelect: 'none',
+        overflow: node.kind === 'text' || node.role === 'flow-frame' ? 'hidden' : undefined,
       }}
     >
       {editing ? null : node.kind === 'text' ? (
@@ -317,7 +340,12 @@ function NodeView({
 function FlowFrameContent({ story, zoom }: { story?: V5Story; zoom: number }) {
   if (!story) return null
   if (story.kind === 'rich-text') {
-    const value = typeof story.content === 'string' ? story.content : ''
+    const value =
+      typeof story.content === 'string'
+        ? story.content
+        : typeof (story.content as { text?: unknown } | null)?.text === 'string'
+          ? String((story.content as { text: string }).text)
+          : ''
     return (
       <span
         style={{
@@ -535,7 +563,8 @@ function TextEditor({
         // is intentionally transparent so the user never switches to a form-like editor.
         background: 'transparent',
         border: '1.5px solid #2563eb',
-        padding: 0,
+        boxSizing: 'border-box',
+        padding: ptToPx(V5_TEXT_PADDING_PT, zoom),
         margin: 0,
         resize: 'none',
         outline: 'none',
@@ -564,6 +593,11 @@ function TextFormattingStrip({
     { value: 'left' as const, label: 'Align left', Icon: AlignLeft },
     { value: 'center' as const, label: 'Align center', Icon: AlignCenter },
     { value: 'right' as const, label: 'Align right', Icon: AlignRight },
+  ]
+  const verticalAlignments = [
+    { value: 'top' as const, label: 'Align text to top', Icon: AlignVerticalJustifyStart },
+    { value: 'middle' as const, label: 'Align text to middle', Icon: AlignVerticalJustifyCenter },
+    { value: 'bottom' as const, label: 'Align text to bottom', Icon: AlignVerticalJustifyEnd },
   ]
   return (
     <div
@@ -611,6 +645,20 @@ function TextFormattingStrip({
           className={`grid h-7 w-7 place-items-center rounded ${(props.align ?? 'left') === value ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => onUpdate({ align: value })}
+        >
+          <Icon className="h-4 w-4" />
+        </button>
+      ))}
+      <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
+      {verticalAlignments.map(({ value, label, Icon }) => (
+        <button
+          key={value}
+          type="button"
+          aria-label={label}
+          aria-pressed={(props.verticalAlign ?? 'top') === value}
+          className={`grid h-7 w-7 place-items-center rounded ${(props.verticalAlign ?? 'top') === value ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => onUpdate({ verticalAlign: value })}
         >
           <Icon className="h-4 w-4" />
         </button>

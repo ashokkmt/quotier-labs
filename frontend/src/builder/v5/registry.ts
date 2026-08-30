@@ -4,6 +4,7 @@ import {
   V5_SHAPE_VARIANTS,
   V5_STROKE_STYLES,
   V5_TEXT_ALIGNS,
+  V5_TEXT_VERTICAL_ALIGNS,
   V5_FONT_SIZE_MIN_PT,
   V5_FONT_SIZE_MAX_PT,
   V5_STROKE_WIDTH_MIN_PT,
@@ -124,6 +125,11 @@ function validateControlledProps(node: V5Node): string | null {
       !(V5_TEXT_ALIGNS as readonly string[]).includes(String(props.align))
     )
       return 'invalid text alignment'
+    if (
+      props.verticalAlign !== undefined &&
+      !(V5_TEXT_VERTICAL_ALIGNS as readonly string[]).includes(String(props.verticalAlign))
+    )
+      return 'invalid vertical text alignment'
     if (props.color !== undefined && !isColorToken(props.color)) return 'invalid text color token'
   }
   if (node.kind === 'shape') {

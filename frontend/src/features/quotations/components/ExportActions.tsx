@@ -21,10 +21,12 @@ export function ExportActions({
   companyId,
   quotationId,
   status,
+  compact = false,
 }: {
   companyId: string
   quotationId: string
   status: string
+  compact?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
@@ -95,19 +97,26 @@ export function ExportActions({
 
   return (
     <div className="flex items-center gap-2">
-      <Button variant="outline" size="sm" onClick={handleSave} disabled={loading}>
+      <Button
+        variant="outline"
+        size={compact ? 'icon' : 'sm'}
+        onClick={handleSave}
+        disabled={loading}
+        aria-label="Save PDF"
+        className={compact ? 'h-9 w-9' : undefined}
+      >
         {loading ? (
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          <Loader2 className={`h-4 w-4 animate-spin ${compact ? '' : 'mr-2'}`} />
         ) : (
-          <FileDown className="w-4 h-4 mr-2" />
+          <FileDown className={`h-4 w-4 ${compact ? '' : 'mr-2'}`} />
         )}
-        Save PDF
+        {!compact && 'Save PDF'}
       </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={loading}>
-            <MoreVertical className="w-4 h-4" />
+          <Button variant="outline" size="icon" disabled={loading} aria-label="More PDF actions">
+            <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

@@ -25,6 +25,7 @@ import { cloneNode, findPlacement } from './placement'
 import { getV5Widget } from './registry'
 import { distribute } from './snapping'
 import { normalizeTableData, tableHeightDU, type V5TableData } from './table'
+import { V5_TEXT_PADDING_PT } from './tokens'
 
 type NodeLocation = { node: V5Node; siblings: V5Node[]; parent: V5Node | null; pageId: string }
 const clone = (document: V5Document) => parseV5(serializeV5(document))
@@ -196,6 +197,13 @@ export const updateNodeProps = (id: string, props: Record<string, unknown>) =>
     (d) =>
       updateNode(d, id, (node) => {
         node.props = { ...node.props, ...props }
+        if (node.kind === 'text') {
+          const fontSize = Number(node.props.fontSize ?? 11)
+          // A selection frame must enclose at least one painted line plus the equal document
+          // inset. Multi-line intrinsic content is expanded from measured editor height.
+          const minimumHeight = du((fontSize * 1.2 + V5_TEXT_PADDING_PT * 2) * 100)
+          if (node.geometry.height < minimumHeight) node.geometry.height = minimumHeight
+        }
       }),
     `props:${id}`,
   )

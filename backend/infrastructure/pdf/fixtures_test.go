@@ -188,6 +188,24 @@ func extractPDFText(t *testing.T, data []byte) string {
 	return sb.String()
 }
 
+func decodedContentStreams(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var decoded []byte
+	for _, match := range streamRe.FindAllSubmatch(data, -1) {
+		zr, err := zlib.NewReader(bytes.NewReader(match[1]))
+		if err != nil {
+			continue
+		}
+		content, readErr := io.ReadAll(zr)
+		_ = zr.Close()
+		if readErr == nil {
+			decoded = append(decoded, content...)
+			decoded = append(decoded, '\n')
+		}
+	}
+	return decoded
+}
+
 func pdfPageCount(t *testing.T, data []byte) int {
 	t.Helper()
 	return len(pageObjectRe.FindAll(data, -1))
@@ -252,6 +270,11 @@ func TestV5FixtureSimpleTextSemantic(t *testing.T) {
 	text := extractPDFText(t, data)
 	if !strings.Contains(text, "Quotier Labs Quotation") || !strings.Contains(text, "Standard terms apply") {
 		t.Fatalf("expected fixture text in PDF, got %q", text)
+	}
+	// Text geometry is an editor concern. Preview/export must never paint selection-like
+	// rectangle strokes around otherwise borderless objects.
+	if regexp.MustCompile(`(?m)\bre\s+S\b`).Match(decodedContentStreams(t, data)) {
+		t.Fatal("text-only PDF contains an unexpected rectangle stroke")
 	}
 }
 

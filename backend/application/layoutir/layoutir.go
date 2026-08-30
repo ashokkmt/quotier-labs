@@ -86,6 +86,7 @@ type Box struct {
 	FontSizePt           float64
 	Bold                 bool
 	Align                string
+	VerticalAlign        string
 	TextColor            string
 }
 
@@ -209,7 +210,7 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 			text = ""
 		}
 		x, y := geometryPosition(matrix, node.Geometry.Width, node.Geometry.Height, rotation)
-		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: x / DUPerMM, Y: y / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: rotation, FontSizePt: DefaultFontSizePt, Align: "left", TextColor: "black"}
+		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: x / DUPerMM, Y: y / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: rotation, FontSizePt: DefaultFontSizePt, Align: "left", VerticalAlign: "top", TextColor: "black"}
 		if err := applyControlledProps(node, &box); err != nil {
 			return fmt.Errorf("node %s props: %w", node.ID, err)
 		}
@@ -224,7 +225,7 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 		case node.Role != "flow-frame" && node.LayoutMode == "intrinsic" && text != "":
 			// Intrinsic text has authored width and measured height; it may grow only inside
 			// the page bounds. The resolved box reports the measured height.
-			height := measuredHeightMM(text, box.Width, DefaultFontSizePt, m)
+			height := MeasuredTextHeightMM(text, contentWidthMM(box.Width), box.FontSizePt, m) + 2*TextPaddingMM
 			if height > box.Height {
 				box.Height = height
 			}
@@ -233,8 +234,8 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 			}
 		case node.Role != "flow-frame" && text != "":
 			// Fixed text is never silently clipped: overset is reported.
-			if needed := float64(len(wrapText(text, box.Width, box.FontSizePt, m))) * m.LineHeightMM(box.FontSizePt); needed > box.Height {
-				*diagnostics = append(*diagnostics, Diagnostic{Code: "overset_text", NodeID: node.ID, Message: "fixed text exceeds its authored box"})
+			if needed := MeasuredTextHeightMM(text, contentWidthMM(box.Width), box.FontSizePt, m) + 2*TextPaddingMM; needed > box.Height+0.001 {
+				*diagnostics = append(*diagnostics, Diagnostic{Code: "overset_text", NodeID: node.ID, Message: "Text does not fit inside its frame. Enlarge the frame or shorten the text."})
 			}
 		}
 		page.Boxes = append(page.Boxes, box)
@@ -418,8 +419,8 @@ func fillTextBox(box *Box, text string, m Metrics) string {
 	if text == "" {
 		return ""
 	}
-	_, fitsLines := capacityFor(box.Width, box.Height, box.FontSizePt, m)
-	wrapped := wrapText(text, box.Width, box.FontSizePt, m)
+	_, fitsLines := capacityFor(contentWidthMM(box.Width), contentHeightMM(box.Height), box.FontSizePt, m)
+	wrapped := wrapText(text, contentWidthMM(box.Width), box.FontSizePt, m)
 	if len(wrapped) <= fitsLines {
 		box.Text = text
 		return ""
@@ -505,7 +506,9 @@ func tableFragment(box *Box, table tableStory, row int) (*TableFragment, int) {
 	if showHeader {
 		available -= rowHeight
 	}
-	rowsPerFrame := int(available / rowHeight)
+	// Authored table frames are commonly exactly N×rowHeight. Conversion from document units to
+	// millimetres can land a fraction below the mathematical value, so tolerate sub-micron error.
+	rowsPerFrame := int(math.Floor((available + 0.001) / rowHeight))
 	if rowsPerFrame < 1 {
 		rowsPerFrame = 1
 	}

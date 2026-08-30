@@ -19,6 +19,12 @@ export const V5_COLOR_HEX: Record<V5ColorToken, string> = {
 
 export const V5_TEXT_ALIGNS = ['left', 'center', 'right'] as const
 export type V5TextAlign = (typeof V5_TEXT_ALIGNS)[number]
+export const V5_TEXT_VERTICAL_ALIGNS = ['top', 'middle', 'bottom'] as const
+export type V5TextVerticalAlign = (typeof V5_TEXT_VERTICAL_ALIGNS)[number]
+
+// The inset is part of the controlled document projection and is mirrored by LayoutIR/PDF.
+// Keeping it fixed avoids arbitrary CSS while ensuring glyphs never touch selection bounds.
+export const V5_TEXT_PADDING_PT = 1
 
 export const V5_STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const
 export type V5StrokeStyle = (typeof V5_STROKE_STYLES)[number]
@@ -36,6 +42,7 @@ export type V5TextProps = {
   fontSize: number
   bold: boolean
   align: V5TextAlign
+  verticalAlign: V5TextVerticalAlign
   color: V5ColorToken
 }
 
@@ -60,6 +67,7 @@ export const defaultTextProps = (overrides: Partial<V5TextProps> = {}): V5TextPr
   fontSize: 11,
   bold: false,
   align: 'left',
+  verticalAlign: 'top',
   color: 'black',
   ...overrides,
 })

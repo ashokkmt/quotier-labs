@@ -31,6 +31,7 @@ import {
   V5_COLOR_TOKENS,
   V5_STROKE_STYLES,
   V5_TEXT_ALIGNS,
+  V5_TEXT_VERTICAL_ALIGNS,
   V5_FONT_SIZE_MAX_PT,
   V5_FONT_SIZE_MIN_PT,
   clampFontSize,
@@ -408,11 +409,18 @@ function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
           onCommit={(value) => set({ fontSize: clampFontSize(value) })}
         />
         <OptionSelect
-          label="Alignment"
+          label="Horizontal"
           value={String(props.align ?? 'left')}
           options={[...V5_TEXT_ALIGNS]}
           disabled={disabled}
           onChange={(align) => set({ align })}
+        />
+        <OptionSelect
+          label="Vertical"
+          value={String(props.verticalAlign ?? 'top')}
+          options={[...V5_TEXT_VERTICAL_ALIGNS]}
+          disabled={disabled}
+          onChange={(verticalAlign) => set({ verticalAlign })}
         />
       </div>
       <div className="grid grid-cols-2 gap-2">

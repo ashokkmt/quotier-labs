@@ -3,7 +3,7 @@ import {
   GetQuotationLayoutDiagnostics,
   GetQuotationPreviewPDF,
 } from '../../../../wailsjs/go/wails/DocumentHandler'
-import { Loader2 } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 
 interface PreviewProps {
   companyId: string
@@ -69,7 +69,7 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
 
   if (error) {
     return (
-      <div className="w-full h-full min-h-[800px] flex items-center justify-center bg-muted/20 border rounded-md">
+      <div className="flex h-full w-full items-center justify-center bg-muted/20 p-6">
         <div className="text-destructive text-center">
           <p className="font-semibold">Preview Error</p>
           <p className="text-sm">{error}</p>
@@ -79,7 +79,7 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
   }
 
   return (
-    <div className="w-full h-full min-h-[800px] border rounded-md overflow-hidden relative bg-muted/20">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-muted/30">
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-10">
           <div className="flex flex-col items-center gap-2">
@@ -88,23 +88,29 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
           </div>
         </div>
       )}
-      {pdfUrl && (
-        <iframe
-          src={pdfUrl}
-          title="Printable quotation preview"
-          className="h-full min-h-[800px] w-full border-0 bg-white"
-        />
-      )}
       {diagnostics.length > 0 && (
         <div
           role="status"
-          className="absolute bottom-3 left-3 right-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950"
+          className="z-10 flex shrink-0 items-start gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-400/50 dark:bg-amber-300/15 dark:text-amber-100"
         >
-          {diagnostics.map((diagnostic) => (
-            <p key={`${diagnostic.code}-${diagnostic.nodeId}`}>{diagnostic.message}</p>
-          ))}
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-medium">
+              {diagnostics.length} layout {diagnostics.length === 1 ? 'warning' : 'warnings'}
+            </p>
+            <p className="truncate">{diagnostics[0].message}</p>
+          </div>
         </div>
       )}
+      <div className="min-h-0 flex-1 p-2 sm:p-3">
+        {pdfUrl && (
+          <iframe
+            src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+            title="Printable quotation preview"
+            className="h-full min-h-0 w-full border-0 bg-white shadow-sm"
+          />
+        )}
+      </div>
     </div>
   )
 }

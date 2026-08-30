@@ -19,6 +19,7 @@ var ColorTokens = map[string]bool{
 }
 
 var textAligns = map[string]bool{"left": true, "center": true, "right": true}
+var textVerticalAligns = map[string]bool{"top": true, "middle": true, "bottom": true}
 var strokeStyles = map[string]bool{"solid": true, "dashed": true, "dotted": true}
 var shapeVariants = map[string]bool{"rect": true, "ellipse": true, "line": true}
 
@@ -33,15 +34,16 @@ const (
 // controlledProps is the strict superset of widget props. Unknown JSON fields inside props are
 // ignored here but the widgets themselves are closed; token values are enum-validated.
 type controlledProps struct {
-	FontSize    *float64 `json:"fontSize"`
-	Bold        *bool    `json:"bold"`
-	Align       string   `json:"align"`
-	Color       string   `json:"color"`
-	Variant     string   `json:"variant"`
-	Fill        string   `json:"fill"`
-	Stroke      string   `json:"stroke"`
-	StrokeStyle string   `json:"strokeStyle"`
-	StrokeWidth *float64 `json:"strokeWidth"`
+	FontSize      *float64 `json:"fontSize"`
+	Bold          *bool    `json:"bold"`
+	Align         string   `json:"align"`
+	VerticalAlign string   `json:"verticalAlign"`
+	Color         string   `json:"color"`
+	Variant       string   `json:"variant"`
+	Fill          string   `json:"fill"`
+	Stroke        string   `json:"stroke"`
+	StrokeStyle   string   `json:"strokeStyle"`
+	StrokeWidth   *float64 `json:"strokeWidth"`
 }
 
 // applyControlledProps validates and projects text/shape styling tokens onto the box. Values are
@@ -68,6 +70,12 @@ func applyControlledProps(node documentmodel.Node, box *Box) error {
 			return fmt.Errorf("invalid text alignment %q", props.Align)
 		}
 		box.Align = props.Align
+	}
+	if props.VerticalAlign != "" {
+		if !textVerticalAligns[props.VerticalAlign] {
+			return fmt.Errorf("invalid vertical text alignment %q", props.VerticalAlign)
+		}
+		box.VerticalAlign = props.VerticalAlign
 	}
 	if props.Color != "" {
 		if !ColorTokens[props.Color] {

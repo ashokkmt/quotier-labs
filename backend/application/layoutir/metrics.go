@@ -20,6 +20,25 @@ type Metrics interface {
 // DefaultFontSizePt is the single font size used by both the resolver and the V5 PDF adapter.
 const DefaultFontSizePt = 10
 
+const TextPaddingPt = 1.0
+const TextPaddingMM = TextPaddingPt * 25.4 / 72
+
+func contentWidthMM(width float64) float64 {
+	width -= 2 * TextPaddingMM
+	if width < 0.1 {
+		return 0.1
+	}
+	return width
+}
+
+func contentHeightMM(height float64) float64 {
+	height -= 2 * TextPaddingMM
+	if height < 0.1 {
+		return 0.1
+	}
+	return height
+}
+
 // DefaultMetrics is the deterministic fallback used when no adapter is injected. Its values match
 // the 10pt core-font defaults used by the PDF generator so diagnostics and output agree.
 type DefaultMetrics struct{}
@@ -43,7 +62,7 @@ const TableRowHeightMM = 5.0
 // capacityFor reports how many average characters and how many lines fit in a box at sizePt.
 func capacityFor(widthMM, heightMM, sizePt float64, m Metrics) (charsPerLine, lines int) {
 	charsPerLine = int(widthMM / m.AverageCharWidthMM(sizePt))
-	lines = int(heightMM / m.LineHeightMM(sizePt))
+	lines = int((heightMM + 0.001) / m.LineHeightMM(sizePt))
 	if charsPerLine < 1 {
 		charsPerLine = 1
 	}
@@ -86,7 +105,7 @@ func wrapText(text string, maxWidthMM, sizePt float64, m Metrics) []string {
 	return lines
 }
 
-// measuredHeightMM reports the height of wrapped text in millimetres at sizePt.
-func measuredHeightMM(text string, maxWidthMM, sizePt float64, m Metrics) float64 {
+// MeasuredTextHeightMM reports the height of wrapped text in millimetres at sizePt.
+func MeasuredTextHeightMM(text string, maxWidthMM, sizePt float64, m Metrics) float64 {
 	return float64(len(wrapText(text, maxWidthMM, sizePt, m))) * m.LineHeightMM(sizePt)
 }
