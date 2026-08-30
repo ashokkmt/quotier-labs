@@ -16,6 +16,9 @@ export type V5Widget = {
   bindingKinds: Array<'literal' | 'company' | 'customer' | 'quotation' | 'calculation'>
   canRotate: boolean
   canGroup: boolean
+  canResizeX: boolean
+  canResizeY: boolean
+  aspectPolicy: 'free' | 'preserve-by-default'
   maxWidth: number
   maxHeight: number
   goRenderKind: string
@@ -27,6 +30,9 @@ const widgets: V5Widget[] = [
     bindingKinds: ['literal', 'company', 'customer', 'quotation', 'calculation'],
     canRotate: true,
     canGroup: true,
+    canResizeX: true,
+    canResizeY: true,
+    aspectPolicy: 'free',
     maxWidth: 56000,
     maxHeight: 80000,
     goRenderKind: 'text',
@@ -37,6 +43,9 @@ const widgets: V5Widget[] = [
     bindingKinds: ['literal'],
     canRotate: true,
     canGroup: true,
+    canResizeX: true,
+    canResizeY: true,
+    aspectPolicy: 'preserve-by-default',
     maxWidth: 56000,
     maxHeight: 80000,
     goRenderKind: 'image',
@@ -47,6 +56,9 @@ const widgets: V5Widget[] = [
     bindingKinds: ['literal', 'quotation', 'calculation'],
     canRotate: false,
     canGroup: true,
+    canResizeX: true,
+    canResizeY: true,
+    aspectPolicy: 'free',
     maxWidth: 56000,
     maxHeight: 80000,
     goRenderKind: 'table',
@@ -57,6 +69,9 @@ const widgets: V5Widget[] = [
     bindingKinds: ['literal'],
     canRotate: true,
     canGroup: true,
+    canResizeX: true,
+    canResizeY: true,
+    aspectPolicy: 'free',
     maxWidth: 56000,
     maxHeight: 80000,
     goRenderKind: 'shape',
@@ -67,6 +82,9 @@ const widgets: V5Widget[] = [
     bindingKinds: ['literal', 'quotation'],
     canRotate: false,
     canGroup: false,
+    canResizeX: true,
+    canResizeY: true,
+    aspectPolicy: 'free',
     maxWidth: 56000,
     maxHeight: 80000,
     goRenderKind: 'flow-frame',

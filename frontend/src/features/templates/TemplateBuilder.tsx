@@ -111,7 +111,7 @@ export function TemplateBuilder({
           onChange={(e) => setName(e.target.value)}
           className="max-w-sm font-semibold"
         />
-        <Button onClick={() => forceSave()} disabled={saveState === 'Saving...'}>
+        <Button onClick={() => forceSave()} disabled={saveState === 'Saving…'}>
           <Save className="w-4 h-4 mr-2" /> Save
         </Button>
         <SaveIndicator state={saveState} lastSaved={lastSaved} />

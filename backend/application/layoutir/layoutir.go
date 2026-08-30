@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,49 @@ import (
 )
 
 const DUPerMM = 7200.0 / 25.4
+
+type affine [6]float64
+
+var identityAffine = affine{1, 0, 0, 1, 0, 0}
+
+func multiplyAffine(a, b affine) affine {
+	return affine{
+		a[0]*b[0] + a[2]*b[1],
+		a[1]*b[0] + a[3]*b[1],
+		a[0]*b[2] + a[2]*b[3],
+		a[1]*b[2] + a[3]*b[3],
+		a[0]*b[4] + a[2]*b[5] + a[4],
+		a[1]*b[4] + a[3]*b[5] + a[5],
+	}
+}
+
+func applyAffine(m affine, x, y float64) (float64, float64) {
+	return m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]
+}
+
+func geometryAffine(g documentmodel.Geometry) affine {
+	radians := float64(g.Rotation) / 100 * math.Pi / 180
+	cosine, sine := math.Cos(radians), math.Sin(radians)
+	cx, cy := float64(g.Width)/2, float64(g.Height)/2
+	// T(x+center) · R · T(-center): document rotations use the box center.
+	return affine{
+		cosine,
+		sine,
+		-sine,
+		cosine,
+		float64(g.X) + cx - cosine*cx + sine*cy,
+		float64(g.Y) + cy - sine*cx - cosine*cy,
+	}
+}
+
+func geometryPosition(m affine, width, height int64, rotation int32) (float64, float64) {
+	originX, originY := applyAffine(m, 0, 0)
+	cx, cy := float64(width)/2, float64(height)/2
+	radians := float64(rotation) / 100 * math.Pi / 180
+	rotatedCX := math.Cos(radians)*cx - math.Sin(radians)*cy
+	rotatedCY := math.Sin(radians)*cx + math.Cos(radians)*cy
+	return originX - cx + rotatedCX, originY - cy + rotatedCY
+}
 
 type Diagnostic struct {
 	Code    string `json:"code"`
@@ -120,11 +164,11 @@ func resolveWithMetrics(ctx context.Context, doc *documentmodel.Document, input 
 		}
 		if masterID != "" {
 			// Master elements paint behind the document page's own children.
-			if err := addNodes(ctx, &page, &result.Diagnostics, masters[masterID].Children, 0, 0, input, m, i+1); err != nil {
+			if err := addNodes(ctx, &page, &result.Diagnostics, masters[masterID].Children, identityAffine, 0, input, m, i+1); err != nil {
 				return nil, err
 			}
 		}
-		if err := addNodes(ctx, &page, &result.Diagnostics, source.Children, 0, 0, input, m, i+1); err != nil {
+		if err := addNodes(ctx, &page, &result.Diagnostics, source.Children, identityAffine, 0, input, m, i+1); err != nil {
 			return nil, err
 		}
 		result.Pages = append(result.Pages, page)
@@ -135,7 +179,7 @@ func resolveWithMetrics(ctx context.Context, doc *documentmodel.Document, input 
 	return result, nil
 }
 
-func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes []documentmodel.Node, parentX, parentY int64, input ResolveInput, m Metrics, pageNumber int) error {
+func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes []documentmodel.Node, parent affine, parentRotation int32, input ResolveInput, m Metrics, pageNumber int) error {
 	for _, node := range nodes {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -143,9 +187,10 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 		if node.Visibility == "hidden" {
 			continue
 		}
-		x, y := parentX+node.Geometry.X, parentY+node.Geometry.Y
+		matrix := multiplyAffine(parent, geometryAffine(node.Geometry))
+		rotation := parentRotation + node.Geometry.Rotation
 		if node.Role == "group" {
-			if err := addNodes(ctx, page, diagnostics, node.Children, x, y, input, m, pageNumber); err != nil {
+			if err := addNodes(ctx, page, diagnostics, node.Children, matrix, rotation, input, m, pageNumber); err != nil {
 				return err
 			}
 			continue
@@ -159,7 +204,8 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 			*diagnostics = append(*diagnostics, Diagnostic{Code: "unresolved_binding", NodeID: node.ID, Message: "optional content has an unresolved binding"})
 			text = ""
 		}
-		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: float64(x) / DUPerMM, Y: float64(y) / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: node.Geometry.Rotation, FontSizePt: DefaultFontSizePt, Align: "left", TextColor: "black"}
+		x, y := geometryPosition(matrix, node.Geometry.Width, node.Geometry.Height, rotation)
+		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: x / DUPerMM, Y: y / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: rotation, FontSizePt: DefaultFontSizePt, Align: "left", TextColor: "black"}
 		if err := applyControlledProps(node, &box); err != nil {
 			return fmt.Errorf("node %s props: %w", node.ID, err)
 		}
@@ -451,7 +497,7 @@ func deriveContinuationPages(ctx context.Context, layout *Layout, doc *documentm
 		}
 		if masterID != "" {
 			// Derived continuation pages repeat the chosen page master, including page numbers.
-			if err := addNodes(ctx, &page, &layout.Diagnostics, masters[masterID].Children, 0, 0, input, m, pageNumber); err != nil {
+			if err := addNodes(ctx, &page, &layout.Diagnostics, masters[masterID].Children, identityAffine, 0, input, m, pageNumber); err != nil {
 				break
 			}
 		}

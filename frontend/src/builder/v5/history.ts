@@ -35,9 +35,12 @@ export class V5History {
     const next = command.apply(this.current)
     parseV5(serializeV5(next))
     this.current = next
-    if (command.coalesceKey && this.past.at(-1)?.coalesceKey === command.coalesceKey)
-      this.past[this.past.length - 1] = command
-    else this.past.push(command)
+    if (command.coalesceKey && this.past.at(-1)?.coalesceKey === command.coalesceKey) {
+      const first = this.past[this.past.length - 1]
+      // Keep the first inverse while using the latest forward command. Undo now restores the
+      // start of the typing/nudge/property session, not merely its penultimate update.
+      this.past[this.past.length - 1] = { ...command, revert: first.revert }
+    } else this.past.push(command)
     this.future = []
     this._revision++
     return this.current

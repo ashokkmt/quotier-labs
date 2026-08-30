@@ -1,14 +1,24 @@
-import { apply, geometryMatrix, invert, quantizeGeometry } from './geometry'
+import {
+  bounds,
+  corners,
+  geometryPositionFromMatrix,
+  geometryMatrix,
+  identity,
+  invert,
+  multiply,
+  quantizeGeometry,
+} from './geometry'
 import {
   du,
   A4_HEIGHT_DU,
   A4_WIDTH_DU,
+  MAX_V5_DEPTH,
   type V5Document,
   type V5Geometry,
   type V5Node,
   type V5Story,
 } from './model'
-import { remapPayload } from './selectors'
+import { ancestorChain, findNode, remapPayload } from './selectors'
 import { parseV5, serializeV5 } from './serialization'
 import type { V5Command } from './history'
 import { cloneNode, findPlacement } from './placement'
@@ -95,6 +105,19 @@ function updateNode(document: V5Document, id: string, update: (node: V5Node) => 
 function descendants(node: V5Node): string[] {
   return [node.id, ...(node.children ?? []).flatMap(descendants)]
 }
+
+/** Complete node transform in page coordinates. Groups currently carry translation/rotation
+ * only, so decomposition remains deterministic and does not introduce scale/skew drift. */
+function worldMatrix(document: V5Document, id: string) {
+  return ancestorChain(document, id).reduce(
+    (matrix, node) => multiply(matrix, geometryMatrix(node.geometry)),
+    identity,
+  )
+}
+
+function worldRotation(document: V5Document, id: string): number {
+  return ancestorChain(document, id).reduce((sum, node) => sum + node.geometry.rotation, 0)
+}
 function isDescendant(document: V5Document, possibleDescendant: string, ancestor: string): boolean {
   const found = locate(document, ancestor)
   return !!found && descendants(found.node).includes(possibleDescendant)
@@ -126,16 +149,35 @@ export const moveNodes = (ids: string[], dx: number, dy: number) =>
     return d
   })
 export const setNodeVisibility = (id: string, visibility: V5Node['visibility']) =>
-  snapshotCommand('Set visibility', (d) =>
-    updateNode(d, id, (node) => {
-      node.visibility = visibility
-    }),
-  )
+  snapshotCommand('Set visibility', (d) => {
+    const found = locate(d, id)
+    if (!found) throw new Error(`unknown node ${id}`)
+    found.node.visibility = visibility
+    return d
+  })
 export const setNodeLocked = (id: string, locked: boolean) =>
   snapshotCommand('Set lock', (d) => {
     const found = locate(d, id)
     if (!found) throw new Error(`unknown node ${id}`)
     found.node.locked = locked
+    return d
+  })
+export const setNodesLocked = (ids: string[], locked: boolean) =>
+  snapshotCommand(locked ? 'Lock selection' : 'Unlock selection', (d) => {
+    const locations = ids.map((id) => locate(d, id))
+    if (locations.some((location) => !location))
+      throw new Error('selection contains a missing object')
+    for (const location of locations) location!.node.locked = locked
+    return d
+  })
+
+export const setNodesVisibility = (ids: string[], visibility: V5Node['visibility']) =>
+  snapshotCommand(visibility === 'shown' ? 'Show selection' : 'Hide selection', (d) => {
+    for (const id of ids) {
+      const found = locate(d, id)
+      if (!found) throw new Error('selection contains a missing object')
+    }
+    for (const id of ids) locate(d, id)!.node.visibility = visibility
     return d
   })
 export const renameNode = (id: string, name: string) =>
@@ -155,6 +197,18 @@ export const updateNodeProps = (id: string, props: Record<string, unknown>) =>
         node.props = { ...node.props, ...props }
       }),
     `props:${id}`,
+  )
+
+export const updateStoryContent = (storyId: string, content: unknown) =>
+  snapshotCommand(
+    'Update story content',
+    (d) => {
+      const story = d.stories?.find((candidate) => candidate.id === storyId)
+      if (!story) throw new Error('unknown story')
+      story.content = JSON.parse(JSON.stringify(content))
+      return d
+    },
+    `story:${storyId}`,
   )
 
 export const insertNode = (pageId: string, node: V5Node, index?: number) =>
@@ -200,48 +254,88 @@ export const reorderNode = (id: string, targetIndex: number) =>
     syncContainerIDs(d, found)
     return d
   })
-export const reparentNode = (id: string, targetGroupId: string, index?: number) =>
+export const reparentNode = (id: string, targetGroupId: string | null, index?: number) =>
   snapshotCommand('Reparent node', (d) => {
-    if (id === targetGroupId || isDescendant(d, targetGroupId, id))
+    if (targetGroupId && (id === targetGroupId || isDescendant(d, targetGroupId, id)))
       throw new Error('cannot reparent into own descendant')
-    const source = locate(d, id),
-      target = locate(d, targetGroupId)
-    if (!source || !target || target.node.role !== 'group')
+    const source = locate(d, id)
+    const target = targetGroupId ? locate(d, targetGroupId) : null
+    if (!source || (targetGroupId && (!target || target.node.role !== 'group')))
       throw new Error('invalid reparent target')
-    if (source.node.locked || target.node.locked || source.pageId !== target.pageId)
+    if (source.node.role !== 'group' && getV5Widget(source.node.kind)?.canGroup === false)
+      throw new Error('this object cannot be placed in a group')
+    if (
+      isLockedThroughAncestors(d, id) ||
+      (targetGroupId && isLockedThroughAncestors(d, targetGroupId)) ||
+      (target && source.pageId !== target.pageId)
+    )
       throw new Error('reparent target is unavailable')
+    const subtreeDepth = (node: V5Node): number =>
+      1 + Math.max(0, ...(node.children ?? []).map(subtreeDepth))
+    const targetDepth = targetGroupId ? ancestorChain(d, targetGroupId).length : 0
+    if (targetDepth + subtreeDepth(source.node) > MAX_V5_DEPTH + 1)
+      throw new Error('maximum group depth exceeded')
+    const sourceWorld = worldMatrix(d, id)
+    const sourceRotation = worldRotation(d, id)
+    const targetMatrix = targetGroupId ? worldMatrix(d, targetGroupId) : identity
+    const targetRotation = targetGroupId ? worldRotation(d, targetGroupId) : 0
     source.siblings.splice(source.siblings.indexOf(source.node), 1)
     syncContainerIDs(d, source)
-    const m = invert(geometryMatrix(target.node.geometry))
-    const local = apply(m, { x: source.node.geometry.x, y: source.node.geometry.y })
+    const localMatrix = multiply(invert(targetMatrix), sourceWorld)
+    const local = geometryPositionFromMatrix(
+      localMatrix,
+      source.node.geometry.width,
+      source.node.geometry.height,
+      sourceRotation - targetRotation,
+    )
     source.node.geometry = quantizeGeometry({
       ...source.node.geometry,
       x: local.x,
       y: local.y,
-      rotation: source.node.geometry.rotation - target.node.geometry.rotation,
+      rotation: sourceRotation - targetRotation,
     })
-    const at = Math.max(
-      0,
-      Math.min(index ?? (target.node.children ?? []).length, (target.node.children ?? []).length),
-    )
-    target.node.children ??= []
-    target.node.children.splice(at, 0, source.node)
-    syncChildIDs(target.node)
+    const targetChildren = target
+      ? (target.node.children ?? (target.node.children = []))
+      : d.root.pages.find((page) => page.id === source.pageId)!.children
+    const at = Math.max(0, Math.min(index ?? targetChildren.length, targetChildren.length))
+    targetChildren.splice(at, 0, source.node)
+    if (target) syncChildIDs(target.node)
+    else {
+      const page = d.root.pages.find((candidate) => candidate.id === source.pageId)!
+      page.child_ids = page.children.map((child) => child.id)
+    }
     return d
   })
 
 export const groupNodes = (pageId: string, nodeIds: string[], groupId: string) =>
   snapshotCommand('Group selection', (d) => {
     const page = d.root.pages.find((candidate) => candidate.id === pageId)
-    if (!page || nodeIds.length < 2) throw new Error('group requires two page siblings')
-    const selected = page.children.filter((node) => nodeIds.includes(node.id))
-    if (selected.length !== nodeIds.length || selected.some((node) => node.locked))
-      throw new Error('group requires unlocked page siblings')
-    const x = Math.min(...selected.map((node) => node.geometry.x))
-    const y = Math.min(...selected.map((node) => node.geometry.y))
-    const right = Math.max(...selected.map((node) => node.geometry.x + node.geometry.width))
-    const bottom = Math.max(...selected.map((node) => node.geometry.y + node.geometry.height))
-    const insertion = Math.max(...selected.map((node) => page.children.indexOf(node)))
+    if (!page || nodeIds.length < 2) throw new Error('group requires two siblings')
+    const locations = nodeIds.map((id) => locate(d, id))
+    const first = locations[0]
+    if (
+      !first ||
+      locations.some(
+        (location) =>
+          !location || location.pageId !== pageId || location.siblings !== first.siblings,
+      )
+    )
+      throw new Error('group requires siblings in one container')
+    const selected = first.siblings.filter((node) => nodeIds.includes(node.id))
+    if (
+      selected.length !== nodeIds.length ||
+      selected.some(
+        (node) =>
+          isLockedThroughAncestors(d, node.id) ||
+          (node.role !== 'group' && getV5Widget(node.kind)?.canGroup === false),
+      )
+    )
+      throw new Error('selection contains objects that cannot be grouped')
+    const selectedBounds = bounds(selected.flatMap((node) => corners(node.geometry)))
+    const { x, y } = selectedBounds
+    const right = x + selectedBounds.width
+    const bottom = y + selectedBounds.height
+    const insertion = Math.max(...selected.map((node) => first.siblings.indexOf(node)))
     const children = selected.map((node) => ({
       ...node,
       geometry: quantizeGeometry({
@@ -250,8 +344,8 @@ export const groupNodes = (pageId: string, nodeIds: string[], groupId: string) =
         y: node.geometry.y - y,
       }),
     }))
-    const remaining = page.children.filter((node) => !nodeIds.includes(node.id))
-    const before = page.children
+    const remaining = first.siblings.filter((node) => !nodeIds.includes(node.id))
+    const before = first.siblings
       .slice(0, insertion)
       .filter((node) => !nodeIds.includes(node.id)).length
     remaining.splice(before, 0, {
@@ -267,8 +361,8 @@ export const groupNodes = (pageId: string, nodeIds: string[], groupId: string) =
       child_ids: children.map((node) => node.id),
       children,
     })
-    page.children = remaining
-    page.child_ids = remaining.map((node) => node.id)
+    first.siblings.splice(0, first.siblings.length, ...remaining)
+    syncContainerIDs(d, first)
     return d
   })
 export const ungroupNode = (id: string) =>
@@ -279,14 +373,21 @@ export const ungroupNode = (id: string) =>
     const at = found.siblings.indexOf(found.node)
     const m = geometryMatrix(found.node.geometry)
     const children = (found.node.children ?? []).map((child) => {
-      const world = apply(m, { x: child.geometry.x, y: child.geometry.y })
+      const matrix = multiply(m, geometryMatrix(child.geometry))
+      const rotation = child.geometry.rotation + found.node.geometry.rotation
+      const position = geometryPositionFromMatrix(
+        matrix,
+        child.geometry.width,
+        child.geometry.height,
+        rotation,
+      )
       return {
         ...child,
         geometry: quantizeGeometry({
           ...child.geometry,
-          x: world.x,
-          y: world.y,
-          rotation: child.geometry.rotation + found.node.geometry.rotation,
+          x: position.x,
+          y: position.y,
+          rotation,
         }),
       }
     })
@@ -356,7 +457,8 @@ export const rotateNode = (id: string, degrees: number, snap = false) =>
       if (node.role === 'flow-frame') throw new Error('flow frames cannot rotate')
       if (node.role === 'element' && !getV5Widget(node.kind)?.canRotate)
         throw new Error(`widget ${node.kind} cannot rotate`)
-      const rotation = snap ? Math.round(degrees / 15) * 15 : degrees
+      const requested = snap ? Math.round(degrees / 15) * 15 : degrees
+      const rotation = ((((requested + 180) % 360) + 360) % 360) - 180
       node.geometry = quantizeGeometry({ ...node.geometry, rotation: rotation * 100 })
     }),
   )
@@ -390,89 +492,138 @@ export const alignNodes = (
   mode: 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom',
 ) =>
   snapshotCommand('Align selection', (d) => {
-    const nodes = ids
-      .map((id) => locate(d, id)?.node)
-      .filter((node): node is V5Node => !!node && !node.locked)
+    if (ids.some((id) => isLockedThroughAncestors(d, id)))
+      throw new Error('selection contains locked objects')
+    const locations = ids.map((id) => locate(d, id))
+    if (locations.some((location) => !location))
+      throw new Error('selection contains a missing object')
+    if (locations.some((location) => location!.siblings !== locations[0]!.siblings))
+      throw new Error('alignment requires objects in the same container')
+    const nodes = locations.map((location) => location!.node)
     if (nodes.length < 2) return d
+    const nodeBounds = new Map(nodes.map((node) => [node.id, bounds(corners(node.geometry))]))
     const horizontal = mode === 'left' || mode === 'center-x' || mode === 'right'
     const value = horizontal
       ? mode === 'left'
-        ? Math.min(...nodes.map((node) => node.geometry.x))
+        ? Math.min(...nodes.map((node) => nodeBounds.get(node.id)!.x))
         : mode === 'right'
-          ? Math.max(...nodes.map((node) => node.geometry.x + node.geometry.width))
-          : (Math.min(...nodes.map((node) => node.geometry.x)) +
-              Math.max(...nodes.map((node) => node.geometry.x + node.geometry.width))) /
+          ? Math.max(
+              ...nodes.map((node) => {
+                const rect = nodeBounds.get(node.id)!
+                return rect.x + rect.width
+              }),
+            )
+          : (Math.min(...nodes.map((node) => nodeBounds.get(node.id)!.x)) +
+              Math.max(
+                ...nodes.map((node) => {
+                  const rect = nodeBounds.get(node.id)!
+                  return rect.x + rect.width
+                }),
+              )) /
             2
       : mode === 'top'
-        ? Math.min(...nodes.map((node) => node.geometry.y))
+        ? Math.min(...nodes.map((node) => nodeBounds.get(node.id)!.y))
         : mode === 'bottom'
-          ? Math.max(...nodes.map((node) => node.geometry.y + node.geometry.height))
-          : (Math.min(...nodes.map((node) => node.geometry.y)) +
-              Math.max(...nodes.map((node) => node.geometry.y + node.geometry.height))) /
+          ? Math.max(
+              ...nodes.map((node) => {
+                const rect = nodeBounds.get(node.id)!
+                return rect.y + rect.height
+              }),
+            )
+          : (Math.min(...nodes.map((node) => nodeBounds.get(node.id)!.y)) +
+              Math.max(
+                ...nodes.map((node) => {
+                  const rect = nodeBounds.get(node.id)!
+                  return rect.y + rect.height
+                }),
+              )) /
             2
-    for (const node of nodes)
+    for (const node of nodes) {
+      const rect = nodeBounds.get(node.id)!
+      const current = horizontal
+        ? mode === 'left'
+          ? rect.x
+          : mode === 'right'
+            ? rect.x + rect.width
+            : rect.x + rect.width / 2
+        : mode === 'top'
+          ? rect.y
+          : mode === 'bottom'
+            ? rect.y + rect.height
+            : rect.y + rect.height / 2
       node.geometry = quantizeGeometry(
         horizontal
-          ? {
-              ...node.geometry,
-              x:
-                mode === 'center-x'
-                  ? value - node.geometry.width / 2
-                  : mode === 'right'
-                    ? value - node.geometry.width
-                    : value,
-            }
-          : {
-              ...node.geometry,
-              y:
-                mode === 'center-y'
-                  ? value - node.geometry.height / 2
-                  : mode === 'bottom'
-                    ? value - node.geometry.height
-                    : value,
-            },
+          ? { ...node.geometry, x: node.geometry.x + value - current }
+          : { ...node.geometry, y: node.geometry.y + value - current },
       )
+    }
     return d
   })
 export const distributeNodes = (ids: string[], axis: 'x' | 'y') =>
   snapshotCommand('Distribute selection', (d) => {
-    const nodes = ids
-      .map((id) => locate(d, id)?.node)
-      .filter((node): node is V5Node => !!node && !node.locked)
-    const positions = distribute(
-      axis,
-      nodes.map((node) => ({
-        id: node.id,
-        x: node.geometry.x,
-        y: node.geometry.y,
-        width: node.geometry.width,
-        height: node.geometry.height,
-      })),
-    )
-    for (const node of nodes)
+    if (ids.some((id) => isLockedThroughAncestors(d, id)))
+      throw new Error('selection contains locked objects')
+    const locations = ids.map((id) => locate(d, id))
+    if (locations.some((location) => !location))
+      throw new Error('selection contains a missing object')
+    if (locations.some((location) => location!.siblings !== locations[0]!.siblings))
+      throw new Error('distribution requires objects in the same container')
+    const nodes = locations.map((location) => location!.node)
+    const rects = nodes.map((node) => {
+      const rect = bounds(corners(node.geometry))
+      return { id: node.id, x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    })
+    const positions = distribute(axis, rects)
+    for (const node of nodes) {
       if (positions[node.id] !== undefined)
-        node.geometry = quantizeGeometry({ ...node.geometry, [axis]: positions[node.id] })
+        node.geometry = quantizeGeometry({
+          ...node.geometry,
+          [axis]:
+            node.geometry[axis] +
+            positions[node.id] -
+            rects.find((rect) => rect.id === node.id)![axis],
+        })
+    }
     return d
   })
 
-/** Inserts fully-remapped nodes (and their stories) onto a page in one atomic command. */
-export const insertNodes = (pageId: string, nodes: V5Node[], stories: V5Story[]) =>
+/** Inserts fully-remapped nodes (and their stories) into the current page/group scope atomically. */
+export const insertNodes = (
+  pageId: string,
+  nodes: V5Node[],
+  stories: V5Story[],
+  parentId?: string | null,
+) =>
   snapshotCommand('Insert content', (d) => {
     const page = d.root.pages.find((candidate) => candidate.id === pageId)
     if (!page) throw new Error(`unknown page ${pageId}`)
-    const ids = new Set(nodes.map((node) => node.id))
+    let target = page.children
+    if (parentId) {
+      const parent = findNode(page.children, parentId)
+      if (!parent || parent.role !== 'group') throw new Error('paste target is not a group')
+      if (isLockedThroughAncestors(d, parent.id)) throw new Error('paste target is locked')
+      target = parent.children ?? (parent.children = [])
+    }
     for (const story of stories) {
       if (d.stories?.some((existing) => existing.id === story.id))
         throw new Error(`duplicate story ${story.id}`)
     }
     d.stories = [...(d.stories ?? []), ...stories]
-    page.children.push(...nodes)
-    page.child_ids = page.children.map((child) => child.id)
+    target.push(...nodes)
+    if (parentId) {
+      const parent = findNode(page.children, parentId)!
+      parent.child_ids = target.map((child) => child.id)
+    } else page.child_ids = page.children.map((child) => child.id)
     // Stories that arrived without a referencing frame would leak; drop them.
     const referenced = new Set(
-      page.children.flatMap((node) => (node.story_id ? [node.story_id] : [])),
+      d.root.pages.flatMap((candidate) =>
+        flatten(candidate.children).flatMap((node) => (node.story_id ? [node.story_id] : [])),
+      ),
     )
-    d.stories = d.stories.filter((story) => ids.has(story.id) === false || referenced.has(story.id))
+    const insertedStoryIds = new Set(stories.map((story) => story.id))
+    d.stories = d.stories.filter(
+      (story) => !insertedStoryIds.has(story.id) || referenced.has(story.id),
+    )
     return d
   })
 
@@ -505,7 +656,10 @@ export const duplicateAndMove = (
         const story = d.stories?.find((candidate) => candidate.id === cloned.story_id)
         if (!story) continue
         const freshID = nextID('story')
-        d.stories = [...(d.stories ?? []), { ...story, id: freshID, content: JSON.parse(JSON.stringify(story.content)) }]
+        d.stories = [
+          ...(d.stories ?? []),
+          { ...story, id: freshID, content: JSON.parse(JSON.stringify(story.content)) },
+        ]
         cloned.story_id = freshID
       }
     }
@@ -619,19 +773,24 @@ export const alignToPage = (
       height: page.height - page.margin.top - page.margin.bottom,
     }
     const node = found.node
+    const rect = bounds(corners(node.geometry))
     const horizontal = mode === 'left' || mode === 'center-x' || mode === 'right'
     const target = horizontal
       ? mode === 'left'
-        ? area.x
+        ? area.x - rect.x
         : mode === 'right'
-          ? area.x + area.width - node.geometry.width
-          : area.x + (area.width - node.geometry.width) / 2
+          ? area.x + area.width - (rect.x + rect.width)
+          : area.x + area.width / 2 - (rect.x + rect.width / 2)
       : mode === 'top'
-        ? area.y
+        ? area.y - rect.y
         : mode === 'bottom'
-          ? area.y + area.height - node.geometry.height
-          : area.y + (area.height - node.geometry.height) / 2
-    node.geometry = quantizeGeometry(horizontal ? { ...node.geometry, x: target } : { ...node.geometry, y: target })
+          ? area.y + area.height - (rect.y + rect.height)
+          : area.y + area.height / 2 - (rect.y + rect.height / 2)
+    node.geometry = quantizeGeometry(
+      horizontal
+        ? { ...node.geometry, x: node.geometry.x + target }
+        : { ...node.geometry, y: node.geometry.y + target },
+    )
     return d
   })
 

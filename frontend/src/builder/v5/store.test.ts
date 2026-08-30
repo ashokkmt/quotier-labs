@@ -111,3 +111,83 @@ describe('V5 session snapshot identity (useSyncExternalStore contract)', () => {
     expect(session.getSnapshot()).not.toBe(afterExecute)
   })
 })
+
+describe('V5 selection primary item', () => {
+  it('keeps the most recently added selected node as primary and repairs it after toggle-off', () => {
+    const session = new V5Session(emptyV5Fixture())
+    session.selectNode('one')
+    session.selectNode('two', true)
+    expect(session.getSnapshot().selectedNodeId).toBe('two')
+    session.selectNode('two', true)
+    expect(session.getSnapshot().selectedNodeIds).toEqual(['one'])
+    expect(session.getSnapshot().selectedNodeId).toBe('one')
+  })
+})
+
+describe('V5 clipboard in group scope', () => {
+  it('copies a direct group child and pastes the remapped object back into that group', () => {
+    const document = emptyV5Fixture()
+    const child = {
+      id: 'child',
+      kind: 'shape',
+      role: 'element' as const,
+      geometry: { x: 500, y: 500, width: 1000, height: 1000, rotation: 0 },
+      layout_mode: 'fixed' as const,
+      locked: false,
+      visibility: 'shown' as const,
+      optional: false,
+    }
+    document.root.pages[0].children = [
+      {
+        id: 'group',
+        kind: 'group',
+        role: 'group',
+        geometry: { x: 1000, y: 1000, width: 6000, height: 6000, rotation: 0 },
+        layout_mode: 'fixed',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+        child_ids: ['child'],
+        children: [child],
+      },
+    ]
+    document.root.pages[0].child_ids = ['group']
+    const session = new V5Session(document)
+    session.enterGroup('group')
+    session.selectNode('child')
+    expect(session.copySelection()).toBe(1)
+    const pasted = session.paste('standard', { x: 4000, y: 4000 })
+    const group = session.getSnapshot().document.root.pages[0].children[0]
+    expect(pasted).toHaveLength(1)
+    expect(group.children).toHaveLength(2)
+    expect(group.child_ids).toEqual(['child', pasted[0]])
+  })
+})
+
+describe('V5 clipboard on authored pages', () => {
+  it('copies and pastes a root object at a requested page point', () => {
+    const document = emptyV5Fixture()
+    document.root.pages[0].children = [
+      {
+        id: 'heading',
+        kind: 'text',
+        role: 'element',
+        geometry: { x: 500, y: 500, width: 4000, height: 1000, rotation: 0 },
+        layout_mode: 'intrinsic',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+        props: { text: 'Heading' },
+      },
+    ]
+    document.root.pages[0].child_ids = ['heading']
+    const session = new V5Session(document)
+    session.selectNode('heading')
+    expect(session.copySelection()).toBe(1)
+    session.selectNode(null)
+    const pasted = session.paste('standard', { x: 12000, y: 14000 })
+    expect(pasted).toHaveLength(1)
+    expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(2)
+    expect(session.getSnapshot().selectedNodeId).toBe(pasted[0])
+  })
+})

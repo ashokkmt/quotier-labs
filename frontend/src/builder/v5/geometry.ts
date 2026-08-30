@@ -34,7 +34,27 @@ export function invert(m: Matrix): Matrix {
   ]
 }
 export const geometryMatrix = (g: V5Geometry): Matrix =>
-  multiply(translate(g.x, g.y), rotate(g.rotation))
+  // Document rotation is stored in hundredths of a degree; screen/geometry math uses degrees.
+  multiply(
+    translate(g.x + g.width / 2, g.y + g.height / 2),
+    multiply(rotate(g.rotation / 100), translate(-g.width / 2, -g.height / 2)),
+  )
+
+/** Recovers the authored unrotated box position from a rigid center-origin matrix. */
+export function geometryPositionFromMatrix(
+  matrix: Matrix,
+  width: number,
+  height: number,
+  rotation: number,
+): Point {
+  const origin = apply(matrix, { x: 0, y: 0 })
+  const center = { x: width / 2, y: height / 2 }
+  const rotatedCenter = apply(rotate(rotation / 100), center)
+  return {
+    x: origin.x - center.x + rotatedCenter.x,
+    y: origin.y - center.y + rotatedCenter.y,
+  }
+}
 export function corners(g: V5Geometry, parent: Matrix = identity): Point[] {
   const m = multiply(parent, geometryMatrix(g))
   return [

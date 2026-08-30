@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"strconv"
 	"testing"
 
@@ -19,6 +20,35 @@ func TestResolveSkipsHiddenAndPreservesOrder(t *testing.T) {
 	}
 	if len(layout.Pages) != 1 || len(layout.Pages[0].Boxes) != 1 || layout.Pages[0].Boxes[0].ID != "a" {
 		t.Fatalf("unexpected layout %#v", layout)
+	}
+}
+
+func TestResolveComposesRotatedGroupAroundBoxCenters(t *testing.T) {
+	doc := &documentmodel.Document{
+		SchemaVersion: documentmodel.SchemaVersion,
+		Settings:      documentmodel.Settings{PageSize: "A4", Orientation: "portrait"},
+		Root: documentmodel.Root{Pages: []documentmodel.Page{{
+			ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU,
+			ChildIDs: []string{"group"},
+			Children: []documentmodel.Node{{
+				ID: "group", Kind: "group", Role: "group",
+				Geometry:   documentmodel.Geometry{X: 1000, Y: 1000, Width: 10000, Height: 10000, Rotation: 9000},
+				LayoutMode: "fixed", Visibility: "shown", ChildIDs: []string{"child"},
+				Children: []documentmodel.Node{{
+					ID: "child", Kind: "text", Role: "element",
+					Geometry:   documentmodel.Geometry{X: 100, Y: 200, Width: 1000, Height: 1000},
+					LayoutMode: "fixed", Visibility: "shown",
+				}},
+			}},
+		}}},
+	}
+	layout, err := Resolve(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := layout.Pages[0].Boxes[0]
+	if math.Abs(box.X-9800/DUPerMM) > 0.0001 || math.Abs(box.Y-1100/DUPerMM) > 0.0001 || box.Rotation != 9000 {
+		t.Fatalf("composed box = %#v", box)
 	}
 }
 

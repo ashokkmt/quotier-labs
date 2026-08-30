@@ -1,4 +1,5 @@
 import type { V5Document, V5Node, V5Story } from './model'
+import { apply, geometryMatrix, identity, multiply, type Matrix, type Point } from './geometry'
 
 /** Structural selectors shared by commands, canvas, and panels. Pure, no React. */
 
@@ -30,6 +31,37 @@ export function ancestorChain(document: V5Document, id: string): V5Node[] {
     if (found) return found
   }
   return []
+}
+
+/** Transform from a node's local coordinates into authored-page coordinates. */
+export function worldMatrixOf(document: V5Document, id: string): Matrix {
+  return ancestorChain(document, id).reduce(
+    (matrix, node) => multiply(matrix, geometryMatrix(node.geometry)),
+    identity,
+  )
+}
+
+/** Transform from the node's parent coordinates into authored-page coordinates. */
+export function parentWorldMatrixOf(document: V5Document, id: string): Matrix {
+  const chain = ancestorChain(document, id)
+  return chain
+    .slice(0, -1)
+    .reduce((matrix, node) => multiply(matrix, geometryMatrix(node.geometry)), identity)
+}
+
+/** Converts a page-space pointer delta into the selected node's parent coordinate space. */
+export function pageDeltaToParent(document: V5Document, id: string, delta: Point): Point {
+  const matrix = parentWorldMatrixOf(document, id)
+  // Transform as a vector by subtracting the transformed origin, so translation cancels.
+  const origin = apply(matrix, { x: 0, y: 0 })
+  const endpoint = apply(matrix, { x: 1, y: 0 })
+  const angle = Math.atan2(endpoint.y - origin.y, endpoint.x - origin.x)
+  const cosine = Math.cos(-angle)
+  const sine = Math.sin(-angle)
+  return {
+    x: delta.x * cosine - delta.y * sine,
+    y: delta.x * sine + delta.y * cosine,
+  }
 }
 
 /** Effective lock includes every ancestor (tools.md §18). */

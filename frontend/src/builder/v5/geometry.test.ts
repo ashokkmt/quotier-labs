@@ -22,8 +22,9 @@ describe('V5 geometry kernel', () => {
     expect(restored.y).toBeCloseTo(0)
   })
   it('computes rotated AABB and quantizes commits', () => {
-    const c = corners({ x: du(0), y: du(0), width: du(100), height: du(50), rotation: 90 })
+    const c = corners({ x: du(0), y: du(0), width: du(100), height: du(50), rotation: 9000 })
     expect(bounds(c).width).toBeCloseTo(50)
+    expect(bounds(c)).toMatchObject({ x: 25, y: -25, width: 50, height: 100 })
     expect(
       quantizeGeometry({
         x: 1.4 as never,

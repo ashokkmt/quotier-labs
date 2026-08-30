@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { emptyV5Fixture } from './fixtures'
 import {
   addPage,
+  alignNodes,
   alignToPage,
   deleteNodes,
   deletePage,
   duplicateAndMove,
   duplicatePage,
+  distributeNodes,
   groupNodes,
   insertNode,
   deleteNode,
@@ -14,6 +16,7 @@ import {
   reorderExtreme,
   reorderNode,
   reorderPage,
+  reparentNode,
   resizeGeometry,
   resizeNode,
   rotateNode,
@@ -23,6 +26,7 @@ import {
 } from './commands'
 import { V5Session } from './store'
 import { du } from './model'
+import { bounds, corners } from './geometry'
 
 const node = (id: string) => ({
   id,
@@ -78,6 +82,8 @@ describe('V5 document commands', () => {
     session.execute(resizeNode('a', 'se', 25.4, 30.9))
     session.execute(rotateNode('a', 17, true))
     expect(session.getSnapshot().document.root.pages[0].children[0].geometry.rotation).toBe(1500)
+    session.execute(rotateNode('a', 540, false))
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.rotation).toBe(-18000)
     session.execute(groupNodes('page-1', ['a', 'b'], 'group-1'))
     expect(session.getSnapshot().document.root.pages[0].children[0].id).toBe('group-1')
     session.execute(ungroupNode('group-1'))
@@ -340,6 +346,35 @@ describe('align to printable area (tools.md §24)', () => {
     const geometry = session.getSnapshot().document.root.pages[0].children[0].geometry
     expect(geometry.y).toBe(du(1000 + (84189 - 2000 - 5000) / 2))
   })
+
+  it('aligns the visible bounds of rotated objects', () => {
+    const doc = emptyV5Fixture()
+    doc.root.pages[0].margin = { top: 1000, right: 1000, bottom: 1000, left: 1000 }
+    doc.root.pages[0].child_ids = ['a', 'b', 'c']
+    doc.root.pages[0].children = [
+      {
+        ...node('a'),
+        geometry: { x: 30000, y: 30000, width: 5000, height: 10000, rotation: 9000 },
+      },
+      { ...node('b'), geometry: { x: 45000, y: 30000, width: 5000, height: 5000, rotation: 0 } },
+      { ...node('c'), geometry: { x: 56000, y: 30000, width: 4000, height: 8000, rotation: 9000 } },
+    ]
+    const session = new V5Session(doc)
+    session.execute(alignToPage('a', 'left'))
+    let nodes = session.getSnapshot().document.root.pages[0].children
+    expect(bounds(corners(nodes[0].geometry)).x).toBe(1000)
+
+    session.execute(alignNodes(['a', 'b'], 'top'))
+    nodes = session.getSnapshot().document.root.pages[0].children
+    expect(bounds(corners(nodes[0].geometry)).y).toBe(bounds(corners(nodes[1].geometry)).y)
+
+    session.execute(distributeNodes(['a', 'b', 'c'], 'x'))
+    nodes = session.getSnapshot().document.root.pages[0].children
+    const ordered = nodes.map((item) => bounds(corners(item.geometry))).sort((a, b) => a.x - b.x)
+    expect(ordered[1].x - (ordered[0].x + ordered[0].width)).toBe(
+      ordered[2].x - (ordered[1].x + ordered[1].width),
+    )
+  })
 })
 
 describe('atomic selection delete (tools.md §23)', () => {
@@ -363,5 +398,46 @@ describe('atomic selection delete (tools.md §23)', () => {
     expect(session.getSnapshot().revision).toBe(before + 1)
     session.undo()
     expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(2)
+  })
+})
+
+describe('reparenting preserves page-space geometry', () => {
+  it('moves a child out of a rotated group without a visual jump', () => {
+    const doc = emptyV5Fixture()
+    doc.root.pages[0].children = [
+      {
+        id: 'group',
+        kind: 'group',
+        role: 'group',
+        geometry: { x: 1000, y: 1000, width: 10000, height: 10000, rotation: 9000 },
+        layout_mode: 'fixed',
+        locked: false,
+        visibility: 'shown',
+        optional: false,
+        child_ids: ['child'],
+        children: [
+          {
+            id: 'child',
+            kind: 'shape',
+            role: 'element',
+            geometry: { x: 100, y: 200, width: 1000, height: 1000, rotation: 0 },
+            layout_mode: 'fixed',
+            locked: false,
+            visibility: 'shown',
+            optional: false,
+          },
+        ],
+      },
+    ]
+    doc.root.pages[0].child_ids = ['group']
+    const session = new V5Session(doc)
+    session.execute(reparentNode('child', null))
+    const child = session
+      .getSnapshot()
+      .document.root.pages[0].children.find((item) => item.id === 'child')!
+    expect(child.geometry.x).toBe(9800)
+    expect(child.geometry.y).toBe(1100)
+    expect(child.geometry.rotation).toBe(9000)
+    expect(session.getSnapshot().document.root.pages[0].children[0].child_ids).toEqual([])
   })
 })

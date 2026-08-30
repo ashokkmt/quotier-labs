@@ -23,7 +23,10 @@ import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { SnapshotCommand } from './commands/base'
 import { UndoRedoControls } from './components/UndoRedoControls'
 import { SaveIndicator } from './components/SaveIndicator'
-import { FinalizeQuotation, UpdateQuotationStatus } from '../../../wailsjs/go/wails/QuotationHandler'
+import {
+  FinalizeQuotation,
+  UpdateQuotationStatus,
+} from '../../../wailsjs/go/wails/QuotationHandler'
 import { normalize, serialize } from '../../builder'
 
 export function QuotationBuilder({
@@ -212,19 +215,21 @@ export function QuotationBuilder({
     )
   }
 
+  const v5Active = isFreeformV5Enabled() && document?.schema_version === 5
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-muted/20">
       <BuilderHeader
         quotation={quotation}
         onBack={onBack}
         onSave={forceSave}
-        saving={saveState === 'Saving...'}
+        saving={saveState === 'Saving…'}
         readOnly={readOnly}
         onToggleReadOnly={handlePreviewMode}
         onCustomerChange={handleCustomerChange}
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={
-          isFreeformV5Enabled() && document?.schema_version === 5 ? (
+          v5Active ? (
             <UndoRedoControls
               onUndo={() => v5EngineRef.current?.undo()}
               onRedo={() => v5EngineRef.current?.redo()}
@@ -240,7 +245,9 @@ export function QuotationBuilder({
         onSaveAsTemplate={handleSaveAsTemplate}
       />
 
-      <div className="min-h-0 flex-1 overflow-hidden p-6 flex gap-6">
+      <div
+        className={`min-h-0 flex flex-1 gap-6 overflow-hidden ${readOnly || !v5Active ? 'p-6' : ''}`}
+      >
         <div className="min-h-0 flex-1 overflow-hidden">
           {readOnly ? (
             <Preview
@@ -249,7 +256,7 @@ export function QuotationBuilder({
               // eslint-disable-next-line react/purity
               version={lastSaved ? lastSaved.getTime() : new Date().getTime()}
             />
-          ) : isFreeformV5Enabled() && document?.schema_version === 5 ? (
+          ) : v5Active ? (
             <V5BuilderEngine
               document={document as V5Document}
               onChange={(newDoc) => {

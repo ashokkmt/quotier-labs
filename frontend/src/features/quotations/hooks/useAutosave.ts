@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
 
-export type SaveState = 'Saved' | 'Saving...' | 'Save failed - retrying' | 'Unsaved changes'
+export type SaveState = 'Saved' | 'Saving…' | 'Save failed — retrying' | 'Unsaved changes'
 
 export function useAutosave(
   document: any,
@@ -14,21 +14,29 @@ export function useAutosave(
   const [lastSaved, setLastSaved] = useState<Date>(new Date())
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const retryCount = useRef(0)
+  const latestDocument = useRef(document)
+  const dirtyRef = useRef(dirty)
+  latestDocument.current = document
+  dirtyRef.current = dirty
   const { toast } = useToast()
 
   const executeSave = async (docToSave: any) => {
-    setSaveState('Saving...')
+    setSaveState('Saving…')
     try {
       await onSave(docToSave)
       setSaveState('Saved')
       setLastSaved(new Date())
-      clearDirty()
+      // A slower save must never mark edits made while it was running as saved.
+      if (latestDocument.current === docToSave && dirtyRef.current) clearDirty()
       retryCount.current = 0
     } catch {
       if (retryCount.current < 3) {
         retryCount.current += 1
-        setSaveState('Save failed - retrying')
-        setTimeout(() => executeSave(docToSave), 1000 * Math.pow(2, retryCount.current)) // exponential backoff
+        setSaveState('Save failed — retrying')
+        setTimeout(
+          () => executeSave(latestDocument.current),
+          1000 * Math.pow(2, retryCount.current),
+        ) // exponential backoff
       } else {
         toast({
           title: 'Autosave failed permanently',

@@ -1,10 +1,10 @@
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { V5History, type V5Command } from './history'
 import { serializeV5, parseV5 } from './serialization'
-import { findNode, flattenNodes, remapPayload } from './selectors'
+import { ancestorChain, findNode, flattenNodes, remapPayload, worldMatrixOf } from './selectors'
 import { deleteNodes as deleteNodesCommand, insertNodes } from './commands'
 import { du, type V5Document, type V5Node, type V5Story } from './model'
-import type { Bounds } from './geometry'
+import { apply, invert, type Bounds } from './geometry'
 
 export type V5SaveStatus = 'saved' | 'saving' | 'failed' | 'unsaved'
 export type V5SessionSnapshot = {
@@ -88,7 +88,7 @@ export class V5Session {
     const alive = (id: string) =>
       this.history.document.root.pages.some((page) => findNode(page.children, id) !== null)
     this.selectedNodeIds = this.selectedNodeIds.filter(alive)
-    this.selectedNodeId = this.selectedNodeIds[0] ?? null
+    this.selectedNodeId = this.selectedNodeIds.at(-1) ?? null
     if (this.editScopeId && !alive(this.editScopeId)) this.editScopeId = null
   }
   execute(command: V5Command) {
@@ -138,6 +138,7 @@ export class V5Session {
   setActivePage(id: string) {
     if (!this.history.document.root.pages.some((page) => page.id === id)) return
     this.activePageId = id
+    this.editScopeId = null
     // Selection is page/scope-local; switching pages clears it (tools.md §7).
     this.selectNode(null)
     this.emit()
@@ -170,31 +171,42 @@ export class V5Session {
     const remapped = remapPayload(this.clipboard.nodes, this.clipboard.stories, (prefix) =>
       this.nextID(prefix),
     )
+    const parent = this.editScopeId ? findNode(page.children, this.editScopeId) : null
+    if (this.editScopeId && (!parent || parent.role !== 'group'))
+      throw new Error('the active group is no longer available')
+    const available = parent
+      ? { width: parent.geometry.width, height: parent.geometry.height }
+      : { width: page.width, height: page.height }
     const union = unionBounds(remapped.nodes)
     if (mode === 'in-place') {
       if (
         union.x < 0 ||
         union.y < 0 ||
-        union.x + union.width > page.width ||
-        union.y + union.height > page.height
+        union.x + union.width > available.width ||
+        union.y + union.height > available.height
       )
-        throw new Error('pasted content does not fit the page at its original position')
+        throw new Error(
+          'pasted content does not fit the current editing scope at its original position',
+        )
     } else {
       // Placement priority: pointer → viewport-center-ish margin origin → +12pt cascade handled
       // by findPlacement candidates; the whole union must stay on the page.
-      const preferred = pointer ?? {
+      const pagePreferred = pointer ?? {
         x: du(page.margin.left + 2400),
         y: du(page.margin.top + 2400),
       }
-      const target = clampUnion(page, union, preferred)
+      const preferred = parent
+        ? apply(invert(worldMatrixOf(this.history.document, parent.id)), pagePreferred)
+        : pagePreferred
+      const target = clampUnion(available, union, preferred)
       const dx = target.x - union.x
       const dy = target.y - union.y
       for (const node of remapped.nodes)
         node.geometry = { ...node.geometry, x: node.geometry.x + dx, y: node.geometry.y + dy }
     }
-    this.execute(insertNodes(pageId, remapped.nodes, remapped.stories))
+    this.execute(insertNodes(pageId, remapped.nodes, remapped.stories, this.editScopeId))
     this.selectedNodeIds = remapped.nodes.map((node) => node.id)
-    this.selectedNodeId = this.selectedNodeIds[0] ?? null
+    this.selectedNodeId = this.selectedNodeIds.at(-1) ?? null
     this.emit()
     return this.selectedNodeIds
   }
@@ -211,7 +223,10 @@ export class V5Session {
       (candidate) => candidate.id === this.activePageId,
     )
     if (!page) return null
-    const nodes = page.children.filter((node) => this.selectedNodeIds.includes(node.id))
+    const scope = this.editScopeId
+      ? (findNode(page.children, this.editScopeId)?.children ?? [])
+      : page.children
+    const nodes = scope.filter((node) => this.selectedNodeIds.includes(node.id))
     if (!nodes.length) return null
     const ids = new Set(nodes.flatMap((node) => flattenNodes([node]).map((item) => item.id)))
     const storyIds = new Set(
@@ -240,17 +255,16 @@ export class V5Session {
     this.emit()
   }
   selectNode(id: string | null, additive = false) {
-    this.selectedNodeId = id
     if (!id) this.selectedNodeIds = []
     else if (additive && this.selectedNodeIds.includes(id))
       this.selectedNodeIds = this.selectedNodeIds.filter((selected) => selected !== id)
     else this.selectedNodeIds = additive ? [...this.selectedNodeIds, id] : [id]
-    if (!this.selectedNodeIds.length) this.selectedNodeId = null
+    this.selectedNodeId = this.selectedNodeIds.at(-1) ?? null
     this.emit()
   }
   selectNodes(ids: string[]) {
     this.selectedNodeIds = [...new Set(ids)]
-    this.selectedNodeId = this.selectedNodeIds[0] ?? null
+    this.selectedNodeId = this.selectedNodeIds.at(-1) ?? null
     this.emit()
   }
   enterGroup(id: string) {
@@ -258,6 +272,11 @@ export class V5Session {
     this.selectNode(null)
   }
   exitGroup() {
+    const chain = this.editScopeId ? ancestorChain(this.history.document, this.editScopeId) : []
+    this.editScopeId = chain.length > 1 ? chain[chain.length - 2].id : null
+    this.selectNode(null)
+  }
+  exitAllGroups() {
     this.editScopeId = null
     this.selectNode(null)
   }
@@ -282,7 +301,7 @@ function unionBounds(nodes: V5Node[]): Bounds {
 
 /** Clamps a union bounds rect fully inside the page, preferring the preferred origin. */
 function clampUnion(
-  page: NonNullable<V5Document['root']['pages'][number]>,
+  page: { width: number; height: number },
   union: Bounds,
   preferred: { x: number; y: number },
 ): Bounds {
@@ -320,6 +339,7 @@ export function useV5Session() {
     selectNodes: session.selectNodes.bind(session),
     enterGroup: session.enterGroup.bind(session),
     exitGroup: session.exitGroup.bind(session),
+    exitAllGroups: session.exitAllGroups.bind(session),
     canUndo: session.canUndo.bind(session),
     canRedo: session.canRedo.bind(session),
     setZoom: session.setZoom.bind(session),

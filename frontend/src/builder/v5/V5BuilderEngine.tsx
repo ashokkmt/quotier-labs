@@ -1,11 +1,12 @@
 import type { V5Document } from './model'
 import { useEffect, useRef, useState } from 'react'
 import { V5SessionProvider, useV5Session } from './store'
+import { AlertTriangle, PanelRightClose, PanelRightOpen, X } from 'lucide-react'
 import { V5Canvas } from './Canvas'
-import { LayersPanel } from './LayersPanel'
 import { Inspector } from './Inspector'
-import { PagesPanel } from './PagesPanel'
-import { EditorToolbar } from './EditorToolbar'
+import { WorkspaceRail } from './WorkspaceRail'
+import { V5EditorUIProvider, useV5EditorUI } from './EditorUIState'
+import { pageOf } from './selectors'
 
 export type V5LayoutDiagnostic = { code: string; nodeId: string; message: string }
 
@@ -72,7 +73,11 @@ function DiagnosticsBanner({
   document: V5Document
   resolveDiagnostics: (document: V5Document) => Promise<V5LayoutDiagnostic[]>
 }) {
+  const session = useV5Session()
+  const { setInspectorOpen } = useV5EditorUI()
   const [diagnostics, setDiagnostics] = useState<V5LayoutDiagnostic[]>([])
+  const [open, setOpen] = useState(false)
+  const [failed, setFailed] = useState(false)
   const latest = useRef(0)
   const resolveRef = useRef(resolveDiagnostics)
   useEffect(() => {
@@ -85,24 +90,73 @@ function DiagnosticsBanner({
         // Wails may deliver a null slice from Go; never trust the transport type.
         const resolved = await resolveRef.current(document)
         const next = Array.isArray(resolved) ? resolved : []
-        if (latest.current === ticket) setDiagnostics(next)
+        if (latest.current === ticket) {
+          setDiagnostics(next)
+          setFailed(false)
+        }
       } catch {
-        if (latest.current === ticket) setDiagnostics([])
+        if (latest.current === ticket) {
+          setDiagnostics([])
+          setFailed(true)
+        }
       }
     }, 800)
     return () => clearTimeout(timer)
   }, [document])
-  if (diagnostics.length === 0) return null
+  if (diagnostics.length === 0 && !failed) return null
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="absolute bottom-3 left-3 right-3 z-10 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950"
-    >
-      {diagnostics.map((diagnostic) => (
-        <p key={`${diagnostic.code}-${diagnostic.nodeId}`}>{diagnostic.message}</p>
-      ))}
-    </div>
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${diagnostics.length || 1} document ${diagnostics.length === 1 ? 'issue' : 'issues'}`}
+        className="absolute bottom-3 left-3 z-20 flex h-8 items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 text-xs text-amber-950 shadow-sm hover:bg-amber-100"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <AlertTriangle className="h-4 w-4" />
+        {diagnostics.length || 1} {diagnostics.length === 1 ? 'issue' : 'issues'}
+      </button>
+      {open && (
+        <section
+          aria-label="Document issues"
+          className="absolute bottom-14 left-3 z-30 max-h-72 w-80 overflow-auto rounded-lg border bg-background p-2 shadow-xl"
+        >
+          <div className="mb-1 flex items-center justify-between px-1">
+            <h3 className="text-sm font-medium">Document issues</h3>
+            <button
+              type="button"
+              aria-label="Close issues"
+              className="grid h-7 w-7 place-items-center rounded hover:bg-accent"
+              onClick={() => setOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {failed ? (
+            <p role="alert" className="rounded bg-destructive/10 p-2 text-xs text-destructive">
+              Layout checks could not be refreshed. Your document remains editable.
+            </p>
+          ) : (
+            diagnostics.map((diagnostic) => (
+              <button
+                key={`${diagnostic.code}-${diagnostic.nodeId}`}
+                type="button"
+                className="block w-full rounded-md p-2 text-left text-xs hover:bg-accent"
+                onClick={() => {
+                  const page = pageOf(session.document, diagnostic.nodeId)
+                  if (page) session.setActivePage(page.id)
+                  session.selectNode(diagnostic.nodeId)
+                  setInspectorOpen(true)
+                  setOpen(false)
+                }}
+              >
+                {diagnostic.message}
+              </button>
+            ))
+          )}
+        </section>
+      )}
+    </>
   )
 }
 
@@ -138,24 +192,53 @@ export function V5BuilderEngine({
 }) {
   return (
     <V5SessionProvider initial={document}>
-      <SessionHandle onReady={onReady} />
-      <KeyboardShortcuts />
-      <ChangeBridge onChange={onChange} />
-      <div className="flex h-full min-h-0 flex-col">
-        <EditorToolbar />
-        <div className="flex min-h-0 flex-1">
-          <div className="flex min-h-0 w-60 shrink-0 flex-col overflow-y-auto border-r bg-background">
-            <LayersPanel />
-            <PagesPanel />
+      <V5EditorUIProvider>
+        <SessionHandle onReady={onReady} />
+        <KeyboardShortcuts />
+        <ChangeBridge onChange={onChange} />
+        <div data-v5-engine className="relative flex h-full min-h-0">
+          <div className="flex min-h-0 flex-1">
+            <WorkspaceRail />
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <V5Canvas />
+              {resolveDiagnostics && (
+                <DiagnosticsBannerHost resolveDiagnostics={resolveDiagnostics} />
+              )}
+            </div>
+            <InspectorDock />
           </div>
-          <div className="relative min-h-0 flex-1 overflow-hidden">
-            <V5Canvas />
-            {resolveDiagnostics && <DiagnosticsBannerHost resolveDiagnostics={resolveDiagnostics} />}
-          </div>
-          <Inspector />
         </div>
-      </div>
+      </V5EditorUIProvider>
     </V5SessionProvider>
+  )
+}
+
+/** The inspector is discoverable but does not permanently turn the canvas into a form layout. */
+function InspectorDock() {
+  const { inspectorOpen: open, setInspectorOpen: setOpen } = useV5EditorUI()
+  return open ? (
+    <aside className="relative flex min-h-0 w-80 shrink-0 border-l bg-background max-xl:absolute max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:shadow-xl">
+      <button
+        type="button"
+        aria-label="Close inspector"
+        className="absolute -left-8 top-3 z-10 grid h-7 w-7 place-items-center rounded-l-md border border-r-0 bg-background shadow-sm hover:bg-accent"
+        onClick={() => setOpen(false)}
+      >
+        <PanelRightClose className="h-4 w-4" aria-hidden />
+      </button>
+      <Inspector />
+    </aside>
+  ) : (
+    <div className="w-12 shrink-0 border-l bg-background/95 p-1.5">
+      <button
+        type="button"
+        aria-label="Open inspector"
+        className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent"
+        onClick={() => setOpen(true)}
+      >
+        <PanelRightOpen className="h-4 w-4" aria-hidden />
+      </button>
+    </div>
   )
 }
 

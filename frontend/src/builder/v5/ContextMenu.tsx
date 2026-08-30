@@ -1,15 +1,20 @@
-import { useEffect, useRef } from 'react'
-import { MenuList } from './ContextToolbar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { MenuItems } from './ContextToolbar'
 
 export type MenuItem = {
   label: string
   shortcut?: string
   destructive?: boolean
+  separator?: boolean
   run?: () => void
   menu?: MenuItem[]
 }
 
-/** Right-click / three-dot menu; opens at the pointer, closes on outside press or Escape. */
+/** Radix owns collision, keyboard navigation, submenus, dismissal, and focus restoration. */
 export function ContextMenu({
   menu,
   onClose,
@@ -17,40 +22,34 @@ export function ContextMenu({
   menu: { x: number; y: number; items: MenuItem[] }
   onClose: () => void
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        onClose()
-      }
-    }
-    window.addEventListener('pointerdown', onPointerDown, true)
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true)
-      window.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [onClose])
   return (
-    <div
-      ref={ref}
-      className="fixed z-30"
-      style={{
-        left: menu.x,
-        top: menu.y,
+    <DropdownMenu
+      defaultOpen
+      onOpenChange={(open) => {
+        // Radix requests close while dispatching an item's select event. Deferring the parent
+        // unmount by one frame guarantees the selected command runs before the menu
+        // disappears (especially in WebView/Chromium builds).
+        if (!open) requestAnimationFrame(onClose)
       }}
-      onPointerDown={(event) => event.stopPropagation()}
     >
-      <MenuList
-        items={menu.items}
-        onClose={() => {
-          onClose()
-        }}
-      />
-    </div>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Canvas context menu"
+          className="pointer-events-none fixed h-px w-px opacity-0"
+          style={{ left: menu.x, top: menu.y }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        data-v5-context-menu
+        align="start"
+        side="bottom"
+        sideOffset={0}
+        className="min-w-52"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <MenuItems items={menu.items} />
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

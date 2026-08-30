@@ -1,12 +1,31 @@
+import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Group,
+  Image as ImageIcon,
+  Lock,
+  Unlock,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useV5Session } from './store'
 import {
   alignNodes,
+  alignToPage,
   distributeNodes,
+  groupNodes,
   renameNode,
-  setNodeLocked,
-  setNodeVisibility,
+  setNodesLocked,
+  setNodesVisibility,
   updateNodeGeometry,
   updateNodeProps,
+  updateStoryContent,
 } from './commands'
 import {
   V5_COLOR_TOKENS,
@@ -18,34 +37,449 @@ import {
   clampStrokeWidth,
   type V5ColorToken,
 } from './tokens'
+import { ancestorChain, findNode, isEffectivelyLocked } from './selectors'
+import { getV5Widget } from './registry'
 import { du, type V5Node } from './model'
-
-const toPt = (value: number) => value / 100
-const toDu = (value: number) => du(value * 100)
+import { readValidatedImage } from './imageAssets'
 
 const field =
-  'w-full rounded border border-input bg-background px-2 py-1 text-sm disabled:opacity-50'
-const row = 'flex items-center justify-between gap-2'
+  'h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50'
+const MM_PER_POINT = 25.4 / 72
+const toMM = (duValue: number) => (duValue / 100) * MM_PER_POINT
+const fromMM = (value: number) => du((value / MM_PER_POINT) * 100)
 
-function ColorSelect({
-  label,
-  value,
-  allowNone,
-  onChange,
-  disabled,
+function Section({
+  title,
+  children,
+  open = true,
 }: {
-  label: string
-  value: string
-  allowNone?: boolean
-  onChange: (value: string) => void
-  disabled?: boolean
+  title: string
+  children: ReactNode
+  open?: boolean
 }) {
   return (
-    <label className={row}>
-      <span className="text-sm">{label}</span>
+    <details open={open} className="group border-b py-2">
+      <summary className="flex h-8 cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {title}
+        <ChevronDown className="h-3.5 w-3.5 transition-transform duration-100 group-open:rotate-180" />
+      </summary>
+      <div className="space-y-2 pb-2 pt-1">{children}</div>
+    </details>
+  )
+}
+
+function BufferedText({
+  value,
+  label,
+  disabled,
+  onCommit,
+}: {
+  value: string
+  label: string
+  disabled?: boolean
+  onCommit: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  const commit = () => {
+    const next = draft.trim()
+    if (next && next !== value) onCommit(next)
+    else setDraft(value)
+  }
+  return (
+    <input
+      className={field}
+      aria-label={label}
+      value={draft}
+      disabled={disabled}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          commit()
+          event.currentTarget.blur()
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setDraft(value)
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
+function BufferedNumber({
+  value,
+  label,
+  disabled,
+  min,
+  max,
+  auto,
+  onCommit,
+}: {
+  value: number
+  label: string
+  disabled?: boolean
+  min?: number
+  max?: number
+  auto?: boolean
+  onCommit: (value: number) => void
+}) {
+  const formatted = Number(value.toFixed(2)).toString()
+  const [draft, setDraft] = useState(formatted)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    setDraft(formatted)
+    setError(null)
+  }, [formatted])
+  const commit = () => {
+    const parsed = Number(draft)
+    if (
+      !Number.isFinite(parsed) ||
+      (min !== undefined && parsed < min) ||
+      (max !== undefined && parsed > max)
+    ) {
+      setError(`Enter ${min ?? 'a valid value'}${max !== undefined ? `–${max}` : ' or greater'}.`)
+      return
+    }
+    setError(null)
+    if (parsed !== value) onCommit(parsed)
+  }
+  return (
+    <label className="block min-w-0 text-xs text-muted-foreground">
+      <span>{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        className={`${field} mt-1 ${error ? 'border-destructive' : ''}`}
+        aria-invalid={Boolean(error)}
+        value={auto ? 'Auto' : draft}
+        disabled={disabled || auto}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+            if (!error) event.currentTarget.blur()
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            setDraft(formatted)
+            setError(null)
+            event.currentTarget.blur()
+          } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            event.preventDefault()
+            const step = event.shiftKey ? 10 : 1
+            const next = Number(draft || value) + (event.key === 'ArrowUp' ? step : -step)
+            setDraft(String(next))
+          }
+        }}
+      />
+      {error && (
+        <span role="alert" className="mt-1 block text-[11px] text-destructive">
+          {error}
+        </span>
+      )}
+    </label>
+  )
+}
+
+export function Inspector() {
+  const session = useV5Session()
+  const selectedIds = session.selectedNodeIds
+  const selected = selectedIds
+    .map((id) =>
+      findNode(
+        session.document.root.pages.flatMap((page) => page.children),
+        id,
+      ),
+    )
+    .filter((node): node is V5Node => Boolean(node))
+
+  if (!selected.length)
+    return (
+      <div aria-label="Properties" className="w-full p-4 text-sm text-muted-foreground">
+        Select an object to inspect exact print properties.
+      </div>
+    )
+  if (selected.length > 1) return <MultiInspector nodes={selected} />
+  return <SingleInspector node={selected[0]} />
+}
+
+function SingleInspector({ node }: { node: V5Node }) {
+  const session = useV5Session()
+  const effectivelyLocked = isEffectivelyLocked(session.document, node.id)
+  const inheritedLock = effectivelyLocked && !node.locked
+  const capability = node.role === 'group' ? null : getV5Widget(node.kind)
+  const commitGeometry = (patch: Partial<V5Node['geometry']>) =>
+    session.execute(updateNodeGeometry(node.id, { ...node.geometry, ...patch }))
+  return (
+    <div aria-label="Properties" className="w-full overflow-y-auto px-4 py-2">
+      <div className="flex h-10 items-center justify-between border-b">
+        <p className="text-sm font-medium">Properties</p>
+        <span className="text-xs capitalize text-muted-foreground">
+          {node.role === 'flow-frame' ? 'table frame' : node.kind}
+        </span>
+      </div>
+      <Section title="Identity">
+        <label className="block text-xs text-muted-foreground">
+          Name
+          <BufferedText
+            value={node.name ?? node.kind}
+            label="Object name"
+            disabled={effectivelyLocked}
+            onCommit={(value) => session.execute(renameNode(node.id, value))}
+          />
+        </label>
+        {node.binding_kind && (
+          <p className="text-xs text-muted-foreground">
+            Binding <span className="float-right text-foreground">{node.binding_kind}</span>
+          </p>
+        )}
+      </Section>
+      <Section title="Geometry">
+        <div className="grid grid-cols-2 gap-2">
+          <BufferedNumber
+            label="X (mm)"
+            value={toMM(node.geometry.x)}
+            min={0}
+            disabled={effectivelyLocked}
+            onCommit={(value) => commitGeometry({ x: fromMM(value) })}
+          />
+          <BufferedNumber
+            label="Y (mm)"
+            value={toMM(node.geometry.y)}
+            min={0}
+            disabled={effectivelyLocked}
+            onCommit={(value) => commitGeometry({ y: fromMM(value) })}
+          />
+          <BufferedNumber
+            label="W (mm)"
+            value={toMM(node.geometry.width)}
+            min={0.1}
+            disabled={effectivelyLocked || capability?.canResizeX === false}
+            onCommit={(value) => commitGeometry({ width: fromMM(value) })}
+          />
+          <BufferedNumber
+            label="H (mm)"
+            value={toMM(node.geometry.height)}
+            min={0.1}
+            auto={node.layout_mode === 'intrinsic'}
+            disabled={effectivelyLocked || capability?.canResizeY === false}
+            onCommit={(value) => commitGeometry({ height: fromMM(value) })}
+          />
+        </div>
+        {(node.role === 'group' || capability?.canRotate) && (
+          <BufferedNumber
+            label="Rotation (°)"
+            value={node.geometry.rotation / 100}
+            min={-360}
+            max={360}
+            disabled={effectivelyLocked}
+            onCommit={(value) => commitGeometry({ rotation: du(value * 100) })}
+          />
+        )}
+      </Section>
+      <ArrangeSection node={node} disabled={effectivelyLocked} />
+      {node.kind === 'text' && <TextStyle node={node} disabled={effectivelyLocked} />}
+      {node.kind === 'shape' && <ShapeStyle node={node} disabled={effectivelyLocked} />}
+      {node.kind === 'image' && <ImageContent node={node} disabled={effectivelyLocked} />}
+      {node.role === 'flow-frame' && node.story_id && (
+        <TableContent node={node} disabled={effectivelyLocked} />
+      )}
+      <Section title="State">
+        {inheritedLock && <p className="rounded bg-muted px-2 py-1 text-xs">Locked by parent</p>}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={inheritedLock}
+            className="flex h-8 items-center justify-center gap-1 rounded-md border text-xs hover:bg-accent"
+            onClick={() => session.execute(setNodesLocked([node.id], !node.locked))}
+          >
+            {node.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            {node.locked ? 'Unlock' : 'Lock'}
+          </button>
+          <button
+            type="button"
+            className="flex h-8 items-center justify-center gap-1 rounded-md border text-xs hover:bg-accent"
+            onClick={() => {
+              const next = node.visibility === 'shown' ? 'hidden' : 'shown'
+              session.execute(setNodesVisibility([node.id], next))
+              if (next === 'hidden') session.selectNode(null)
+            }}
+          >
+            {node.visibility === 'shown' ? (
+              <EyeOff className="h-3.5 w-3.5" />
+            ) : (
+              <Eye className="h-3.5 w-3.5" />
+            )}
+            {node.visibility === 'shown' ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      </Section>
+      {ancestorChain(session.document, node.id).length > 1 && (
+        <p className="py-3 text-xs text-muted-foreground">
+          Position is relative to its parent group; direct manipulation preserves page-space
+          geometry.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ArrangeSection({ node, disabled }: { node: V5Node; disabled?: boolean }) {
+  const session = useV5Session()
+  const modes = [
+    ['left', AlignStartVertical],
+    ['center-x', AlignCenterVertical],
+    ['right', AlignEndVertical],
+    ['top', AlignStartHorizontal],
+    ['center-y', AlignCenterHorizontal],
+    ['bottom', AlignEndHorizontal],
+  ] as const
+  return (
+    <Section title="Arrange" open={false}>
+      <div className="grid grid-cols-6 gap-1">
+        {modes.map(([mode, Icon]) => (
+          <button
+            key={mode}
+            type="button"
+            disabled={disabled}
+            aria-label={`Align ${mode} to printable page`}
+            className="grid h-8 place-items-center rounded border hover:bg-accent disabled:opacity-40"
+            onClick={() => session.execute(alignToPage(node.id, mode))}
+          >
+            <Icon className="h-4 w-4" />
+          </button>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
+  const session = useV5Session()
+  const props = node.props ?? {}
+  const set = (patch: Record<string, unknown>) => session.execute(updateNodeProps(node.id, patch))
+  return (
+    <Section title="Text style">
+      <p className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+        Edit words directly on the page with Enter or double-click.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <BufferedNumber
+          label="Size (pt)"
+          value={Number(props.fontSize ?? 11)}
+          min={V5_FONT_SIZE_MIN_PT}
+          max={V5_FONT_SIZE_MAX_PT}
+          disabled={disabled}
+          onCommit={(value) => set({ fontSize: clampFontSize(value) })}
+        />
+        <label className="text-xs text-muted-foreground">
+          Alignment
+          <select
+            className={`${field} mt-1`}
+            value={String(props.align ?? 'left')}
+            disabled={disabled}
+            onChange={(event) => set({ align: event.target.value })}
+          >
+            {V5_TEXT_ALIGNS.map((align) => (
+              <option key={align} value={align}>
+                {align}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex h-8 items-center gap-2 rounded-md border px-2 text-xs">
+          <input
+            type="checkbox"
+            checked={Boolean(props.bold)}
+            disabled={disabled}
+            onChange={(event) => set({ bold: event.target.checked })}
+          />
+          Bold
+        </label>
+        <ColorSelect
+          value={String(props.color ?? 'black')}
+          onChange={(value) => set({ color: value as V5ColorToken })}
+          disabled={disabled}
+        />
+      </div>
+    </Section>
+  )
+}
+
+function ShapeStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
+  const session = useV5Session()
+  const props = node.props ?? {}
+  const set = (patch: Record<string, unknown>) => session.execute(updateNodeProps(node.id, patch))
+  return (
+    <Section title="Style">
+      <div className="grid grid-cols-2 gap-2">
+        <ColorSelect
+          label="Fill"
+          allowNone
+          value={String(props.fill ?? 'none')}
+          onChange={(value) => set({ fill: value })}
+          disabled={disabled}
+        />
+        <ColorSelect
+          label="Stroke"
+          allowNone
+          value={String(props.stroke ?? 'none')}
+          onChange={(value) => set({ stroke: value })}
+          disabled={disabled}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs text-muted-foreground">
+          Line style
+          <select
+            className={`${field} mt-1`}
+            disabled={disabled}
+            value={String(props.strokeStyle ?? 'solid')}
+            onChange={(event) => set({ strokeStyle: event.target.value })}
+          >
+            {V5_STROKE_STYLES.map((style) => (
+              <option key={style}>{style}</option>
+            ))}
+          </select>
+        </label>
+        <BufferedNumber
+          label="Width (pt)"
+          value={Number(props.strokeWidth ?? 1)}
+          min={0.25}
+          max={12}
+          disabled={disabled}
+          onCommit={(value) => set({ strokeWidth: clampStrokeWidth(value) })}
+        />
+      </div>
+    </Section>
+  )
+}
+
+function ColorSelect({
+  label = 'Color',
+  value,
+  allowNone,
+  disabled,
+  onChange,
+}: {
+  label?: string
+  value: string
+  allowNone?: boolean
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="text-xs text-muted-foreground">
+      {label}
       <select
-        aria-label={label}
-        className={field}
+        className={`${field} mt-1`}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
@@ -61,304 +495,251 @@ function ColorSelect({
   )
 }
 
-function GeometryFields({ node }: { node: V5Node }) {
+function ImageContent({ node, disabled }: { node: V5Node; disabled?: boolean }) {
   const session = useV5Session()
-  const g = node.geometry
-  const commit = (patch: Partial<typeof g>) =>
-    session.execute(updateNodeGeometry(node.id, { ...g, ...patch }))
-  const numberField = (label: string, value: number, onCommit: (v: number) => void) => (
-    <label className={row}>
-      <span className="text-sm">{label}</span>
+  const input = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
+  const choose = async (file?: File) => {
+    if (!file) return
+    try {
+      const { source } = await readValidatedImage(file)
+      session.execute(updateNodeProps(node.id, { source }))
+      setError(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The image could not be read.')
+    }
+  }
+  return (
+    <Section title="Image">
       <input
-        type="number"
-        aria-label={label}
-        className={`${field} w-20`}
-        value={value}
-        step={1}
-        min={0}
-        disabled={node.locked}
-        onChange={(event) => {
-          const next = Number(event.target.value)
-          if (Number.isFinite(next)) onCommit(next)
-        }}
+        ref={input}
+        className="sr-only"
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(event) => void choose(event.target.files?.[0])}
       />
-    </label>
-  )
-  return (
-    <fieldset className="space-y-1">
-      <legend className="text-xs font-semibold uppercase text-muted-foreground">Position</legend>
-      {numberField('X (pt)', toPt(g.x), (v) => commit({ x: toDu(v) }))}
-      {numberField('Y (pt)', toPt(g.y), (v) => commit({ y: toDu(v) }))}
-      {numberField('W (pt)', toPt(g.width), (v) => v > 0 && commit({ width: toDu(v) }))}
-      {numberField('H (pt)', toPt(g.height), (v) => v > 0 && commit({ height: toDu(v) }))}
-      {numberField('Rotation °', g.rotation / 100, (v) =>
-        session.execute(updateNodeGeometry(node.id, { ...g, rotation: du(v * 100) })),
+      <button
+        type="button"
+        disabled={disabled}
+        className="flex h-9 w-full items-center justify-center gap-2 rounded-md border text-sm hover:bg-accent disabled:opacity-40"
+        onClick={() => input.current?.click()}
+      >
+        <ImageIcon className="h-4 w-4" />
+        {node.props?.source ? 'Replace image' : 'Choose image'}
+      </button>
+      <p className="text-xs text-muted-foreground">PNG, JPEG, or WebP · maximum 5 MB</p>
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
       )}
-    </fieldset>
+    </Section>
   )
 }
 
-function TextFields({ node }: { node: V5Node }) {
+type TableData = { headers: string[]; rows: string[][] }
+function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) {
   const session = useV5Session()
-  const props = (node.props ?? {}) as Record<string, unknown>
-  const set = (patch: Record<string, unknown>) => session.execute(updateNodeProps(node.id, patch))
+  const story = session.document.stories?.find((candidate) => candidate.id === node.story_id)
+  const source = (story?.content ?? { headers: [], rows: [] }) as TableData
+  const [draft, setDraft] = useState<TableData>(() => JSON.parse(JSON.stringify(source)))
+  useEffect(() => setDraft(JSON.parse(JSON.stringify(source))), [story?.content])
+  if (!story) return null
+  const commit = (next: TableData) => {
+    setDraft(next)
+    session.execute(updateStoryContent(story.id, next))
+  }
   return (
-    <fieldset className="space-y-1">
-      <legend className="text-xs font-semibold uppercase text-muted-foreground">Text</legend>
-      <label className="block">
-        <span className="text-sm">Content</span>
-        <textarea
-          aria-label="Text content"
-          className={field}
-          rows={3}
-          value={String(props.text ?? '')}
-          disabled={node.locked}
-          onChange={(event) => set({ text: event.target.value })}
-        />
-      </label>
-      <label className={row}>
-        <span className="text-sm">Size (pt)</span>
-        <input
-          type="number"
-          aria-label="Font size"
-          className={`${field} w-20`}
-          value={Number(props.fontSize ?? 11)}
-          min={V5_FONT_SIZE_MIN_PT}
-          max={V5_FONT_SIZE_MAX_PT}
-          disabled={node.locked}
-          onChange={(event) => set({ fontSize: clampFontSize(Number(event.target.value)) })}
-        />
-      </label>
-      <label className={row}>
-        <span className="text-sm">Bold</span>
-        <input
-          type="checkbox"
-          aria-label="Bold"
-          checked={Boolean(props.bold)}
-          disabled={node.locked}
-          onChange={(event) => set({ bold: event.target.checked })}
-        />
-      </label>
-      <label className={row}>
-        <span className="text-sm">Align</span>
-        <select
-          aria-label="Text alignment"
-          className={field}
-          value={String(props.align ?? 'left')}
-          disabled={node.locked}
-          onChange={(event) => set({ align: event.target.value })}
+    <Section title="Table content">
+      <div className="overflow-x-auto">
+        <div
+          className="grid min-w-[240px] gap-1"
+          style={{
+            gridTemplateColumns: `repeat(${Math.max(1, draft.headers.length)}, minmax(72px, 1fr))`,
+          }}
         >
-          {V5_TEXT_ALIGNS.map((align) => (
-            <option key={align} value={align}>
-              {align}
-            </option>
+          {draft.headers.map((header, column) => (
+            <BufferedText
+              key={`h-${column}`}
+              value={header}
+              label={`Header ${column + 1}`}
+              disabled={disabled}
+              onCommit={(value) =>
+                commit({
+                  ...draft,
+                  headers: draft.headers.map((item, index) => (index === column ? value : item)),
+                })
+              }
+            />
           ))}
-        </select>
-      </label>
-      <ColorSelect
-        label="Color"
-        value={String(props.color ?? 'black')}
-        disabled={node.locked}
-        onChange={(value) => set({ color: value as V5ColorToken })}
-      />
-    </fieldset>
-  )
-}
-
-function ShapeFields({ node }: { node: V5Node }) {
-  const session = useV5Session()
-  const props = (node.props ?? {}) as Record<string, unknown>
-  const set = (patch: Record<string, unknown>) => session.execute(updateNodeProps(node.id, patch))
-  return (
-    <fieldset className="space-y-1">
-      <legend className="text-xs font-semibold uppercase text-muted-foreground">Shape</legend>
-      <p className="text-sm capitalize">{String(props.variant ?? 'rect')}</p>
-      <ColorSelect
-        label="Background"
-        value={String(props.fill ?? 'none')}
-        allowNone
-        disabled={node.locked}
-        onChange={(value) => set({ fill: value })}
-      />
-      <ColorSelect
-        label="Border color"
-        value={String(props.stroke ?? 'none')}
-        allowNone
-        disabled={node.locked}
-        onChange={(value) => set({ stroke: value })}
-      />
-      <label className={row}>
-        <span className="text-sm">Border style</span>
-        <select
-          aria-label="Border style"
-          className={field}
-          value={String(props.strokeStyle ?? 'solid')}
-          disabled={node.locked}
-          onChange={(event) => set({ strokeStyle: event.target.value })}
-        >
-          {V5_STROKE_STYLES.map((style) => (
-            <option key={style} value={style}>
-              {style}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className={row}>
-        <span className="text-sm">Border width (pt)</span>
-        <input
-          type="number"
-          aria-label="Border width"
-          className={`${field} w-20`}
-          value={Number(props.strokeWidth ?? 1)}
-          step={0.25}
-          min={0.25}
-          max={12}
-          disabled={node.locked}
-          onChange={(event) => set({ strokeWidth: clampStrokeWidth(Number(event.target.value)) })}
-        />
-      </label>
-    </fieldset>
-  )
-}
-
-function ImageFields({ node }: { node: V5Node }) {
-  const session = useV5Session()
-  const props = (node.props ?? {}) as Record<string, unknown>
-  return (
-    <fieldset className="space-y-1">
-      <legend className="text-xs font-semibold uppercase text-muted-foreground">Image</legend>
-      <label className="block">
-        <span className="text-sm">Source (PNG/JPEG data URI)</span>
-        <textarea
-          aria-label="Image source"
-          className={field}
-          rows={3}
-          value={String(props.source ?? '')}
-          disabled={node.locked}
-          onChange={(event) =>
-            session.execute(updateNodeProps(node.id, { source: event.target.value }))
-          }
-        />
-      </label>
-      <p className="text-xs text-muted-foreground">
-        Only inline PNG or JPEG data is allowed; SVG and file paths are rejected by the renderer.
-      </p>
-    </fieldset>
-  )
-}
-
-export function Inspector() {
-  const session = useV5Session()
-  const selectedIds = session.selectedNodeIds
-  const selectedId = selectedIds[0]
-  const node = selectedId
-    ? findNode(
-        session.document.root.pages.flatMap((page) => page.children),
-        selectedId,
-      )
-    : null
-  if (!node)
-    return (
-      <aside aria-label="Properties" className="w-64 shrink-0 border-l bg-background p-3">
-        <p className="text-sm text-muted-foreground">Select an element to edit its properties.</p>
-      </aside>
-    )
-  const disabled = node.locked
-  return (
-    <aside
-      aria-label="Properties"
-      className="w-64 shrink-0 space-y-4 overflow-y-auto border-l bg-background p-3"
-    >
-      <label className="block">
-        <span className="text-sm">Name</span>
-        <input
-          aria-label="Element name"
-          className={field}
-          value={node.name ?? ''}
-          disabled={disabled}
-          onChange={(event) => session.execute(renameNode(node.id, event.target.value))}
-        />
-      </label>
-      <GeometryFields node={node} />
-      {selectedIds.length > 1 && (
-        <fieldset className="space-y-1">
-          <legend className="text-xs font-semibold uppercase text-muted-foreground">Arrange</legend>
-          <div className="grid grid-cols-3 gap-1">
-            {(
-              [
-                ['left', '⇤'],
-                ['center-x', '↔'],
-                ['right', '⇥'],
-                ['top', '⇡'],
-                ['center-y', '↕'],
-                ['bottom', '⇣'],
-              ] as const
-            ).map(([mode, glyph]) => (
-              <button
-                key={mode}
-                type="button"
-                aria-label={`Align ${mode.replace('-', ' ')}`}
-                title={`Align ${mode.replace('-', ' ')}`}
-                className="rounded border py-1 text-xs hover:bg-accent"
-                onClick={() => session.execute(alignNodes(selectedIds, mode))}
-              >
-                {glyph}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <button
-              type="button"
-              className="rounded border py-1 text-xs hover:bg-accent"
-              onClick={() => session.execute(distributeNodes(selectedIds, 'x'))}
-            >
-              Distribute ↔
-            </button>
-            <button
-              type="button"
-              className="rounded border py-1 text-xs hover:bg-accent"
-              onClick={() => session.execute(distributeNodes(selectedIds, 'y'))}
-            >
-              Distribute ↕
-            </button>
-          </div>
-        </fieldset>
-      )}
-      {node.kind === 'text' && <TextFields node={node} />}
-      {node.kind === 'shape' && <ShapeFields node={node} />}
-      {node.kind === 'image' && <ImageFields node={node} />}
-      <div className="space-y-1 border-t pt-2">
+          {draft.rows.map((row, rowIndex) =>
+            row.map((cell, column) => (
+              <BufferedText
+                key={`${rowIndex}-${column}`}
+                value={cell}
+                label={`Row ${rowIndex + 1}, column ${column + 1}`}
+                disabled={disabled}
+                onCommit={(value) =>
+                  commit({
+                    ...draft,
+                    rows: draft.rows.map((item, index) =>
+                      index === rowIndex
+                        ? item.map((entry, cellIndex) => (cellIndex === column ? value : entry))
+                        : item,
+                    ),
+                  })
+                }
+              />
+            )),
+          )}
+        </div>
+      </div>
+      <div className="flex gap-2">
         <button
           type="button"
-          className="w-full rounded border px-2 py-1 text-sm hover:bg-accent"
-          onClick={() => session.execute(setNodeLocked(node.id, !node.locked))}
+          disabled={disabled}
+          className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+          onClick={() => commit({ ...draft, rows: [...draft.rows, draft.headers.map(() => '')] })}
         >
-          {node.locked ? 'Unlock' : 'Lock'}
+          Add row
         </button>
         <button
           type="button"
-          className="w-full rounded border px-2 py-1 text-sm hover:bg-accent"
-          onClick={() =>
-            session.execute(
-              setNodeVisibility(node.id, node.visibility === 'shown' ? 'hidden' : 'shown'),
-            )
-          }
+          disabled={disabled || !draft.rows.length}
+          className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+          onClick={() => commit({ ...draft, rows: draft.rows.slice(0, -1) })}
         >
-          {node.visibility === 'shown' ? 'Hide' : 'Show'}
+          Remove row
         </button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Tokens render identically in the PDF; freeform colors are not allowed.
-      </p>
-    </aside>
+    </Section>
   )
 }
 
-function findNode(nodes: V5Node[], id: string): V5Node | null {
-  for (const node of nodes) {
-    if (node.id === id) return node
-    const found = findNode(node.children ?? [], id)
-    if (found) return found
+function MultiInspector({ nodes }: { nodes: V5Node[] }) {
+  const session = useV5Session()
+  const [error, setError] = useState<string | null>(null)
+  const ids = nodes.map((node) => node.id)
+  const allLocked = nodes.every((node) => node.locked)
+  const allHidden = nodes.every((node) => node.visibility === 'hidden')
+  const hasInheritedLock = nodes.some(
+    (node) => isEffectivelyLocked(session.document, node.id) && !node.locked,
+  )
+  const run = (action: () => void) => {
+    try {
+      action()
+      setError(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'That action could not be completed.')
+    }
   }
-  return null
+  const modes = [
+    ['left', AlignStartVertical],
+    ['center-x', AlignCenterVertical],
+    ['right', AlignEndVertical],
+    ['top', AlignStartHorizontal],
+    ['center-y', AlignCenterHorizontal],
+    ['bottom', AlignEndHorizontal],
+  ] as const
+  return (
+    <div aria-label="Properties" className="w-full overflow-y-auto px-4 py-2">
+      <div className="flex h-10 items-center justify-between border-b">
+        <p className="text-sm font-medium">Properties</p>
+        <span className="text-xs text-muted-foreground">{nodes.length} objects</span>
+      </div>
+      <Section title="Arrange">
+        <div className="grid grid-cols-6 gap-1">
+          {modes.map(([mode, Icon]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-label={`Align ${mode}`}
+              className="grid h-8 place-items-center rounded border hover:bg-accent"
+              disabled={hasInheritedLock}
+              onClick={() => run(() => session.execute(alignNodes(ids, mode)))}
+            >
+              <Icon className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="h-8 rounded border text-xs hover:bg-accent"
+            disabled={hasInheritedLock}
+            onClick={() => run(() => session.execute(distributeNodes(ids, 'x')))}
+          >
+            Distribute horizontally
+          </button>
+          <button
+            type="button"
+            className="h-8 rounded border text-xs hover:bg-accent"
+            disabled={hasInheritedLock}
+            onClick={() => run(() => session.execute(distributeNodes(ids, 'y')))}
+          >
+            Distribute vertically
+          </button>
+        </div>
+        <button
+          type="button"
+          className="flex h-8 w-full items-center justify-center gap-2 rounded border text-xs hover:bg-accent"
+          disabled={hasInheritedLock}
+          onClick={() =>
+            run(() => {
+              const groupId = session.nextID('group')
+              session.execute(groupNodes(session.activePageId, ids, groupId))
+              session.selectNode(groupId)
+            })
+          }
+        >
+          <Group className="h-4 w-4" />
+          Group selection
+        </button>
+      </Section>
+      <Section title="State">
+        <p className="text-xs text-muted-foreground">
+          Mixed values are changed for the complete selection.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="flex h-8 items-center justify-center gap-1 rounded border text-xs hover:bg-accent"
+            disabled={hasInheritedLock}
+            onClick={() => run(() => session.execute(setNodesLocked(ids, !allLocked)))}
+          >
+            {allLocked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            {allLocked ? 'Unlock all' : 'Lock all'}
+          </button>
+          <button
+            type="button"
+            className="flex h-8 items-center justify-center gap-1 rounded border text-xs hover:bg-accent"
+            disabled={hasInheritedLock}
+            onClick={() =>
+              run(() => {
+                session.execute(setNodesVisibility(ids, allHidden ? 'shown' : 'hidden'))
+                if (!allHidden) session.selectNode(null)
+              })
+            }
+          >
+            {allHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            {allHidden ? 'Show all' : 'Hide all'}
+          </button>
+        </div>
+        {hasInheritedLock && (
+          <p className="rounded bg-muted px-2 py-1 text-xs">
+            Selection contains a parent-locked object.
+          </p>
+        )}
+        {error && (
+          <p
+            role="alert"
+            aria-live="polite"
+            className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive"
+          >
+            {error}
+          </p>
+        )}
+      </Section>
+    </div>
+  )
 }
