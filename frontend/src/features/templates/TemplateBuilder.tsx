@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Save, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, Save, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
@@ -13,6 +13,7 @@ import { useAutosave } from '../quotations/hooks/useAutosave'
 import { useRecovery } from '../quotations/hooks/useRecovery'
 import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { SaveIndicator } from '../quotations/components/SaveIndicator'
+import { UndoRedoControls } from '../quotations/components/UndoRedoControls'
 
 export function TemplateBuilder({
   templateId,
@@ -26,12 +27,9 @@ export function TemplateBuilder({
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
   const [dirty, setDirty] = useState(false)
+  const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
   const { toast } = useToast()
   const v5EngineRef = useRef<V5EngineHandle | null>(null)
-  const nameRef = useRef(name)
-  const descriptionRef = useRef(description)
-  nameRef.current = name
-  descriptionRef.current = description
 
   const { clearRecovery } = useRecovery(templateId, document)
   useNavigationGuard(dirty)
@@ -59,7 +57,13 @@ export function TemplateBuilder({
       .finally(() => setLoading(false)) // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId])
 
-  const save = async (docToSave: any) => {
+  const autosavePayload = useMemo(
+    () => ({ document, name, description }),
+    [description, document, name],
+  )
+
+  const save = async (payload: typeof autosavePayload) => {
+    const docToSave = payload.document
     if (!docToSave) return
     const v5 = docToSave?.schema_version === 5 ? v5EngineRef.current : null
     let revision = 0
@@ -76,8 +80,8 @@ export function TemplateBuilder({
     try {
       await UpdateTemplate({
         id: templateId,
-        name: nameRef.current,
-        description: descriptionRef.current,
+        name: payload.name,
+        description: payload.description,
         layout,
       })
       v5?.acknowledgeSave(revision)
@@ -89,7 +93,7 @@ export function TemplateBuilder({
   }
 
   const { saveState, lastSaved, forceSave } = useAutosave(
-    document,
+    autosavePayload,
     dirty,
     save,
     () => setDirty(false),
@@ -104,20 +108,51 @@ export function TemplateBuilder({
     )
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <header className="flex items-center gap-3 p-3 border-b bg-background z-10 relative">
-        <Input
-          aria-label="Template name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="max-w-sm font-semibold"
+      <header className="relative z-30 flex max-h-[42vh] shrink-0 flex-wrap items-center gap-2 overflow-y-auto border-b bg-background p-2 shadow-sm sm:flex-nowrap sm:px-3">
+        <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
+          <ArrowLeft className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Back</span>
+        </Button>
+        <UndoRedoControls
+          onUndo={() => {
+            v5EngineRef.current?.undo()
+            setV5UndoRedo({
+              canUndo: v5EngineRef.current?.canUndo() ?? false,
+              canRedo: v5EngineRef.current?.canRedo() ?? false,
+            })
+          }}
+          onRedo={() => {
+            v5EngineRef.current?.redo()
+            setV5UndoRedo({
+              canUndo: v5EngineRef.current?.canUndo() ?? false,
+              canRedo: v5EngineRef.current?.canRedo() ?? false,
+            })
+          }}
+          canUndo={v5UndoRedo.canUndo}
+          canRedo={v5UndoRedo.canRedo}
         />
-        <Button onClick={() => forceSave()} disabled={saveState === 'Saving…'}>
-          <Save className="w-4 h-4 mr-2" /> Save
-        </Button>
-        <SaveIndicator state={saveState} lastSaved={lastSaved} />
-        <Button variant="ghost" onClick={onBack}>
-          Close
-        </Button>
+        <div className="min-w-0 flex-1 sm:flex-none">
+          <SaveIndicator state={saveState} lastSaved={lastSaved} />
+        </div>
+        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-initial">
+          <Input
+            aria-label="Template name"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value)
+              setDirty(true)
+            }}
+            className="min-w-0 flex-1 font-semibold sm:w-72 sm:flex-none"
+          />
+          <Button
+            onClick={() => forceSave()}
+            disabled={saveState === 'Saving…'}
+            className="shrink-0"
+          >
+            <Save className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Save</span>
+          </Button>
+        </div>
       </header>
       <div className="min-h-0 flex-1 relative overflow-hidden">
         {isFreeformV5Enabled() && document?.schema_version === 5 ? (
@@ -125,10 +160,18 @@ export function TemplateBuilder({
             document={document as V5Document}
             onReady={(handle) => {
               v5EngineRef.current = handle
+              setV5UndoRedo({
+                canUndo: handle?.canUndo() ?? false,
+                canRedo: handle?.canRedo() ?? false,
+              })
             }}
             onChange={(newDoc) => {
               setDocument(newDoc)
               setDirty(true)
+              setV5UndoRedo({
+                canUndo: v5EngineRef.current?.canUndo() ?? false,
+                canRedo: v5EngineRef.current?.canRedo() ?? false,
+              })
             }}
           />
         ) : (

@@ -28,9 +28,9 @@ export function NewQuotation() {
     }
   }
   return (
-    <div className="max-w-3xl mx-auto py-8 space-y-6">
+    <div className="mx-auto max-w-3xl space-y-5 py-3 sm:space-y-6 sm:py-8">
       <div>
-        <h1 className="text-3xl font-heading font-bold">New Quotation</h1>
+        <h1 className="text-2xl font-heading font-bold sm:text-3xl">New Quotation</h1>
         <p className="text-muted-foreground">
           Choose a starting point. You can add and edit everything later.
         </p>
@@ -41,23 +41,23 @@ export function NewQuotation() {
         </p>
       )}
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="p-6 space-y-3">
+        <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Start From Scratch</h2>
           <p className="text-sm text-muted-foreground">
             Build an empty quotation with rows, columns, sections, and tables.
           </p>
-          <Button onClick={() => create()} disabled={creating}>
+          <Button className="w-full sm:w-auto" onClick={() => create()} disabled={creating}>
             Create Empty Draft
           </Button>
         </Card>
-        <Card className="p-6 space-y-3">
+        <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Use Existing Template</h2>
           {templates.length === 0 ? (
             <p className="text-sm text-muted-foreground">No templates available.</p>
           ) : (
             templates.map((t) => (
-              <div key={t.id} className="flex items-center justify-between border-b py-2">
-                <span>{t.name}</span>
+              <div key={t.id} className="flex items-center justify-between gap-3 border-b py-2">
+                <span className="min-w-0 truncate">{t.name}</span>
                 <Button
                   size="sm"
                   variant="outline"

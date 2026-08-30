@@ -241,10 +241,9 @@ export const updateTableContent = (
       found.node.geometry = quantizeGeometry({
         ...found.node.geometry,
         ...geometry,
-        width: Math.min(
-          availableWidth,
-          Math.max(geometry?.width ?? found.node.geometry.width, desiredWidth),
-        ),
+        // Structure edits follow the sum of authored columns. An explicit outer resize remains
+        // authoritative, but deleting a column must shrink the frame and selection chrome.
+        width: Math.min(availableWidth, Math.max(geometry?.width ?? desiredWidth, 200)),
         height: Math.min(desiredHeight, availableHeight),
       })
       return d

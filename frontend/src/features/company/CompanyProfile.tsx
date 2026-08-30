@@ -70,7 +70,7 @@ export function CompanyProfile() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       <div>
-        <h1 className="text-3xl font-heading font-bold">Company Settings</h1>
+        <h1 className="text-2xl font-heading font-bold sm:text-3xl">Company Settings</h1>
         <p className="text-muted-foreground mt-1">
           Manage your business profile, branding, and tax information.
         </p>

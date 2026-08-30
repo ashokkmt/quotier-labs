@@ -82,6 +82,9 @@ func TestResolveFragmentsStoriesAndReportsOverset(t *testing.T) {
 	if len(layout.Diagnostics) == 0 || layout.Diagnostics[0].Code != "overset_story" {
 		t.Fatalf("expected overset story diagnostic, got %#v", layout.Diagnostics)
 	}
+	if layout.Diagnostics[0].NodeID != "frame" {
+		t.Fatalf("expected diagnostic to select frame, got %#v", layout.Diagnostics[0])
+	}
 }
 
 func TestResolveResolvesOnlyAllowlistedBindingsAndHonorsCancellation(t *testing.T) {

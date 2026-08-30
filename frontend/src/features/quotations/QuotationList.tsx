@@ -120,13 +120,13 @@ export function QuotationList() {
   }
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-20">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-6xl space-y-5 pb-20 sm:space-y-6">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-bold font-heading tracking-tight">Quotations</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight sm:text-3xl">Quotations</h1>
           <p className="text-muted-foreground">Manage your past and current quotations.</p>
         </div>
-        <Button onClick={() => navigate('/quotations/new')}>
+        <Button className="w-full sm:w-auto" onClick={() => navigate('/quotations/new')}>
           <Plus className="w-4 h-4 mr-2" /> New Quotation
         </Button>
       </div>
@@ -142,7 +142,7 @@ export function QuotationList() {
           />
         </div>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full md:w-[180px]">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
@@ -155,17 +155,17 @@ export function QuotationList() {
             <SelectItem value="EXPIRED">Expired</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:flex">
           <Input
             type="date"
-            className="w-[140px]"
+            className="w-full md:w-[140px]"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
           />
           <span className="text-muted-foreground">-</span>
           <Input
             type="date"
-            className="w-[140px]"
+            className="w-full md:w-[140px]"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
           />
@@ -178,7 +178,7 @@ export function QuotationList() {
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : quotations.length === 0 ? (
-          <div className="text-center p-12 border-2 border-dashed rounded-lg">
+          <div className="rounded-lg border-2 border-dashed p-6 text-center sm:p-12">
             <h3 className="text-lg font-semibold mb-2">No quotations found</h3>
             <p className="text-muted-foreground mb-4">
               {search || status !== 'ALL'
@@ -190,8 +190,8 @@ export function QuotationList() {
             )}
           </div>
         ) : (
-          <div className="border rounded-md overflow-hidden bg-background">
-            <table className="w-full text-sm text-left">
+          <div className="overflow-x-auto rounded-md border bg-background">
+            <table className="w-full min-w-[820px] text-left text-sm">
               <thead className="bg-muted/50 border-b">
                 <tr>
                   <th
@@ -294,7 +294,7 @@ export function QuotationList() {
             </table>
 
             {total > limit && (
-              <div className="p-4 flex items-center justify-between border-t bg-muted/20">
+              <div className="flex flex-col gap-3 border-t bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-sm text-muted-foreground">
                   Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total}
                 </span>

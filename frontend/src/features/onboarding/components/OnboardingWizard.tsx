@@ -104,33 +104,33 @@ export function OnboardingWizard() {
   const CurrentStepComponent = steps[currentStep].component
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-2xl shadow-lg">
-        <CardHeader>
-          <div className="flex justify-between items-center mb-2">
+    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-2 sm:p-4">
+      <Card className="max-h-[calc(100vh-1rem)] w-full max-w-2xl overflow-y-auto shadow-lg sm:max-h-[calc(100vh-2rem)]">
+        <CardHeader className="p-4 sm:p-6">
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm font-medium text-muted-foreground">
               Step {currentStep + 1} of {steps.length}
             </span>
-            <div className="flex gap-1">
+            <div className="flex min-w-0 gap-1" aria-label="Setup progress">
               {steps.map((_, i) => (
                 <div
                   key={i}
-                  className={`h-2 w-8 rounded-full transition-colors ${i <= currentStep ? 'bg-primary' : 'bg-muted'}`}
+                  className={`h-2 min-w-0 flex-1 rounded-full transition-colors sm:w-8 sm:flex-none ${i <= currentStep ? 'bg-primary' : 'bg-muted'}`}
                 />
               ))}
             </div>
           </div>
-          <CardTitle className="text-2xl">{steps[currentStep].title}</CardTitle>
+          <CardTitle className="text-xl sm:text-2xl">{steps[currentStep].title}</CardTitle>
           <CardDescription>Set up your workspace to get started</CardDescription>
         </CardHeader>
 
         <Form {...form}>
           <form onSubmit={(e) => e.preventDefault()}>
-            <CardContent className="min-h-[300px]">
+            <CardContent className="min-h-[260px] p-4 pt-0 sm:min-h-[300px] sm:p-6 sm:pt-0">
               <CurrentStepComponent form={form} />
             </CardContent>
 
-            <CardFooter className="flex justify-between border-t p-6">
+            <CardFooter className="flex flex-wrap justify-between gap-3 border-t p-4 sm:p-6">
               <Button
                 type="button"
                 variant="outline"

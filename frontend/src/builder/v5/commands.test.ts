@@ -82,7 +82,21 @@ describe('V5 document commands', () => {
       column_count: 2,
       row_height_mm: 9,
     })
+    const narrower = {
+      ...next,
+      column_count: 1,
+      headers: next.headers.slice(0, 1),
+      rows: next.rows.map((row) => row.slice(0, 1)),
+      column_widths: next.column_widths.slice(0, 1),
+    }
+    session.execute(updateTableContent('table', narrower))
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.width).toBe(
+      narrower.column_widths[0],
+    )
     session.undo()
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.width).toBe(
+      next.column_widths.reduce((total, width) => total + width, 0),
+    )
     expect(session.getSnapshot().document.root.pages[0].children[0].geometry.height).toBe(
       tableHeightDU(table),
     )

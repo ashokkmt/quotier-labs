@@ -98,8 +98,8 @@ export function SectionLibrary() {
   if (isCreating || editingId) {
     const activeSection = editingId ? sections.find((s) => s.id === editingId) : null
     return (
-      <div className="max-w-4xl mx-auto py-6">
-        <div className="mb-6 flex items-center gap-4">
+      <div className="mx-auto max-w-4xl py-3 sm:py-6">
+        <div className="mb-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
           <Button
             variant="outline"
             onClick={() => {
@@ -109,7 +109,7 @@ export function SectionLibrary() {
           >
             Back to Library
           </Button>
-          <h2 className="text-2xl font-bold font-heading">
+          <h2 className="font-heading text-xl font-bold sm:text-2xl">
             {activeSection
               ? activeSection.is_builtin
                 ? 'View Section'
@@ -117,7 +117,7 @@ export function SectionLibrary() {
               : 'New Section Definition'}
           </h2>
         </div>
-        <Card className="p-6">
+        <Card className="p-4 sm:p-6">
           <SectionForm
             initialData={activeSection}
             isBuiltin={activeSection?.is_builtin}
@@ -133,22 +133,22 @@ export function SectionLibrary() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-6 space-y-6 pb-12">
-      <div className="flex justify-between items-center">
+    <div className="mx-auto max-w-5xl space-y-6 py-3 pb-12 sm:py-6">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-heading font-bold flex items-center gap-2">
-            <Library className="w-8 h-8 text-primary" /> Section Library
+          <h1 className="flex items-center gap-2 font-heading text-2xl font-bold sm:text-3xl">
+            <Library className="h-7 w-7 text-primary sm:h-8 sm:w-8" /> Section Library
           </h1>
           <p className="text-muted-foreground mt-1">
             Manage reusable section blueprints for your templates.
           </p>
         </div>
-        <Button onClick={() => setIsCreating(true)}>
+        <Button className="w-full sm:w-auto" onClick={() => setIsCreating(true)}>
           <Plus className="w-4 h-4 mr-2" /> New Section
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 max-w-sm">
+      <div className="flex w-full max-w-sm items-center gap-2">
         <Search className="w-4 h-4 text-muted-foreground absolute ml-3" />
         <Input
           placeholder="Search sections..."

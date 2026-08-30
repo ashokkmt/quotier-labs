@@ -140,11 +140,17 @@ export function CustomerForm({ initialData, onSubmit, onCancel, isSubmitting }: 
           )}
         />
 
-        <div className="flex justify-end gap-2 pt-4">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+        <div className="flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:justify-end">
+          <Button
+            className="w-full sm:w-auto"
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button className="w-full sm:w-auto" type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Saving...' : 'Save Customer'}
           </Button>
         </div>

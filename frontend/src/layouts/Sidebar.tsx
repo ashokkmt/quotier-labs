@@ -29,17 +29,17 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     <div
       className={cn(
         'flex flex-col h-full border-r bg-card transition-all duration-300',
-        collapsed ? 'w-[80px]' : 'w-[240px]',
+        collapsed ? 'w-14 sm:w-[80px]' : 'w-[240px]',
       )}
     >
-      <div className="flex h-14 items-center px-4 border-b">
+      <div className="flex h-12 items-center px-2 border-b sm:h-14 sm:px-4">
         <div className="font-heading font-bold text-lg text-primary truncate">
           {collapsed ? 'QL' : 'Quotier Labs'}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-4">
-        <nav className="space-y-1 px-2">
+        <nav className="space-y-1 px-1 sm:px-2">
           {navigation.map((item) => (
             <NavLink
               key={item.name}

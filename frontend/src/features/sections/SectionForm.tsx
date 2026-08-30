@@ -34,8 +34,8 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2 sm:col-span-1">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-1">
           <label className="text-sm font-medium mb-1 block">Section Name</label>
           <Input
             required
@@ -44,7 +44,7 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
             disabled={isBuiltin}
           />
         </div>
-        <div className="col-span-2 sm:col-span-1">
+        <div className="sm:col-span-1">
           <label className="text-sm font-medium mb-1 block">Category</label>
           <Input
             value={category}
@@ -52,7 +52,7 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
             disabled={isBuiltin}
           />
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <label className="text-sm font-medium mb-1 block">Description</label>
           <Textarea
             value={description}
@@ -78,7 +78,7 @@ export function SectionForm({ initialData, onSubmit, onCancel, isBuiltin }: any)
         </div>
       </div>
 
-      <div className="flex justify-end gap-2 pt-4 border-t">
+      <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={onCancel}>
           {isBuiltin ? 'Close' : 'Cancel'}
         </Button>

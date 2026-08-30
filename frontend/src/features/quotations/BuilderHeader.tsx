@@ -21,22 +21,25 @@ export function BuilderHeader({
   if (!quotation) return null
 
   return (
-    <div className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10 shadow-sm">
-      <div className="flex items-center gap-4 flex-1">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back
+    <div className="sticky top-0 z-30 flex max-h-[42vh] flex-wrap items-center gap-2 overflow-y-auto border-b bg-background p-2 shadow-sm sm:p-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
+          <ArrowLeft className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Back</span>
         </Button>
-        <div className="h-6 w-px bg-border" />
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="hidden h-6 w-px bg-border sm:block" />
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {undoRedoControls}
             {saveIndicator}
-            <h2 className="font-bold text-lg">{quotation.number || 'Draft'}</h2>
+            <h2 className="max-w-48 truncate text-sm font-bold sm:text-lg">
+              {quotation.number || 'Draft'}
+            </h2>
             <StatusBadge status={quotation.status} />
           </div>
         </div>
-        <div className="h-6 w-px bg-border ml-2" />
-        <div className="w-[300px] ml-2">
+        <div className="hidden h-6 w-px bg-border lg:block" />
+        <div className="order-last w-full min-w-0 sm:w-64 lg:order-none lg:w-[300px]">
           {readOnly ? (
             <div className="text-sm font-medium">Customer ID: {quotation.customer_id}</div> // Simplified for view mode
           ) : (
@@ -45,8 +48,8 @@ export function BuilderHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onToggleReadOnly}>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onToggleReadOnly} className="shrink-0">
           {readOnly ? (
             <>
               <Edit2 className="w-4 h-4 mr-2" /> Edit Mode

@@ -53,7 +53,7 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="space-y-6">
       {!preview ? (
-        <div className="text-center p-12 border-2 border-dashed rounded-lg bg-muted/20">
+        <div className="rounded-lg border-2 border-dashed bg-muted/20 p-6 text-center sm:p-12">
           <FileUp className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-semibold mb-2">Import Customers</h3>
           <p className="text-muted-foreground mb-4">Select a CSV file to import customers.</p>
@@ -61,14 +61,14 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center justify-between border-b pb-4">
+          <div className="flex flex-col items-start justify-between gap-3 border-b pb-4 sm:flex-row sm:items-center">
             <div>
               <h3 className="font-semibold text-lg">Preview Data</h3>
               <p className="text-sm text-muted-foreground">
                 Found {preview.total} rows ({preview.valid} valid to import)
               </p>
             </div>
-            <Button variant="outline" onClick={() => setPreview(null)}>
+            <Button className="w-full sm:w-auto" variant="outline" onClick={() => setPreview(null)}>
               Change File
             </Button>
           </div>

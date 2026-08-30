@@ -8,7 +8,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div>
-        <h1 className="text-3xl font-heading font-bold">Dashboard</h1>
+        <h1 className="text-2xl font-heading font-bold sm:text-3xl">Dashboard</h1>
         <p className="text-muted-foreground mt-1">Welcome to Quotier Labs</p>
       </div>
 

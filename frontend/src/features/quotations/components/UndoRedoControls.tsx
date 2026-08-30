@@ -13,7 +13,7 @@ export function UndoRedoControls({
   canRedo: boolean
 }) {
   return (
-    <div className="flex items-center gap-1 border-r pr-2 mr-2">
+    <div className="mr-1 flex shrink-0 items-center gap-1 border-r pr-1 sm:mr-2 sm:pr-2">
       <Button variant="ghost" size="icon" onClick={onUndo} disabled={!canUndo} title="Undo (⌘Z)">
         <Undo className="w-4 h-4" />
       </Button>

@@ -1,4 +1,5 @@
 import type { CSSProperties, PointerEvent } from 'react'
+import { Lock } from 'lucide-react'
 import type { Bounds } from './geometry'
 import type { ResizeHandle } from './commands'
 
@@ -36,6 +37,7 @@ export function SelectionOverlay({
   canRotate = false,
   measurement,
   kind = 'single',
+  locked = false,
 }: {
   bounds: Bounds
   rotation?: number
@@ -45,6 +47,7 @@ export function SelectionOverlay({
   canRotate?: boolean
   measurement?: SelectionMeasurement | null
   kind?: 'single' | 'union'
+  locked?: boolean
 }) {
   const style: CSSProperties = {
     position: 'absolute',
@@ -64,7 +67,16 @@ export function SelectionOverlay({
       data-v5-selection
       style={style}
     >
-      {canRotate && onRotatePointerDown && (
+      {locked && (
+        <span
+          aria-label="Locked selection"
+          className="absolute left-1/2 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border border-primary bg-background text-primary shadow-sm"
+          style={{ top: -34, pointerEvents: 'none' }}
+        >
+          <Lock className="h-3.5 w-3.5" aria-hidden />
+        </span>
+      )}
+      {!locked && canRotate && onRotatePointerDown && (
         <button
           type="button"
           aria-label="Rotate selection"
@@ -77,7 +89,7 @@ export function SelectionOverlay({
           </span>
         </button>
       )}
-      {canRotate && (
+      {!locked && canRotate && (
         <span
           aria-hidden
           className="absolute left-1/2 h-3 -translate-x-1/2 border-l border-primary/70"

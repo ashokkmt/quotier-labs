@@ -409,7 +409,7 @@ func fillTextStory(ctx context.Context, layout *Layout, doc *documentmodel.Docum
 		return remaining == ""
 	}, input, m)
 	if remaining != "" {
-		layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_story", NodeID: storyID, Message: "story content does not fit its available flow frames"})
+		layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_story", NodeID: firstFrameID(layout, storyID), Message: "Text continues beyond its available frame. Enlarge the frame or shorten the text."})
 	}
 }
 
@@ -468,8 +468,21 @@ func fillTableStory(ctx context.Context, layout *Layout, doc *documentmodel.Docu
 		return row >= len(table.Rows)
 	}, input, m)
 	if row < len(table.Rows) {
-		layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_table", NodeID: story.ID, Message: "table rows do not fit their available flow frames"})
+		layout.Diagnostics = append(layout.Diagnostics, Diagnostic{Code: "overset_table", NodeID: firstFrameID(layout, story.ID), Message: "Table rows continue beyond the available page area. Enlarge the table or add page capacity."})
 	}
+}
+
+// Diagnostics select canvas nodes, not story records. A story is content-only state and cannot
+// be focused by the editor, so point an overset warning at its first authored frame.
+func firstFrameID(layout *Layout, storyID string) string {
+	for _, page := range layout.Pages {
+		for _, box := range page.Boxes {
+			if box.StoryID == storyID && box.ID != "" {
+				return box.ID
+			}
+		}
+	}
+	return storyID
 }
 
 // tableFragment returns the fragment for the next rows of a table inside a frame and the next

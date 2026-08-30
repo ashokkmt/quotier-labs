@@ -20,6 +20,7 @@ export function CustomerList() {
   const [customers, setCustomers] = useState<customer.CustomerDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingCustomer, setEditingCustomer] = useState<customer.CustomerDTO | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
@@ -58,18 +59,24 @@ export function CustomerList() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+    <div className="mx-auto max-w-5xl space-y-5 pb-12 sm:space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-heading font-bold">Customers</h1>
+          <h1 className="text-2xl font-heading font-bold sm:text-3xl">Customers</h1>
           <p className="text-muted-foreground mt-1">Manage your clients and billing details.</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button
+          className="w-full sm:w-auto"
+          onClick={() => {
+            setEditingCustomer(null)
+            setDialogOpen(true)
+          }}
+        >
           <Plus className="w-4 h-4 mr-2" /> Add Customer
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 max-w-sm">
+      <div className="flex max-w-sm items-center gap-2">
         <Search className="w-4 h-4 text-muted-foreground absolute ml-3" />
         <Input placeholder="Search customers..." className="pl-9" />
       </div>
@@ -89,11 +96,18 @@ export function CustomerList() {
           <p className="text-muted-foreground mb-4">
             Add your first customer to start creating quotations.
           </p>
-          <Button onClick={() => setDialogOpen(true)}>Add Customer</Button>
+          <Button
+            onClick={() => {
+              setEditingCustomer(null)
+              setDialogOpen(true)
+            }}
+          >
+            Add Customer
+          </Button>
         </Card>
       ) : (
-        <div className="bg-card border rounded-md overflow-hidden">
-          <table className="w-full text-sm text-left">
+        <div className="overflow-x-auto rounded-md border bg-card">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
               <tr>
                 <th className="px-6 py-3 font-medium">Name / Company</th>
@@ -125,7 +139,10 @@ export function CustomerList() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          onClick={() => alert('Edit not implemented fully for MVP inline')}
+                          onClick={() => {
+                            setEditingCustomer(c)
+                            setDialogOpen(true)
+                          }}
                         >
                           <Pencil className="w-4 h-4 mr-2" /> Edit
                         </DropdownMenuItem>
@@ -148,7 +165,11 @@ export function CustomerList() {
       {dialogOpen && (
         <CustomerCreateDialog
           open={dialogOpen}
-          onOpenChange={setDialogOpen}
+          customer={editingCustomer}
+          onOpenChange={(open) => {
+            setDialogOpen(open)
+            if (!open) setEditingCustomer(null)
+          }}
           onSuccess={() => {
             setDialogOpen(false)
             loadCustomers()

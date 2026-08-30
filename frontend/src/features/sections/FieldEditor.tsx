@@ -56,7 +56,7 @@ export function FieldEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium">Fields</h3>
         <Button type="button" variant="outline" size="sm" onClick={addField} disabled={readOnly}>
           <Plus className="w-4 h-4 mr-2" /> Add Field
@@ -69,30 +69,28 @@ export function FieldEditor({
             f.element_type === 'Field' && (
               <div
                 key={f.field.id}
-                className="flex items-center gap-3 p-3 border rounded-md bg-card group"
+                className="group flex flex-col gap-3 rounded-md border bg-card p-3 sm:flex-row sm:items-center"
               >
                 <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab opacity-50 group-hover:opacity-100" />
-                <div className="grid grid-cols-4 gap-3 flex-1">
+                <div className="grid w-full flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Input
                     placeholder="Field ID"
                     value={f.field.id}
                     onChange={(e) => updateField(i, 'id', e.target.value)}
                     disabled={readOnly}
-                    className="col-span-1"
                   />
                   <Input
                     placeholder="Label"
                     value={f.field.label}
                     onChange={(e) => updateField(i, 'label', e.target.value)}
                     disabled={readOnly}
-                    className="col-span-1"
                   />
                   <Select
                     value={f.field.type}
                     onValueChange={(val) => updateField(i, 'type', val)}
                     disabled={readOnly}
                   >
-                    <SelectTrigger className="col-span-1">
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -103,7 +101,7 @@ export function FieldEditor({
                       ))}
                     </SelectContent>
                   </Select>
-                  <div className="flex items-center justify-between col-span-1 px-2">
+                  <div className="flex items-center justify-between px-2">
                     <div className="flex items-center gap-2">
                       <Checkbox
                         id={`req-${f.field.id}`}

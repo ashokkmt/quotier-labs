@@ -110,7 +110,7 @@ function DiagnosticsBanner({
         type="button"
         aria-expanded={open}
         aria-label={`${diagnostics.length || 1} document ${diagnostics.length === 1 ? 'issue' : 'issues'}`}
-        className="absolute bottom-3 left-3 z-20 flex h-8 items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 text-xs text-amber-950 shadow-sm hover:bg-amber-100"
+        className="absolute bottom-3 left-3 z-20 flex h-8 items-center gap-2 rounded-lg border border-amber-400/70 bg-amber-50 px-2 text-xs text-amber-950 shadow-sm hover:bg-amber-100 dark:border-amber-400/50 dark:bg-amber-300/15 dark:text-amber-100 dark:hover:bg-amber-300/20"
         onClick={() => setOpen((value) => !value)}
       >
         <AlertTriangle className="h-4 w-4" />
@@ -119,7 +119,7 @@ function DiagnosticsBanner({
       {open && (
         <section
           aria-label="Document issues"
-          className="absolute bottom-14 left-3 z-30 max-h-72 w-80 overflow-auto rounded-lg border bg-background p-2 shadow-xl"
+          className="absolute bottom-14 left-3 z-30 max-h-72 w-[min(20rem,calc(100%-1.5rem))] overflow-auto rounded-lg border bg-background p-2 shadow-xl"
         >
           <div className="mb-1 flex items-center justify-between px-1">
             <h3 className="text-sm font-medium">Document issues</h3>

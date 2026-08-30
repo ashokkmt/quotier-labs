@@ -708,14 +708,15 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
           className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
           onClick={() => {
             const count = draft.column_count + 1
+            const averageWidth = Math.round(
+              draft.column_widths.reduce((sum, width) => sum + width, 0) / draft.column_count,
+            )
             commit({
               ...draft,
               column_count: count,
               headers: [...draft.headers, ''],
               rows: draft.rows.map((row) => [...row, '']),
-              column_widths: Array.from({ length: count }, () =>
-                Math.round(node.geometry.width / count),
-              ),
+              column_widths: [...draft.column_widths, averageWidth],
             })
           }}
         >
@@ -732,9 +733,7 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
               column_count: count,
               headers: draft.headers.slice(0, count),
               rows: draft.rows.map((row) => row.slice(0, count)),
-              column_widths: Array.from({ length: count }, () =>
-                Math.round(node.geometry.width / count),
-              ),
+              column_widths: draft.column_widths.slice(0, count),
             })
           }}
         >

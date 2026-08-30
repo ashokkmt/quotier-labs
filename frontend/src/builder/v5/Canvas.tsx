@@ -408,7 +408,7 @@ function TableEditor({
         width: node.geometry.width * zoom,
         height: node.geometry.height * zoom,
         display: 'grid',
-        gridTemplateColumns: `repeat(${table.column_count}, minmax(0, 1fr))`,
+        gridTemplateColumns: table.column_widths.map((width) => `${width * zoom}px`).join(' '),
         gridAutoRows: rowHeight,
         transform: node.geometry.rotation
           ? `rotate(${node.geometry.rotation / 100}deg)`
@@ -431,7 +431,7 @@ function TableEditor({
             aria-label={`${row.header ? 'Header' : `Row ${rowIndex - (table.header_enabled ? 1 : 0) + 1}`}, column ${columnIndex + 1}`}
             autoFocus={rowIndex === 0 && columnIndex === 0}
             value={row.values[columnIndex] ?? ''}
-            className={`min-w-0 border-b border-r border-gray-300 bg-white px-1 outline-none focus:z-10 focus:ring-2 focus:ring-primary ${row.header ? 'font-semibold bg-gray-50' : ''}`}
+            className={`min-w-0 border-b border-r border-gray-300 bg-white px-1 text-gray-900 placeholder:text-gray-400 outline-none focus:z-10 focus:ring-2 focus:ring-primary ${row.header ? 'font-semibold bg-gray-50' : ''}`}
             style={{ fontSize: ptToPx(8, zoom) }}
             onChange={(event) => {
               const value = event.target.value
@@ -1379,7 +1379,10 @@ export function V5Canvas() {
     const additive = event.shiftKey
     const cycling = event.metaKey || event.ctrlKey
     if (isEffectivelyLocked(document, node.id)) {
-      // Locked objects are skipped by interaction; a click shows restricted selection via Layers only.
+      // A locked object can still be selected and inspected. It never starts a move gesture;
+      // the selection overlay replaces rotation with a lock badge so the restriction is clear
+      // without emitting an error on every drag attempt.
+      session.selectNode(node.id, additive)
       return
     }
     if (cycling) {
@@ -1396,13 +1399,16 @@ export function V5Canvas() {
     const alreadySelected = session.selectedNodeIds.includes(node.id)
     const toggleOnClick = additive && alreadySelected
     if (!toggleOnClick) session.selectNode(node.id, additive)
-    const ids = additive
+    const candidateIds = additive
       ? alreadySelected
         ? session.selectedNodeIds
         : [...session.selectedNodeIds, node.id]
       : alreadySelected
         ? session.selectedNodeIds
         : [node.id]
+    // Locked members remain selected for inspection but are silently excluded from direct
+    // manipulation. Their lock badge already explains why they stay in place.
+    const ids = candidateIds.filter((id) => !isEffectivelyLocked(document, id))
     if (!ids.length) return
     event.currentTarget.setPointerCapture(event.pointerId)
     setGesture({
@@ -2014,8 +2020,10 @@ export function V5Canvas() {
       const amount = event.shiftKey ? 1000 : 100
       const dx = key === 'ArrowLeft' ? -amount : key === 'ArrowRight' ? amount : 0
       const dy = key === 'ArrowUp' ? -amount : key === 'ArrowDown' ? amount : 0
+      const movableIds = session.selectedNodeIds.filter((id) => !isEffectivelyLocked(document, id))
+      if (movableIds.length === 0) return
       try {
-        session.execute(nudgeNodes(session.selectedNodeIds, dx, dy))
+        session.execute(nudgeNodes(movableIds, dx, dy))
       } catch (error) {
         reportError(error, 'The selection cannot be moved.')
       }
@@ -2232,12 +2240,13 @@ export function V5Canvas() {
             run: () => {
               const table = normalizeTableData(story.content)
               if (table.column_count >= 12) return
+              const averageWidth = Math.round(
+                table.column_widths.reduce((sum, width) => sum + width, 0) / table.column_count,
+              )
               table.column_count += 1
               table.headers.push('')
               table.rows = table.rows.map((row) => [...row, ''])
-              table.column_widths = Array.from({ length: table.column_count }, () =>
-                du(primary.geometry.width / table.column_count),
-              )
+              table.column_widths.push(averageWidth)
               session.execute(updateTableContent(primary.id, table))
             },
           })
@@ -2559,7 +2568,7 @@ export function V5Canvas() {
       ref={hostRef}
       data-v5-canvas
       tabIndex={0}
-      className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-slate-200 outline-none"
+      className="relative min-h-0 min-w-0 flex-1 overflow-auto outline-none"
       style={{
         cursor:
           panMode || session.tool === 'hand'
@@ -2689,7 +2698,7 @@ export function V5Canvas() {
           ) : null
         })()}
       <div
-        className="relative bg-slate-200"
+        className="v5-page-stack relative"
         style={{ width: contentSize.width, height: contentSize.height }}
       >
         {pages.map((page, pageIndex) => {
@@ -2861,13 +2870,8 @@ export function V5Canvas() {
                   onHandlePointerDown={beginResize}
                   onRotatePointerDown={beginRotate}
                   canRotate={!activeTransform && canRotate(primary)}
-                  measurement={
-                    selectionLocked
-                      ? { label: 'Locked', placement: 'bottom' }
-                      : badge
-                        ? { label: badge, placement: 'bottom' }
-                        : null
-                  }
+                  locked={selectionLocked}
+                  measurement={badge ? { label: badge, placement: 'bottom' } : null}
                 />
               )}
               {isActive && selectedNodes.length > 1 && (
@@ -3044,7 +3048,7 @@ export function V5Canvas() {
             data-v5-zoom-controls
             data-v5-editor-chrome
             onPointerDown={(event) => event.stopPropagation()}
-            className="pointer-events-auto z-50 flex items-center gap-0.5 rounded-lg border border-border/80 bg-background/95 p-1 text-xs shadow-lg backdrop-blur"
+            className="pointer-events-auto z-10 flex items-center gap-0.5 rounded-lg border border-border/80 bg-background/95 p-1 text-xs shadow-lg backdrop-blur"
             style={(() => {
               const rect = hostRef.current?.getBoundingClientRect()
               return {

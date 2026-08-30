@@ -70,7 +70,7 @@ export function TableEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium">Tables</h3>
         <Button type="button" variant="outline" size="sm" onClick={addTable} disabled={readOnly}>
           <Plus className="w-4 h-4 mr-2" /> Add Table
@@ -82,8 +82,8 @@ export function TableEditor({
           (f, i) =>
             f.element_type === 'Table' && (
               <div key={f.table.id} className="border rounded-md bg-card overflow-hidden">
-                <div className="bg-muted/50 p-3 border-b flex justify-between items-center">
-                  <div className="flex gap-2 w-full max-w-sm">
+                <div className="flex flex-col gap-3 border-b bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex w-full max-w-sm flex-col gap-2 sm:flex-row">
                     <Input
                       placeholder="Table ID"
                       value={f.table.id}
@@ -97,7 +97,7 @@ export function TableEditor({
                       disabled={readOnly}
                     />
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2">
                       <Checkbox
                         id={`totals-${f.table.id}`}
@@ -122,7 +122,7 @@ export function TableEditor({
                 </div>
 
                 <div className="p-3 space-y-2">
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-xs font-semibold text-muted-foreground uppercase">
                       Columns
                     </h4>
@@ -140,30 +140,28 @@ export function TableEditor({
                   {f.table.columns.map((col: any, cIdx: number) => (
                     <div
                       key={col.id}
-                      className="flex items-center gap-3 p-2 border rounded-sm group"
+                      className="group flex flex-col gap-3 rounded-sm border p-2 sm:flex-row sm:items-center"
                     >
                       <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab opacity-50 group-hover:opacity-100" />
-                      <div className="grid grid-cols-4 gap-3 flex-1">
+                      <div className="grid w-full flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                         <Input
                           placeholder="Column ID"
                           value={col.id}
                           onChange={(e) => updateColumn(i, cIdx, 'id', e.target.value)}
                           disabled={readOnly}
-                          className="col-span-1"
                         />
                         <Input
                           placeholder="Label"
                           value={col.label}
                           onChange={(e) => updateColumn(i, cIdx, 'label', e.target.value)}
                           disabled={readOnly}
-                          className="col-span-1"
                         />
                         <Select
                           value={col.type}
                           onValueChange={(val) => updateColumn(i, cIdx, 'type', val)}
                           disabled={readOnly}
                         >
-                          <SelectTrigger className="col-span-1">
+                          <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -174,7 +172,7 @@ export function TableEditor({
                             ))}
                           </SelectContent>
                         </Select>
-                        <div className="flex items-center justify-between col-span-1">
+                        <div className="flex items-center justify-between">
                           {col.type === 'Computed' ? (
                             <Input
                               placeholder="Formula"

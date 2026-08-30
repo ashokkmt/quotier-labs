@@ -87,11 +87,11 @@ export function AppLayout() {
       <Toaster />
       <Sidebar collapsed={isNarrow} />
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-14 border-b flex items-center justify-end px-4 shrink-0 bg-card">
+      <main className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
+        <header className="flex h-12 shrink-0 items-center justify-end border-b bg-card px-2 sm:h-14 sm:px-4">
           <ThemeToggle />
         </header>
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-3 sm:p-6">
           <Outlet />
         </div>
       </main>

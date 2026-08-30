@@ -99,15 +99,15 @@ export function TemplateList() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-6 space-y-6 pb-12">
-      <div className="flex justify-between items-center">
+    <div className="mx-auto max-w-5xl space-y-5 py-3 pb-12 sm:space-y-6 sm:py-6">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-heading font-bold flex items-center gap-2">
-            <LayoutTemplate className="w-8 h-8 text-primary" /> Templates
+          <h1 className="flex items-center gap-2 text-2xl font-heading font-bold sm:text-3xl">
+            <LayoutTemplate className="h-7 w-7 text-primary sm:h-8 sm:w-8" /> Templates
           </h1>
           <p className="text-muted-foreground mt-1">Manage quotation layouts and designs.</p>
         </div>
-        <Button onClick={handleCreate}>
+        <Button className="w-full sm:w-auto" onClick={handleCreate}>
           <Plus className="w-4 h-4 mr-2" /> Blank Template
         </Button>
       </div>
@@ -148,7 +148,7 @@ export function TemplateList() {
               <div className="text-xs text-muted-foreground mb-4">
                 Version: {t.current_version || 1}
               </div>
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
                 <Button size="sm" onClick={() => handleCreateQuotation(t.id)}>
                   Use
                 </Button>

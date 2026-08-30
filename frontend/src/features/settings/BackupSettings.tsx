@@ -69,7 +69,7 @@ export function BackupSettings() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="border rounded-lg p-6 space-y-4 bg-card">
+        <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
           <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary mb-2">
             <Download className="w-6 h-6" />
           </div>
@@ -83,7 +83,7 @@ export function BackupSettings() {
           </Button>
         </div>
 
-        <div className="border rounded-lg p-6 space-y-4 bg-card">
+        <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
           <div className="w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center text-destructive mb-2">
             <Upload className="w-6 h-6" />
           </div>
@@ -103,12 +103,12 @@ export function BackupSettings() {
         </div>
       </div>
 
-      <div className="border rounded-lg p-6 bg-card space-y-4">
+      <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
         <h3 className="text-lg font-semibold">Export Data (CSV)</h3>
         <p className="text-sm text-muted-foreground">
           Export your data to CSV format for external use.
         </p>
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
           <Button
             variant="outline"
             onClick={async () => {
@@ -142,7 +142,7 @@ export function BackupSettings() {
         </div>
       </div>
 
-      <div className="border rounded-lg p-6 bg-muted/30">
+      <div className="rounded-lg border bg-muted/30 p-4 sm:p-6">
         <div className="flex items-start gap-4">
           <ShieldCheck className="w-6 h-6 text-primary mt-1" />
           <div>
