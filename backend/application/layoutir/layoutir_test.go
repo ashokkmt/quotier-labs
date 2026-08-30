@@ -121,6 +121,21 @@ func TestResolveTableStoryCreatesHeaderedFragment(t *testing.T) {
 	}
 }
 
+func TestResolveBlankHeaderlessTableUsesConfiguredDimensions(t *testing.T) {
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Stories: []documentmodel.Story{{ID: "table", Kind: "table", Content: []byte(`{"headers":["",""],"rows":[["hello","world"],["",""]],"column_count":2,"header_enabled":false,"repeat_header":false,"row_height_mm":8,"column_widths":[16000,16000]}`)}}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"frame"}, Children: []documentmodel.Node{{ID: "frame", Kind: "flow-frame", Role: "flow-frame", StoryID: "table", Geometry: documentmodel.Geometry{Width: 32000, Height: 4536}, LayoutMode: "flow-frame", Visibility: "shown"}}}}}}
+	layout, err := Resolve(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragment := layout.Pages[0].Boxes[0].Table
+	if fragment == nil || fragment.HeaderEnabled || fragment.ColumnCount != 2 || fragment.RowHeightMM != 8 || len(fragment.Rows) != 2 {
+		t.Fatalf("unexpected generic table fragment %#v", fragment)
+	}
+	if len(fragment.ColumnWidthsMM) != 2 || math.Abs(fragment.ColumnWidthsMM[0]-fragment.ColumnWidthsMM[1]) > 0.001 {
+		t.Fatalf("unexpected column widths %#v", fragment.ColumnWidthsMM)
+	}
+}
+
 func TestResolveIsDeterministic(t *testing.T) {
 	doc := &documentmodel.Document{
 		SchemaVersion: documentmodel.SchemaVersion,

@@ -11,6 +11,7 @@ import {
   distributeNodes,
   groupNodes,
   insertNode,
+  insertStoryFrame,
   deleteNode,
   moveNodes,
   reorderExtreme,
@@ -23,10 +24,13 @@ import {
   setNodeLocked,
   ungroupNode,
   updateNodeGeometry,
+  updateNodeProps,
+  updateTableContent,
 } from './commands'
 import { V5Session } from './store'
 import { du } from './model'
 import { bounds, corners } from './geometry'
+import { createBlankTable, tableHeightDU } from './table'
 
 const node = (id: string) => ({
   id,
@@ -40,6 +44,50 @@ const node = (id: string) => ({
 })
 
 describe('V5 document commands', () => {
+  it('preserves authored text case and whitespace exactly', () => {
+    const session = new V5Session(emptyV5Fixture())
+    session.execute(insertNode('page-1', { ...node('text'), props: { text: 'Heading' } }))
+    session.execute(updateNodeProps('text', { text: '  hello\nworld  ' }))
+    expect(session.getSnapshot().document.root.pages[0].children[0].props?.text).toBe(
+      '  hello\nworld  ',
+    )
+  })
+
+  it('updates blank table structure and derived height atomically', () => {
+    const session = new V5Session(emptyV5Fixture())
+    const table = createBlankTable(2, 2, 32000)
+    session.execute(
+      insertStoryFrame(
+        'page-1',
+        {
+          id: 'table',
+          kind: 'flow-frame',
+          role: 'flow-frame',
+          story_id: 'story',
+          geometry: { x: 0, y: 0, width: 32000, height: tableHeightDU(table), rotation: 0 },
+          layout_mode: 'flow-frame',
+          locked: false,
+          visibility: 'shown',
+          optional: false,
+        },
+        { id: 'story', kind: 'table', content: table },
+      ),
+    )
+    const next = { ...table, rows: [...table.rows, ['', '']], row_height_mm: 9 }
+    session.execute(updateTableContent('table', next))
+    const snapshot = session.getSnapshot()
+    expect(snapshot.document.root.pages[0].children[0].geometry.height).toBe(tableHeightDU(next))
+    expect(snapshot.document.stories?.[0].content).toMatchObject({
+      header_enabled: false,
+      column_count: 2,
+      row_height_mm: 9,
+    })
+    session.undo()
+    expect(session.getSnapshot().document.root.pages[0].children[0].geometry.height).toBe(
+      tableHeightDU(table),
+    )
+  })
+
   it('supports insert, reorder, geometry, lock, delete and exact undo', () => {
     const session = new V5Session(emptyV5Fixture())
     session.execute(insertNode('page-1', node('a')))

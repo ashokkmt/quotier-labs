@@ -64,7 +64,42 @@ export function validateV5(document: unknown): string | null {
     return 'at least one page is required'
   if (d.settings?.page_size !== 'A4' || !['portrait', 'landscape'].includes(d.settings.orientation))
     return 'settings must describe A4 orientation'
-  const stories = new Set((d.stories ?? []).map((s) => s.id))
+  const stories = new Set<string>()
+  for (const story of d.stories ?? []) {
+    if (!story.id || stories.has(story.id)) return 'duplicate or empty story id'
+    if (story.kind !== 'rich-text' && story.kind !== 'table') return `unknown story ${story.id}`
+    if (story.kind === 'table') {
+      const value = story.content as {
+        headers?: unknown
+        rows?: unknown
+        column_count?: unknown
+        row_height_mm?: unknown
+        column_widths?: unknown
+      }
+      const headers = Array.isArray(value?.headers) ? value.headers : []
+      const rows = Array.isArray(value?.rows) ? value.rows : []
+      const columns = Math.max(
+        Number(value?.column_count ?? 0),
+        headers.length,
+        ...rows.map((row) => (Array.isArray(row) ? row.length : 0)),
+      )
+      if (rows.length < 1 || rows.length > 500) return `invalid table rows: ${story.id}`
+      if (columns < 1 || columns > 12) return `invalid table columns: ${story.id}`
+      if (
+        value.row_height_mm !== undefined &&
+        (Number(value.row_height_mm) < 5 || Number(value.row_height_mm) > 30)
+      )
+        return `invalid table row height: ${story.id}`
+      if (
+        Array.isArray(value.column_widths) &&
+        value.column_widths.length !== 0 &&
+        (value.column_widths.length !== columns ||
+          value.column_widths.some((width) => Number(width) <= 0))
+      )
+        return `invalid table column widths: ${story.id}`
+    }
+    stories.add(story.id)
+  }
   const masterIds = new Set((d.root.masters ?? []).map((m) => m.id))
   const ids = new Set<string>()
   let count = 0

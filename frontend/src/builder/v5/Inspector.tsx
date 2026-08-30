@@ -25,7 +25,7 @@ import {
   setNodesVisibility,
   updateNodeGeometry,
   updateNodeProps,
-  updateStoryContent,
+  updateTableContent,
 } from './commands'
 import {
   V5_COLOR_TOKENS,
@@ -41,6 +41,19 @@ import { ancestorChain, findNode, isEffectivelyLocked } from './selectors'
 import { getV5Widget } from './registry'
 import { du, type V5Node } from './model'
 import { readValidatedImage } from './imageAssets'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  normalizeTableData,
+  TABLE_DEFAULT_ROW_HEIGHT_MM,
+  TABLE_MIN_ROW_HEIGHT_MM,
+  type V5TableData,
+} from './table'
 
 const field =
   'h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50'
@@ -73,17 +86,19 @@ function BufferedText({
   label,
   disabled,
   onCommit,
+  exact = false,
 }: {
   value: string
   label: string
   disabled?: boolean
   onCommit: (value: string) => void
+  exact?: boolean
 }) {
   const [draft, setDraft] = useState(value)
   useEffect(() => setDraft(value), [value])
   const commit = () => {
-    const next = draft.trim()
-    if (next && next !== value) onCommit(next)
+    const next = exact ? draft : draft.trim()
+    if ((exact || next) && next !== value) onCommit(next)
     else setDraft(value)
   }
   return (
@@ -213,8 +228,23 @@ function SingleInspector({ node }: { node: V5Node }) {
   const effectivelyLocked = isEffectivelyLocked(session.document, node.id)
   const inheritedLock = effectivelyLocked && !node.locked
   const capability = node.role === 'group' ? null : getV5Widget(node.kind)
-  const commitGeometry = (patch: Partial<V5Node['geometry']>) =>
+  const tableStory = node.story_id
+    ? session.document.stories?.find(
+        (story) => story.id === node.story_id && story.kind === 'table',
+      )
+    : null
+  const commitGeometry = (patch: Partial<V5Node['geometry']>) => {
+    if (tableStory && patch.width) {
+      const table = normalizeTableData(tableStory.content)
+      const ratio = patch.width / node.geometry.width
+      table.column_widths = table.column_widths.map((width) =>
+        du((width || node.geometry.width / table.column_count) * ratio),
+      )
+      session.execute(updateTableContent(node.id, table, patch))
+      return
+    }
     session.execute(updateNodeGeometry(node.id, { ...node.geometry, ...patch }))
+  }
   return (
     <div aria-label="Properties" className="w-full overflow-y-auto px-4 py-2">
       <div className="flex h-10 items-center justify-between border-b">
@@ -266,8 +296,8 @@ function SingleInspector({ node }: { node: V5Node }) {
             label="H (mm)"
             value={toMM(node.geometry.height)}
             min={0.1}
-            auto={node.layout_mode === 'intrinsic'}
-            disabled={effectivelyLocked || capability?.canResizeY === false}
+            auto={node.layout_mode === 'intrinsic' || Boolean(tableStory)}
+            disabled={effectivelyLocked || capability?.canResizeY === false || Boolean(tableStory)}
             onCommit={(value) => commitGeometry({ height: fromMM(value) })}
           />
         </div>
@@ -377,21 +407,13 @@ function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
           disabled={disabled}
           onCommit={(value) => set({ fontSize: clampFontSize(value) })}
         />
-        <label className="text-xs text-muted-foreground">
-          Alignment
-          <select
-            className={`${field} mt-1`}
-            value={String(props.align ?? 'left')}
-            disabled={disabled}
-            onChange={(event) => set({ align: event.target.value })}
-          >
-            {V5_TEXT_ALIGNS.map((align) => (
-              <option key={align} value={align}>
-                {align}
-              </option>
-            ))}
-          </select>
-        </label>
+        <OptionSelect
+          label="Alignment"
+          value={String(props.align ?? 'left')}
+          options={[...V5_TEXT_ALIGNS]}
+          disabled={disabled}
+          onChange={(align) => set({ align })}
+        />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex h-8 items-center gap-2 rounded-md border px-2 text-xs">
@@ -436,19 +458,13 @@ function ShapeStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs text-muted-foreground">
-          Line style
-          <select
-            className={`${field} mt-1`}
-            disabled={disabled}
-            value={String(props.strokeStyle ?? 'solid')}
-            onChange={(event) => set({ strokeStyle: event.target.value })}
-          >
-            {V5_STROKE_STYLES.map((style) => (
-              <option key={style}>{style}</option>
-            ))}
-          </select>
-        </label>
+        <OptionSelect
+          label="Line style"
+          value={String(props.strokeStyle ?? 'solid')}
+          options={[...V5_STROKE_STYLES]}
+          disabled={disabled}
+          onChange={(strokeStyle) => set({ strokeStyle })}
+        />
         <BufferedNumber
           label="Width (pt)"
           value={Number(props.strokeWidth ?? 1)}
@@ -476,21 +492,71 @@ function ColorSelect({
   onChange: (value: string) => void
 }) {
   return (
+    <OptionSelect
+      label={label}
+      value={value}
+      options={[...(allowNone ? ['none'] : []), ...V5_COLOR_TOKENS]}
+      disabled={disabled}
+      onChange={onChange}
+      color
+    />
+  )
+}
+
+function OptionSelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+  color = false,
+}: {
+  label: string
+  value: string
+  options: string[]
+  disabled?: boolean
+  onChange: (value: string) => void
+  color?: boolean
+}) {
+  return (
     <label className="text-xs text-muted-foreground">
       {label}
-      <select
-        className={`${field} mt-1`}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {allowNone && <option value="none">None</option>}
-        {V5_COLOR_TOKENS.map((token) => (
-          <option key={token} value={token}>
-            {token}
-          </option>
-        ))}
-      </select>
+      <Select value={value} disabled={disabled} onValueChange={onChange}>
+        <SelectTrigger className="mt-1 h-8 bg-background text-xs" data-v5-editor-chrome>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent data-v5-editor-chrome>
+          {options.map((option) => (
+            <SelectItem key={option} value={option} className="capitalize">
+              <span className="flex items-center gap-2">
+                {color && (
+                  <span
+                    aria-hidden
+                    className="h-3 w-3 rounded-full border"
+                    style={{
+                      background:
+                        option === 'none'
+                          ? 'transparent'
+                          : option === 'black'
+                            ? '#111827'
+                            : option === 'gray'
+                              ? '#6b7280'
+                              : option === 'white'
+                                ? '#fff'
+                                : option === 'primary'
+                                  ? '#2563eb'
+                                  : option === 'danger'
+                                    ? '#dc2626'
+                                    : '#16a34a',
+                    }}
+                  />
+                )}
+                {option}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </label>
   )
 }
@@ -537,17 +603,17 @@ function ImageContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
   )
 }
 
-type TableData = { headers: string[]; rows: string[][] }
 function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) {
   const session = useV5Session()
   const story = session.document.stories?.find((candidate) => candidate.id === node.story_id)
-  const source = (story?.content ?? { headers: [], rows: [] }) as TableData
-  const [draft, setDraft] = useState<TableData>(() => JSON.parse(JSON.stringify(source)))
-  useEffect(() => setDraft(JSON.parse(JSON.stringify(source))), [story?.content])
+  const source = normalizeTableData(story?.content)
+  const [draft, setDraft] = useState<V5TableData>(() => structuredClone(source))
+  useEffect(() => setDraft(normalizeTableData(story?.content)), [story?.content])
   if (!story) return null
-  const commit = (next: TableData) => {
-    setDraft(next)
-    session.execute(updateStoryContent(story.id, next))
+  const commit = (next: V5TableData) => {
+    const normalized = normalizeTableData(next)
+    setDraft(normalized)
+    session.execute(updateTableContent(node.id, normalized))
   }
   return (
     <Section title="Table content">
@@ -555,7 +621,7 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
         <div
           className="grid min-w-[240px] gap-1"
           style={{
-            gridTemplateColumns: `repeat(${Math.max(1, draft.headers.length)}, minmax(72px, 1fr))`,
+            gridTemplateColumns: `repeat(${draft.column_count}, minmax(72px, 1fr))`,
           }}
         >
           {draft.headers.map((header, column) => (
@@ -564,6 +630,7 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
               value={header}
               label={`Header ${column + 1}`}
               disabled={disabled}
+              exact
               onCommit={(value) =>
                 commit({
                   ...draft,
@@ -579,6 +646,7 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
                 value={cell}
                 label={`Row ${rowIndex + 1}, column ${column + 1}`}
                 disabled={disabled}
+                exact
                 onCommit={(value) =>
                   commit({
                     ...draft,
@@ -594,7 +662,30 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
           )}
         </div>
       </div>
-      <div className="flex gap-2">
+      <label className="flex h-8 items-center gap-2 rounded-md border px-2 text-xs">
+        <input
+          type="checkbox"
+          checked={draft.header_enabled}
+          disabled={disabled}
+          onChange={(event) =>
+            commit({
+              ...draft,
+              header_enabled: event.target.checked,
+              repeat_header: event.target.checked && draft.repeat_header,
+            })
+          }
+        />
+        Header row
+      </label>
+      <BufferedNumber
+        label="Uniform row height (mm)"
+        value={draft.row_height_mm ?? TABLE_DEFAULT_ROW_HEIGHT_MM}
+        min={TABLE_MIN_ROW_HEIGHT_MM}
+        max={30}
+        disabled={disabled}
+        onCommit={(row_height_mm) => commit({ ...draft, row_height_mm })}
+      />
+      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           disabled={disabled}
@@ -605,11 +696,49 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
         </button>
         <button
           type="button"
-          disabled={disabled || !draft.rows.length}
+          disabled={disabled || draft.rows.length <= 1}
           className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
           onClick={() => commit({ ...draft, rows: draft.rows.slice(0, -1) })}
         >
           Remove row
+        </button>
+        <button
+          type="button"
+          disabled={disabled || draft.column_count >= 12}
+          className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+          onClick={() => {
+            const count = draft.column_count + 1
+            commit({
+              ...draft,
+              column_count: count,
+              headers: [...draft.headers, ''],
+              rows: draft.rows.map((row) => [...row, '']),
+              column_widths: Array.from({ length: count }, () =>
+                Math.round(node.geometry.width / count),
+              ),
+            })
+          }}
+        >
+          Add column
+        </button>
+        <button
+          type="button"
+          disabled={disabled || draft.column_count <= 1}
+          className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+          onClick={() => {
+            const count = draft.column_count - 1
+            commit({
+              ...draft,
+              column_count: count,
+              headers: draft.headers.slice(0, count),
+              rows: draft.rows.map((row) => row.slice(0, count)),
+              column_widths: Array.from({ length: count }, () =>
+                Math.round(node.geometry.width / count),
+              ),
+            })
+          }}
+        >
+          Remove column
         </button>
       </div>
     </Section>

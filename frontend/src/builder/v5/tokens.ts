@@ -115,7 +115,7 @@ export const V5_TOOL_PRESETS: V5ToolPreset[] = [
     role: 'element',
     layoutMode: 'intrinsic',
     size: size(220, 44),
-    props: defaultTextProps({ text: 'Your text here', fontSize: 11 }),
+    props: defaultTextProps({ text: 'Text', fontSize: 11 }),
   },
   {
     id: 'rect',

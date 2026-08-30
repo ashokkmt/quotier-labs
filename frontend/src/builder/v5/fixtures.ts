@@ -54,10 +54,13 @@ export function largeTableFixture(rowCount = 500) {
         id: 'table-1',
         kind: 'table' as const,
         content: {
-          rows: Array.from({ length: rowCount }, (_, index) => ({
-            id: `row-${index + 1}`,
-            cells: [],
-          })),
+          headers: ['', ''],
+          rows: Array.from({ length: rowCount }, () => ['', '']),
+          column_count: 2,
+          header_enabled: false,
+          repeat_header: false,
+          row_height_mm: 8,
+          column_widths: [16000, 16000],
         },
       },
     ],

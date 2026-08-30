@@ -39,39 +39,23 @@ export function ContextToolbar({
   more: MenuItem[]
   topClearance?: number
 }) {
+  void bounds
+  void topClearance
   const ref = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
   useLayoutEffect(() => {
     if (!viewport) return
     const width = ref.current?.offsetWidth ?? 180
-    const height = ref.current?.offsetHeight ?? 38
-    let left = bounds.x + bounds.width / 2 - width / 2
+    let left = viewport.left + viewport.width / 2 - width / 2
     left = Math.max(
       viewport.left + CONTEXT_GAP_PX,
       Math.min(left, viewport.right - width - CONTEXT_GAP_PX),
     )
-    let top = bounds.y - height - CONTEXT_GAP_PX - topClearance
-    // Reserve the top toolbar safe area, then flip below the selection.
-    if (top < viewport.top + 64) top = bounds.y + bounds.height + CONTEXT_GAP_PX
-    top = Math.max(
-      viewport.top + CONTEXT_GAP_PX,
-      Math.min(top, viewport.bottom - height - CONTEXT_GAP_PX),
-    )
-    setPosition({ left, top })
+    setPosition({ left, top: viewport.top + 12 })
     // The primitive viewport edges are the intentional dependency surface; DOMRect identity
     // changes on every render and would create a measure/set-state loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    bounds.x,
-    bounds.y,
-    bounds.width,
-    bounds.height,
-    viewport?.left,
-    viewport?.top,
-    viewport?.right,
-    viewport?.bottom,
-    topClearance,
-  ])
+  }, [viewport?.left, viewport?.top, viewport?.right, viewport?.bottom])
 
   return (
     <TooltipProvider delayDuration={450}>
@@ -80,6 +64,7 @@ export function ContextToolbar({
         role="toolbar"
         aria-label="Selection actions"
         data-v5-context-toolbar
+        data-v5-editor-chrome
         className="z-30 flex h-10 items-center gap-0.5 rounded-lg border border-border/80 bg-background p-1 shadow-lg motion-safe:animate-in motion-safe:fade-in-0"
         style={{
           position: 'fixed',

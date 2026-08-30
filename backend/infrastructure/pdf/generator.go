@@ -229,38 +229,52 @@ func lineWidthFor(shape *layoutir.Shape) float64 {
 	return shape.Stroke.WidthPt * 25.4 / 72
 }
 
-// drawTable paints a resolved table fragment. Row height matches layoutir.TableRowHeightMM so
-// fragment capacity and drawn output agree; the caller clips to the owning frame rectangle.
+// drawTable paints the exact normalized table dimensions resolved by LayoutIR.
 func drawTable(pdf *fpdf.Fpdf, box layoutir.Box) {
 	table := box.Table
-	if len(table.Headers) == 0 {
+	if table == nil || table.ColumnCount < 1 {
 		return
 	}
-	cols := float64(len(table.Headers))
-	width := box.Width / cols
-	y := box.Y
-	pdf.SetFont("Arial", "B", 8)
-	x := box.X
-	for _, header := range table.Headers {
-		pdf.Rect(x, y, width, layoutir.TableRowHeightMM, "D")
-		pdf.SetXY(x, y)
-		pdf.CellFormat(width, layoutir.TableRowHeightMM, header, "", 0, "L", false, 0, "")
-		x += width
+	widths := table.ColumnWidthsMM
+	if len(widths) != table.ColumnCount {
+		widths = make([]float64, table.ColumnCount)
+		for i := range widths {
+			widths[i] = box.Width / float64(table.ColumnCount)
+		}
 	}
-	y += layoutir.TableRowHeightMM
+	rowHeight := table.RowHeightMM
+	if rowHeight <= 0 {
+		rowHeight = layoutir.TableRowHeightMM
+	}
+	y := box.Y
+	if table.HeaderEnabled {
+		pdf.SetFont("Arial", "B", 8)
+		x := box.X
+		for i := 0; i < table.ColumnCount; i++ {
+			header := ""
+			if i < len(table.Headers) {
+				header = table.Headers[i]
+			}
+			pdf.Rect(x, y, widths[i], rowHeight, "D")
+			pdf.SetXY(x, y)
+			pdf.CellFormat(widths[i], rowHeight, header, "", 0, "L", false, 0, "")
+			x += widths[i]
+		}
+		y += rowHeight
+	}
 	pdf.SetFont("Arial", "", 8)
 	for _, row := range table.Rows {
-		x = box.X
-		for i := 0; i < len(table.Headers); i++ {
+		x := box.X
+		for i := 0; i < table.ColumnCount; i++ {
 			value := ""
 			if i < len(row) {
 				value = row[i]
 			}
-			pdf.Rect(x, y, width, layoutir.TableRowHeightMM, "D")
+			pdf.Rect(x, y, widths[i], rowHeight, "D")
 			pdf.SetXY(x, y)
-			pdf.CellFormat(width, layoutir.TableRowHeightMM, value, "", 0, "L", false, 0, "")
-			x += width
+			pdf.CellFormat(widths[i], rowHeight, value, "", 0, "L", false, 0, "")
+			x += widths[i]
 		}
-		y += layoutir.TableRowHeightMM
+		y += rowHeight
 	}
 }

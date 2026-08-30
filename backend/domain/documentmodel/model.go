@@ -160,6 +160,17 @@ func Validate(d *Document) error {
 		if s.ID == "" || stories[s.ID] {
 			return fmt.Errorf("%w: duplicate or empty story id", ErrInvalid)
 		}
+		if s.Kind != "rich-text" && s.Kind != "table" {
+			return fmt.Errorf("%w: unknown story kind %q", ErrInvalid, s.Kind)
+		}
+		if !json.Valid(s.Content) {
+			return fmt.Errorf("%w: story %q content is not valid JSON", ErrInvalid, s.ID)
+		}
+		if s.Kind == "table" {
+			if err := validateTableStory(s); err != nil {
+				return err
+			}
+		}
 		stories[s.ID] = true
 	}
 	// Masters are registered before pages so page children may reference them for masters and
@@ -205,6 +216,50 @@ func Validate(d *Document) error {
 	}
 	if count > MaxNodes {
 		return fmt.Errorf("%w: node limit exceeded", ErrInvalid)
+	}
+	return nil
+}
+
+func validateTableStory(story Story) error {
+	var value struct {
+		Headers       []string   `json:"headers"`
+		Rows          [][]string `json:"rows"`
+		ColumnCount   int        `json:"column_count"`
+		HeaderEnabled *bool      `json:"header_enabled"`
+		RepeatHeader  *bool      `json:"repeat_header"`
+		RowHeightMM   float64    `json:"row_height_mm"`
+		ColumnWidths  []int64    `json:"column_widths"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(story.Content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return fmt.Errorf("%w: invalid table story %q", ErrInvalid, story.ID)
+	}
+	columns := value.ColumnCount
+	if len(value.Headers) > columns {
+		columns = len(value.Headers)
+	}
+	if len(value.Rows) < 1 || len(value.Rows) > 500 {
+		return fmt.Errorf("%w: table story %q row count is out of bounds", ErrInvalid, story.ID)
+	}
+	for _, row := range value.Rows {
+		if len(row) > columns {
+			columns = len(row)
+		}
+	}
+	if columns < 1 || columns > 12 {
+		return fmt.Errorf("%w: table story %q column count is out of bounds", ErrInvalid, story.ID)
+	}
+	if value.RowHeightMM != 0 && (value.RowHeightMM < 5 || value.RowHeightMM > 30) {
+		return fmt.Errorf("%w: table story %q row height is out of bounds", ErrInvalid, story.ID)
+	}
+	if len(value.ColumnWidths) != 0 && len(value.ColumnWidths) != columns {
+		return fmt.Errorf("%w: table story %q column widths do not match", ErrInvalid, story.ID)
+	}
+	for _, width := range value.ColumnWidths {
+		if width < 4252 { // 15 mm in document units, rounded down for transport tolerance.
+			return fmt.Errorf("%w: table story %q has invalid column width", ErrInvalid, story.ID)
+		}
 	}
 	return nil
 }

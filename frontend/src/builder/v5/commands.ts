@@ -24,6 +24,7 @@ import type { V5Command } from './history'
 import { cloneNode, findPlacement } from './placement'
 import { getV5Widget } from './registry'
 import { distribute } from './snapping'
+import { normalizeTableData, tableHeightDU, type V5TableData } from './table'
 
 type NodeLocation = { node: V5Node; siblings: V5Node[]; parent: V5Node | null; pageId: string }
 const clone = (document: V5Document) => parseV5(serializeV5(document))
@@ -209,6 +210,46 @@ export const updateStoryContent = (storyId: string, content: unknown) =>
       return d
     },
     `story:${storyId}`,
+  )
+
+/** Table structure and its derived frame height are one history/persistence transaction. */
+export const updateTableContent = (
+  nodeId: string,
+  content: V5TableData,
+  geometry?: Partial<V5Geometry>,
+) =>
+  snapshotCommand(
+    'Update table',
+    (d) => {
+      const found = locate(d, nodeId)
+      if (!found || found.node.role !== 'flow-frame' || !found.node.story_id)
+        throw new Error('unknown table')
+      if (isLockedThroughAncestors(d, nodeId)) throw new Error('table is locked')
+      const story = d.stories?.find((candidate) => candidate.id === found.node.story_id)
+      if (!story || story.kind !== 'table') throw new Error('table story is missing')
+      const normalized = normalizeTableData(content)
+      story.content = JSON.parse(JSON.stringify(normalized))
+      const page = d.root.pages.find((candidate) => candidate.id === found.pageId)
+      const nextY = geometry?.y ?? found.node.geometry.y
+      const desiredHeight = tableHeightDU(normalized)
+      const availableHeight = Math.max(200, (page?.height ?? desiredHeight) - nextY)
+      const desiredWidth = normalized.column_widths.reduce((sum, width) => sum + width, 0)
+      const availableWidth = Math.max(
+        200,
+        (page?.width ?? desiredWidth) - (geometry?.x ?? found.node.geometry.x),
+      )
+      found.node.geometry = quantizeGeometry({
+        ...found.node.geometry,
+        ...geometry,
+        width: Math.min(
+          availableWidth,
+          Math.max(geometry?.width ?? found.node.geometry.width, desiredWidth),
+        ),
+        height: Math.min(desiredHeight, availableHeight),
+      })
+      return d
+    },
+    `table:${nodeId}`,
   )
 
 export const insertNode = (pageId: string, node: V5Node, index?: number) =>

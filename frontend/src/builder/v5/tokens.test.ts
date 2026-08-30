@@ -64,4 +64,19 @@ describe('V5 design tokens', () => {
     expect(clampFontSize(text.fontSize)).toBe(text.fontSize)
     expect(du(1.5)).toBe(2)
   })
+
+  it('gives every text preset a visible, preset-specific placeholder', () => {
+    const text = Object.fromEntries(
+      V5_TOOL_PRESETS.filter((preset) => preset.kind === 'text').map((preset) => [
+        preset.id,
+        preset.props?.text,
+      ]),
+    )
+
+    expect(text).toMatchObject({
+      heading: 'Heading',
+      subheading: 'Subheading',
+      'body-text': 'Text',
+    })
+  })
 })

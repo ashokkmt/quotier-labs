@@ -196,10 +196,10 @@ export function V5BuilderEngine({
         <SessionHandle onReady={onReady} />
         <KeyboardShortcuts />
         <ChangeBridge onChange={onChange} />
-        <div data-v5-engine className="relative flex h-full min-h-0">
-          <div className="flex min-h-0 flex-1">
+        <div data-v5-engine className="relative flex h-full w-full min-h-0 min-w-0 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <WorkspaceRail />
-            <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
               <V5Canvas />
               {resolveDiagnostics && (
                 <DiagnosticsBannerHost resolveDiagnostics={resolveDiagnostics} />
@@ -216,28 +216,26 @@ export function V5BuilderEngine({
 /** The inspector is discoverable but does not permanently turn the canvas into a form layout. */
 function InspectorDock() {
   const { inspectorOpen: open, setInspectorOpen: setOpen } = useV5EditorUI()
-  return open ? (
-    <aside className="relative flex min-h-0 w-80 shrink-0 border-l bg-background max-xl:absolute max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:shadow-xl">
+  return (
+    <div className="relative z-20 w-12 shrink-0 border-l bg-background/95 p-1.5">
       <button
         type="button"
-        aria-label="Close inspector"
-        className="absolute -left-8 top-3 z-10 grid h-7 w-7 place-items-center rounded-l-md border border-r-0 bg-background shadow-sm hover:bg-accent"
-        onClick={() => setOpen(false)}
-      >
-        <PanelRightClose className="h-4 w-4" aria-hidden />
-      </button>
-      <Inspector />
-    </aside>
-  ) : (
-    <div className="w-12 shrink-0 border-l bg-background/95 p-1.5">
-      <button
-        type="button"
-        aria-label="Open inspector"
+        aria-label={open ? 'Close inspector' : 'Open inspector'}
+        aria-expanded={open}
         className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent"
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen(!open)}
       >
-        <PanelRightOpen className="h-4 w-4" aria-hidden />
+        {open ? (
+          <PanelRightClose className="h-4 w-4" aria-hidden />
+        ) : (
+          <PanelRightOpen className="h-4 w-4" aria-hidden />
+        )}
       </button>
+      {open && (
+        <aside className="absolute inset-y-0 right-12 flex w-80 min-h-0 flex-col border-l bg-background shadow-lg">
+          <Inspector />
+        </aside>
+      )}
     </div>
   )
 }

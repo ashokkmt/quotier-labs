@@ -58,3 +58,19 @@ func TestValidateRejectsUnknownWidgetKind(t *testing.T) {
 		t.Fatal("expected unknown widget kind to be rejected")
 	}
 }
+
+func TestValidateTableStoryBounds(t *testing.T) {
+	d := validDocument()
+	d.Stories = []Story{{ID: "table", Kind: "table", Content: []byte(`{"headers":["",""],"rows":[["",""]],"column_count":2,"header_enabled":false,"row_height_mm":8,"column_widths":[16000,16000]}`)}}
+	if err := Validate(d); err != nil {
+		t.Fatalf("valid generic table rejected: %v", err)
+	}
+	d.Stories[0].Content = []byte(`{"headers":[""],"rows":[[""]],"column_count":13}`)
+	if err := Validate(d); err == nil {
+		t.Fatal("expected excessive table columns to be rejected")
+	}
+	d.Stories[0].Content = []byte(`{"headers":[""],"rows":[[""]],"column_count":1,"row_height_mm":2}`)
+	if err := Validate(d); err == nil {
+		t.Fatal("expected undersized table rows to be rejected")
+	}
+}

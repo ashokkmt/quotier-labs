@@ -105,6 +105,10 @@ type TableFragment struct {
 	Headers        []string
 	Rows           [][]string
 	RepeatedHeader bool
+	HeaderEnabled  bool
+	ColumnCount    int
+	ColumnWidthsMM []float64
+	RowHeightMM    float64
 }
 type Image struct {
 	MIME string
@@ -425,8 +429,13 @@ func fillTextBox(box *Box, text string, m Metrics) string {
 }
 
 type tableStory struct {
-	Headers []string   `json:"headers"`
-	Rows    [][]string `json:"rows"`
+	Headers       []string   `json:"headers"`
+	Rows          [][]string `json:"rows"`
+	ColumnCount   int        `json:"column_count"`
+	HeaderEnabled *bool      `json:"header_enabled"`
+	RepeatHeader  *bool      `json:"repeat_header"`
+	RowHeightMM   float64    `json:"row_height_mm"`
+	ColumnWidths  []int64    `json:"column_widths"`
 }
 
 func fillTableStory(ctx context.Context, layout *Layout, doc *documentmodel.Document, masters map[string]documentmodel.Master, story documentmodel.Story, input ResolveInput, m Metrics) {
@@ -434,7 +443,7 @@ func fillTableStory(ctx context.Context, layout *Layout, doc *documentmodel.Docu
 	if err := json.Unmarshal(story.Content, &table); err != nil {
 		return
 	}
-	if len(table.Headers) == 0 {
+	if tableColumns(table) == 0 {
 		return
 	}
 	row := 0
@@ -466,7 +475,24 @@ func fillTableStory(ctx context.Context, layout *Layout, doc *documentmodel.Docu
 // tableFragment returns the fragment for the next rows of a table inside a frame and the next
 // unconsumed row index. Headers repeat on every fragment after the first.
 func tableFragment(box *Box, table tableStory, row int) (*TableFragment, int) {
-	rowsPerFrame := int((box.Height - TableRowHeightMM) / TableRowHeightMM)
+	rowHeight := table.RowHeightMM
+	if rowHeight < TableRowHeightMM {
+		rowHeight = TableRowHeightMM
+	}
+	headerEnabled := len(table.Headers) > 0
+	if table.HeaderEnabled != nil {
+		headerEnabled = *table.HeaderEnabled
+	}
+	repeatHeader := headerEnabled
+	if table.RepeatHeader != nil {
+		repeatHeader = *table.RepeatHeader
+	}
+	showHeader := headerEnabled && (row == 0 || repeatHeader)
+	available := box.Height
+	if showHeader {
+		available -= rowHeight
+	}
+	rowsPerFrame := int(available / rowHeight)
 	if rowsPerFrame < 1 {
 		rowsPerFrame = 1
 	}
@@ -474,7 +500,46 @@ func tableFragment(box *Box, table tableStory, row int) (*TableFragment, int) {
 	if end > len(table.Rows) {
 		end = len(table.Rows)
 	}
-	return &TableFragment{Headers: table.Headers, Rows: table.Rows[row:end], RepeatedHeader: row > 0}, end
+	columns := tableColumns(table)
+	widths := make([]float64, columns)
+	var total float64
+	for i := range widths {
+		if i < len(table.ColumnWidths) && table.ColumnWidths[i] > 0 {
+			widths[i] = float64(table.ColumnWidths[i]) / documentmodel.DUPerPoint * 25.4 / 72
+		}
+		total += widths[i]
+	}
+	if total <= 0 {
+		for i := range widths {
+			widths[i] = box.Width / float64(columns)
+		}
+	} else {
+		for i := range widths {
+			widths[i] = widths[i] / total * box.Width
+		}
+	}
+	return &TableFragment{
+		Headers:        table.Headers,
+		Rows:           table.Rows[row:end],
+		RepeatedHeader: row > 0 && showHeader,
+		HeaderEnabled:  showHeader,
+		ColumnCount:    columns,
+		ColumnWidthsMM: widths,
+		RowHeightMM:    rowHeight,
+	}, end
+}
+
+func tableColumns(table tableStory) int {
+	columns := table.ColumnCount
+	if len(table.Headers) > columns {
+		columns = len(table.Headers)
+	}
+	for _, row := range table.Rows {
+		if len(row) > columns {
+			columns = len(row)
+		}
+	}
+	return columns
 }
 
 // deriveContinuationPages appends derived pages while fill reports unfinished content and an

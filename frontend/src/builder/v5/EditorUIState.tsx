@@ -1,12 +1,14 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 
-export type V5Drawer = 'widgets' | 'layers' | 'pages' | null
+export type V5Drawer = 'text' | 'shape' | 'table' | 'layers' | 'pages' | null
 export type PresetInsertRequest = {
   token: number
   presetId: string
   mode: 'click' | 'drop'
   clientX?: number
   clientY?: number
+  tableRows?: number
+  tableColumns?: number
 }
 export type LibraryDrag = { presetId: string; clientX: number; clientY: number } | null
 
