@@ -43,7 +43,6 @@ func (s *Service) ListQuotations(ctx context.Context, companyID string, filterDT
 	// Fetch customer names for the list
 	// This could be optimized, but for MVP fetching one by one or caching via a map is fine
 	customerMap := make(map[string]string)
-	
 	items := make([]QuotationSummaryDTO, len(quotations))
 	for i, q := range quotations {
 		custName := "Unknown Customer"

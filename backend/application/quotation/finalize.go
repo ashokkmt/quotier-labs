@@ -7,7 +7,6 @@ import (
 
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/calculation"
 	"quotierlabs/backend/domain/documentmodel"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
@@ -29,28 +28,11 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 	}
 
 	// 1. Validate Document Structure
-	version, err := domain_quotation.DocumentSchemaVersion(q.Document)
+	v5Doc, err := documentmodel.Parse([]byte(q.Document))
 	if err != nil {
 		return nil, err
 	}
-	var lines []calculation.LineItemInput
-	var v5Doc *documentmodel.Document
-	if version == documentmodel.SchemaVersion {
-		v5Doc, err = documentmodel.Parse([]byte(q.Document))
-		if err != nil {
-			return nil, err
-		}
-		lines = domain_quotation.ExtractV5LineItems(v5Doc)
-	} else {
-		doc, parseErr := domain_quotation.ParseDocument(q.Document)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		if err := domain_quotation.ValidateDocument(doc); err != nil {
-			return nil, err
-		}
-		lines = domain_quotation.ExtractLineItems(doc)
-	}
+	lines := domain_quotation.ExtractV5LineItems(v5Doc)
 
 	// 2. Authoritative Recalculation
 	comp, err := s.companyRepo.GetByID(txCtx, companyID)
@@ -64,10 +46,8 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 
 	// V5 documents must resolve cleanly before they can become immutable: required overset
 	// content, invalid assets, and unresolved required bindings all block finalization.
-	if v5Doc != nil {
-		if err := s.checkV5Finalization(txCtx, v5Doc, q, comp, cust); err != nil {
-			return nil, err
-		}
+	if err := s.checkV5Finalization(txCtx, v5Doc, q, comp, cust); err != nil {
+		return nil, err
 	}
 
 	res, err := s.CalculatePreview(txCtx, companyID, lines, cust.State)

@@ -166,11 +166,11 @@ func (r *customerRepository) List(ctx context.Context, companyID string, filter 
 	if filter.Offset > 0 {
 		query = query.Offset(filter.Offset)
 	}
-	
+
 	if err := query.Find(&models).Error; err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]domain.Customer, len(models))
 	for i, m := range models {
 		result[i] = *toDomainCustomer(&m)
@@ -184,7 +184,7 @@ func (r *customerRepository) Search(ctx context.Context, companyID, query string
 	if err := db.Where("company_id = ? AND name LIKE ?", companyID, "%"+query+"%").Find(&models).Error; err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]domain.Customer, len(models))
 	for i, m := range models {
 		result[i] = *toDomainCustomer(&m)

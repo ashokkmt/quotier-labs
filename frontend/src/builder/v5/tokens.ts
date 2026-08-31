@@ -1,11 +1,12 @@
 import { du, type V5Node, type V5Geometry } from './model'
 
 /**
- * Controlled design tokens for V5 widgets. Colors exist only as named tokens shared with the Go
- * renderer; freeform hex/HTML/CSS strings are deliberately not representable.
+ * Controlled design values for V5 widgets. Colors are named tokens, transparent, or a strictly
+ * validated six-digit hex value; arbitrary CSS/HTML strings are never accepted.
  */
 export const V5_COLOR_TOKENS = ['black', 'gray', 'white', 'primary', 'danger', 'success'] as const
 export type V5ColorToken = (typeof V5_COLOR_TOKENS)[number]
+export type V5ColorValue = V5ColorToken | `#${string}` | 'transparent'
 
 /** Editor-only projection of the tokens; the Go PDF adapter keeps its own authoritative map. */
 export const V5_COLOR_HEX: Record<V5ColorToken, string> = {
@@ -31,6 +32,15 @@ export type V5StrokeStyle = (typeof V5_STROKE_STYLES)[number]
 
 export const V5_SHAPE_VARIANTS = ['rect', 'ellipse', 'line'] as const
 export type V5ShapeVariant = (typeof V5_SHAPE_VARIANTS)[number]
+export const V5_FONT_FAMILIES = ['sans', 'serif', 'mono'] as const
+export type V5FontFamily = (typeof V5_FONT_FAMILIES)[number]
+export const V5_FONT_WEIGHTS = [300, 400, 500, 600, 700] as const
+export type V5FontWeight = (typeof V5_FONT_WEIGHTS)[number]
+export const V5_FONT_FAMILY_CSS: Record<V5FontFamily, string> = {
+  sans: 'Arial, Helvetica, sans-serif',
+  serif: 'Times New Roman, Times, serif',
+  mono: 'Courier New, Courier, monospace',
+}
 
 export const V5_FONT_SIZE_MIN_PT = 6
 export const V5_FONT_SIZE_MAX_PT = 72
@@ -41,31 +51,56 @@ export type V5TextProps = {
   text: string
   fontSize: number
   bold: boolean
+  fontFamily: V5FontFamily
+  fontWeight: V5FontWeight
+  italic: boolean
+  underline: boolean
   align: V5TextAlign
   verticalAlign: V5TextVerticalAlign
-  color: V5ColorToken
+  color: V5ColorValue
 }
 
 export type V5ShapeProps = {
   variant: V5ShapeVariant
-  fill: 'none' | V5ColorToken
-  stroke: 'none' | V5ColorToken
+  fill: 'none' | V5ColorValue
+  stroke: 'none' | V5ColorValue
   strokeStyle: V5StrokeStyle
   strokeWidth: number
+  cornerRadius: number
 }
 
 export const clampFontSize = (value: number): number =>
   Math.min(V5_FONT_SIZE_MAX_PT, Math.max(V5_FONT_SIZE_MIN_PT, Math.round(value)))
 export const clampStrokeWidth = (value: number): number =>
   Math.min(V5_STROKE_WIDTH_MAX_PT, Math.max(V5_STROKE_WIDTH_MIN_PT, Math.round(value * 4) / 4))
+export const growIntrinsicTextHeight = (authoredHeight: number, measuredHeight: number): number =>
+  Math.max(authoredHeight, measuredHeight)
 
 export const isColorToken = (value: unknown): value is V5ColorToken =>
   typeof value === 'string' && (V5_COLOR_TOKENS as readonly string[]).includes(value)
+export const isColorValue = (value: unknown, transparent = true): value is V5ColorValue =>
+  isColorToken(value) ||
+  (transparent && value === 'transparent') ||
+  (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))
+export const normalizeColorValue = (value: string): V5ColorValue => {
+  if (value === 'transparent' || isColorToken(value)) return value
+  const candidate = value.startsWith('#') ? value : `#${value}`
+  return /^#[0-9a-fA-F]{6}$/.test(candidate) ? (candidate.toUpperCase() as `#${string}`) : 'black'
+}
+export const colorValueToCSS = (value: unknown, fallback: V5ColorToken = 'black'): string => {
+  if (value === 'transparent') return 'transparent'
+  if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) return value
+  return V5_COLOR_HEX[(isColorToken(value) ? value : fallback) as V5ColorToken]
+}
 
 export const defaultTextProps = (overrides: Partial<V5TextProps> = {}): V5TextProps => ({
   text: 'Your text here',
   fontSize: 11,
   bold: false,
+  fontFamily: 'sans',
+  fontWeight: overrides.fontWeight ?? (overrides.bold ? 700 : 400),
+  italic: false,
+  underline: false,
   align: 'left',
   verticalAlign: 'top',
   color: 'black',
@@ -78,6 +113,7 @@ export const defaultShapeProps = (overrides: Partial<V5ShapeProps> = {}): V5Shap
   stroke: 'none',
   strokeStyle: 'solid',
   strokeWidth: 1,
+  cornerRadius: 0,
   ...overrides,
 })
 

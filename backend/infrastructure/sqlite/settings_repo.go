@@ -31,7 +31,7 @@ func (r *SettingsRepository) Set(ctx context.Context, setting *domain.Settings) 
 	} else if err != nil {
 		return err
 	}
-	
+
 	existing.Value = setting.Value
 	return r.db.WithContext(ctx).Save(&existing).Error
 }

@@ -9,6 +9,7 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"quotierlabs/backend/application/document"
+	"quotierlabs/backend/infrastructure/apppaths"
 )
 
 type ExportHandler struct {
@@ -16,17 +17,20 @@ type ExportHandler struct {
 	printService  document.PrintService
 	shareService  document.ShareService
 	ctx           context.Context
+	paths         apppaths.Paths
 }
 
 func NewExportHandler(
 	exportService *document.ExportService,
 	printService document.PrintService,
 	shareService document.ShareService,
+	paths apppaths.Paths,
 ) *ExportHandler {
 	return &ExportHandler{
 		exportService: exportService,
 		printService:  printService,
 		shareService:  shareService,
+		paths:         paths,
 	}
 }
 
@@ -93,8 +97,12 @@ func (h *ExportHandler) GenerateTempPDF(companyID, quotationID string) (string, 
 		return "", err
 	}
 
-	tempFile := filepath.Join(os.TempDir(), defaultFilename)
-	if err := os.WriteFile(tempFile, bytes, 0644); err != nil {
+	sessionDir, err := os.MkdirTemp(h.paths.TempRoot, "pdf-*")
+	if err != nil {
+		return "", err
+	}
+	tempFile := filepath.Join(sessionDir, filepath.Base(defaultFilename))
+	if err := os.WriteFile(tempFile, bytes, 0600); err != nil {
 		return "", err
 	}
 	return tempFile, nil

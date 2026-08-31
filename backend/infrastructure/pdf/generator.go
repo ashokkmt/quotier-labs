@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-pdf/fpdf"
@@ -11,7 +12,6 @@ import (
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain/documentmodel"
-	"quotierlabs/backend/domain/quotation"
 )
 
 type generator struct {
@@ -22,37 +22,7 @@ func NewGenerator() document.PDFGenerator {
 }
 
 func (g *generator) Generate(ctx context.Context, input document.GeneratorInput) ([]byte, error) {
-	version, err := quotation.DocumentSchemaVersion(input.Quotation.Document)
-	if err != nil {
-		return nil, fmt.Errorf("invalid document version: %w", err)
-	}
-	if version == documentmodel.SchemaVersion {
-		return g.generateV5(ctx, input)
-	}
-	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(15, 15, 15)
-	pdf.SetAutoPageBreak(true, 15)
-	pdf.AddPage()
-
-	// Use standard fonts for now since embedding external fonts requires the TTF files
-	pdf.SetFont("Arial", "", 10)
-
-	doc, err := quotation.ParseDocument(input.Quotation.Document)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse document: %w", err)
-	}
-
-	layoutEngine := NewLayoutEngine(pdf, input)
-	if err := layoutEngine.Render(doc); err != nil {
-		return nil, fmt.Errorf("failed to render pdf: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := pdf.Output(&buf); err != nil {
-		return nil, fmt.Errorf("failed to output pdf: %w", err)
-	}
-
-	return buf.Bytes(), nil
+	return g.generateV5(ctx, input)
 }
 
 func (g *generator) generateV5(ctx context.Context, input document.GeneratorInput) ([]byte, error) {
@@ -130,27 +100,34 @@ var colorRGB = map[string][3]int{
 	"success": {22, 163, 74},
 }
 
-func applyTextColor(pdf *fpdf.Fpdf, token string) {
-	rgb, ok := colorRGB[token]
-	if !ok {
-		rgb = colorRGB["black"]
+func resolveColor(value string) ([3]int, bool) {
+	if value == "transparent" || value == "none" {
+		return [3]int{}, false
 	}
+	if rgb, ok := colorRGB[value]; ok {
+		return rgb, true
+	}
+	if len(value) == 7 && value[0] == '#' {
+		parsed, err := strconv.ParseUint(value[1:], 16, 24)
+		if err == nil {
+			return [3]int{int(parsed >> 16), int((parsed >> 8) & 0xff), int(parsed & 0xff)}, true
+		}
+	}
+	return colorRGB["black"], true
+}
+
+func applyTextColor(pdf *fpdf.Fpdf, value string) {
+	rgb, _ := resolveColor(value)
 	pdf.SetTextColor(rgb[0], rgb[1], rgb[2])
 }
 
-func applyDrawColor(pdf *fpdf.Fpdf, token string) {
-	rgb, ok := colorRGB[token]
-	if !ok {
-		rgb = colorRGB["black"]
-	}
+func applyDrawColor(pdf *fpdf.Fpdf, value string) {
+	rgb, _ := resolveColor(value)
 	pdf.SetDrawColor(rgb[0], rgb[1], rgb[2])
 }
 
-func applyFillColor(pdf *fpdf.Fpdf, token string) {
-	rgb, ok := colorRGB[token]
-	if !ok {
-		rgb = colorRGB["black"]
-	}
+func applyFillColor(pdf *fpdf.Fpdf, value string) {
+	rgb, _ := resolveColor(value)
 	pdf.SetFillColor(rgb[0], rgb[1], rgb[2])
 }
 
@@ -168,15 +145,28 @@ func setDashPattern(pdf *fpdf.Fpdf, style string) {
 // drawText paints a text box with its controlled size/weight/alignment/color tokens, clipped to
 // the authored rectangle so overset content can never paint over another layer.
 func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
+	if _, visible := resolveColor(box.TextColor); !visible {
+		return
+	}
 	style := ""
-	if box.Bold {
-		style = "B"
+	if box.Bold || box.FontWeight >= 600 {
+		style += "B"
+	}
+	if box.Italic {
+		style += "I"
+	}
+	if box.Underline {
+		style += "U"
 	}
 	fontSize := box.FontSizePt
 	if fontSize <= 0 {
 		fontSize = layoutir.DefaultFontSizePt
 	}
-	pdf.SetFont("Arial", style, fontSize)
+	font := map[string]string{"sans": "Arial", "serif": "Times", "mono": "Courier"}[box.FontFamily]
+	if font == "" {
+		font = "Arial"
+	}
+	pdf.SetFont(font, style, fontSize)
 	applyTextColor(pdf, box.TextColor)
 	align := map[string]string{"left": "L", "center": "C", "right": "R"}[box.Align]
 	if align == "" {
@@ -215,11 +205,11 @@ func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
 func drawShape(pdf *fpdf.Fpdf, box layoutir.Box) {
 	shape := box.Shape
 	fillStyle := ""
-	if shape.Fill != "" && shape.Fill != "none" {
+	if _, visible := resolveColor(shape.Fill); shape.Fill != "" && visible {
 		applyFillColor(pdf, shape.Fill)
 		fillStyle = "F"
 	}
-	if shape.Stroke != nil && shape.Stroke.Color != "none" {
+	if shape.Stroke != nil {
 		applyDrawColor(pdf, shape.Stroke.Color)
 		setDashPattern(pdf, shape.Stroke.Style)
 		pdf.SetLineWidth(shape.Stroke.WidthPt * 25.4 / 72)
@@ -233,7 +223,18 @@ func drawShape(pdf *fpdf.Fpdf, box layoutir.Box) {
 		pdf.Line(box.X, box.Y+box.Height/2, box.X+box.Width, box.Y+box.Height/2)
 	default:
 		if fillStyle != "" {
-			pdf.Rect(box.X, box.Y, box.Width, box.Height, fillStyle)
+			radius := shape.CornerRadiusPt * 25.4 / 72
+			if radius > box.Width/2 {
+				radius = box.Width / 2
+			}
+			if radius > box.Height/2 {
+				radius = box.Height / 2
+			}
+			if radius > 0 {
+				pdf.RoundedRect(box.X, box.Y, box.Width, box.Height, radius, "1234", fillStyle)
+			} else {
+				pdf.Rect(box.X, box.Y, box.Width, box.Height, fillStyle)
+			}
 		}
 	}
 	pdf.SetDashPattern([]float64{}, 0)

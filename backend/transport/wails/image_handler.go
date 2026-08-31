@@ -1,42 +1,58 @@
 package wails
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	wails_runtime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"quotierlabs/backend/infrastructure/assets"
+	"quotierlabs/backend/infrastructure/fileutil"
 )
 
 // GetImageDataURI exposes only images previously copied into the application's
 // managed image directory. It prevents a document's stored path from becoming
 // an arbitrary local-file read in the webview.
 func (h *CompanyHandler) GetImageDataURI(path string) (string, error) {
-	appDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve image directory")
+	imagesDir := h.paths.AssetsRoot()
+	cleanPath := ""
+	if strings.HasPrefix(path, "asset:") {
+		name := strings.TrimPrefix(path, "asset:")
+		if name == "" || filepath.Base(name) != name {
+			return "", fmt.Errorf("invalid managed image")
+		}
+		cleanPath = filepath.Join(imagesDir, name)
+	} else {
+		cleanPath = filepath.Clean(path)
 	}
-	imagesDir := filepath.Join(appDir, "QuotierLabs", "images")
-	cleanPath := filepath.Clean(path)
 	rel, err := filepath.Rel(imagesDir, cleanPath)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("image path is outside the managed directory")
+		// Read-only compatibility for images imported by pre-AppPaths builds.
+		legacyConfig, configErr := os.UserConfigDir()
+		legacyRoot := filepath.Join(legacyConfig, "QuotierLabs", "images")
+		legacyRel, legacyErr := filepath.Rel(legacyRoot, cleanPath)
+		if configErr != nil || legacyErr != nil || legacyRel == "." || strings.HasPrefix(legacyRel, "..") || filepath.IsAbs(legacyRel) {
+			return "", fmt.Errorf("image path is outside the managed directory")
+		}
 	}
 	ext := strings.ToLower(filepath.Ext(cleanPath))
-	mime := map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}[ext]
+	mime := assets.MIMEForExtension(ext)
 	if mime == "" {
 		return "", fmt.Errorf("unsupported image format")
 	}
 	info, err := os.Stat(cleanPath)
-	if err != nil || info.Size() > 5*1024*1024 {
+	if err != nil || info.IsDir() || info.Size() > assets.MaxImageBytes {
 		return "", fmt.Errorf("image is unavailable or exceeds the size limit")
 	}
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read managed image")
+	}
+	if err := assets.ValidateImage(data, ext); err != nil {
+		return "", err
 	}
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
@@ -60,7 +76,7 @@ func (h *CompanyHandler) SelectImage(dialogTitle string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read file info: %v", err)
 	}
-	if info.Size() > 5*1024*1024 {
+	if info.Size() > assets.MaxImageBytes {
 		return "", fmt.Errorf("image exceeds 5MB size limit")
 	}
 
@@ -70,39 +86,30 @@ func (h *CompanyHandler) SelectImage(dialogTitle string) (string, error) {
 		return "", fmt.Errorf("unsupported image format")
 	}
 
-	// Store in managed directory
-	appDir, err := os.UserConfigDir()
+	data, err := os.ReadFile(selectedFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to get config dir: %v", err)
+		return "", fmt.Errorf("failed to read image")
+	}
+	if err := assets.ValidateImage(data, ext); err != nil {
+		return "", err
 	}
 
-	destDir := filepath.Join(appDir, "QuotierLabs", "images")
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	destDir := h.paths.AssetsRoot()
+	if err := os.MkdirAll(destDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create image directory: %v", err)
 	}
 
-	fileName := fmt.Sprintf("%s%s", filepath.Base(selectedFile[:len(selectedFile)-len(ext)]), ext)
+	digest := sha256.Sum256(data)
+	fileName := fmt.Sprintf("%x%s", digest[:], ext)
 	destPath := filepath.Join(destDir, fileName)
-
-	// Copy file
-	src, err := os.Open(selectedFile)
-	if err != nil {
-		return "", err
+	if info, err := os.Stat(destPath); err == nil {
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("managed image destination is not a regular file")
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to inspect managed image destination")
+	} else if err := fileutil.AtomicWrite(destPath, data, 0600); err != nil {
+		return "", fmt.Errorf("failed to store managed image")
 	}
-	defer src.Close()
-
-	dst, err := os.Create(destPath)
-	if err != nil {
-		return "", err
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, src); err != nil {
-		return "", err
-	}
-
-	// For Wails AssetServer to serve files from local disk, you normally need to prefix or use wails:// protocol
-	// We return the absolute path, and frontend can use `asset://` or whatever Wails is configured to use.
-	// Wails v2 uses `wails://` or relative paths. We will just return the absolute path and let frontend map it.
-	return destPath, nil
+	return "asset:" + fileName, nil
 }

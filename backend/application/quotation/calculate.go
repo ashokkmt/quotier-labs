@@ -6,17 +6,18 @@ import (
 
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/calculation"
+	"quotierlabs/backend/domain/documentmodel"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
 type CalculationResultDTO struct {
-	Subtotal      int64 `json:"subtotal"`
-	DiscountTotal int64 `json:"discount_total"`
-	TaxableTotal  int64 `json:"taxable_total"`
-	CGSTTotal     int64 `json:"cgst_total"`
-	SGSTTotal     int64 `json:"sgst_total"`
-	IGSTTotal     int64 `json:"igst_total"`
-	GrandTotal    int64 `json:"grand_total"`
+	Subtotal      int64  `json:"subtotal"`
+	DiscountTotal int64  `json:"discount_total"`
+	TaxableTotal  int64  `json:"taxable_total"`
+	CGSTTotal     int64  `json:"cgst_total"`
+	SGSTTotal     int64  `json:"sgst_total"`
+	IGSTTotal     int64  `json:"igst_total"`
+	GrandTotal    int64  `json:"grand_total"`
 	TaxMode       string `json:"tax_mode"`
 }
 
@@ -32,10 +33,11 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 		return nil, err
 	}
 
-	doc, err := domain_quotation.ParseDocument(q.Document)
+	doc, err := documentmodel.Parse([]byte(q.Document))
 	if err != nil {
 		return nil, err
 	}
+	lines := domain_quotation.ExtractV5LineItems(doc)
 
 	var comp *domain.Company
 	if q.CompanySnapshot != nil {
@@ -60,7 +62,6 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 		}
 	}
 
-	lines := domain_quotation.ExtractLineItems(doc)
 	engine := calculation.NewEngine()
 	res := engine.Calculate(lines, taxMode)
 

@@ -18,11 +18,15 @@ import {
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
   Bold,
+  Check,
   Copy,
   Group,
   Image as ImageIcon,
+  MoreHorizontal,
   Pencil,
   Settings2,
+  Italic,
+  Underline,
   Table2,
   Type,
   Ungroup,
@@ -67,15 +71,19 @@ import {
 import { HoverOutline, MemberSelectionOutline, SelectionOverlay } from './SelectionOverlay'
 import { useV5Session } from './store'
 import {
-  V5_COLOR_HEX,
+  V5_FONT_FAMILIES,
+  V5_FONT_FAMILY_CSS,
+  colorValueToCSS,
   defaultShapeProps,
   defaultTextProps,
+  growIntrinsicTextHeight,
   V5_TOOL_PRESETS,
   V5_TEXT_PADDING_PT,
   type V5ToolPreset,
   type V5ShapeProps,
   type V5TextProps,
 } from './tokens'
+import { ColorPicker } from './ColorPicker'
 import { readValidatedImage } from './imageAssets'
 import { createStory } from './stories'
 import {
@@ -89,7 +97,7 @@ import {
 import type { V5Tool } from './store'
 import { snapRect, snapResize, type SnapGuide, type SnapRect } from './snapping'
 import { du, type V5Geometry, type V5Node, type V5Story } from './model'
-import { ContextToolbar, type ToolbarAction } from './ContextToolbar'
+import { ContextToolbar, MenuItems, type ToolbarAction } from './ContextToolbar'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { getV5Widget } from './registry'
 import { useV5EditorUI } from './EditorUIState'
@@ -161,14 +169,9 @@ const ptToPx = (pt: number, zoom: number) => pt * zoom * 100
 
 function shapeStyle(node: V5Node, zoom: number): CSSProperties {
   const props = node.props as unknown as V5ShapeProps
-  const fill =
-    props.fill && props.fill !== 'none'
-      ? V5_COLOR_HEX[props.fill as keyof typeof V5_COLOR_HEX]
-      : 'transparent'
+  const fill = props.fill && props.fill !== 'none' ? colorValueToCSS(props.fill) : 'transparent'
   const stroke =
-    props.stroke && props.stroke !== 'none'
-      ? V5_COLOR_HEX[props.stroke as keyof typeof V5_COLOR_HEX]
-      : 'transparent'
+    props.stroke && props.stroke !== 'none' ? colorValueToCSS(props.stroke) : 'transparent'
   const widthPt = Number(props.strokeWidth ?? 1)
   const style = String(props.strokeStyle ?? 'solid')
   return {
@@ -182,14 +185,17 @@ function shapeStyle(node: V5Node, zoom: number): CSSProperties {
             height: 0,
             marginTop: (node.geometry.height * zoom) / 2,
           }
-        : { border: `${ptToPx(widthPt, zoom)}px ${style} ${stroke}` }),
+        : {
+            border: `${ptToPx(widthPt, zoom)}px ${style} ${stroke}`,
+            borderRadius: ptToPx(Number(props.cornerRadius ?? 0), zoom),
+          }),
   }
 }
 
 function renderText(node: V5Node, zoom: number) {
   const props = node.props as unknown as V5TextProps
-  const color =
-    V5_COLOR_HEX[(props.color ?? 'black') as keyof typeof V5_COLOR_HEX] ?? V5_COLOR_HEX.black
+  const color = colorValueToCSS(props.color ?? 'black')
+  const fontWeight = Number(props.fontWeight ?? (props.bold ? 700 : 400))
   return (
     <span
       style={{
@@ -202,7 +208,10 @@ function renderText(node: V5Node, zoom: number) {
               : 'flex-start',
         color,
         fontSize: ptToPx(Number(props.fontSize ?? 11), zoom),
-        fontWeight: props.bold ? 700 : 400,
+        fontFamily: V5_FONT_FAMILY_CSS[props.fontFamily ?? 'sans'],
+        fontWeight,
+        fontStyle: props.italic ? 'italic' : 'normal',
+        textDecoration: props.underline ? 'underline' : 'none',
         lineHeight: 1.2,
         overflow: 'hidden',
         width: '100%',
@@ -494,8 +503,7 @@ function TextEditor({
   onAutoHeight: (heightPx: number) => void
 }) {
   const props = node.props as unknown as V5TextProps
-  const color =
-    V5_COLOR_HEX[(props.color ?? 'black') as keyof typeof V5_COLOR_HEX] ?? V5_COLOR_HEX.black
+  const color = colorValueToCSS(props.color ?? 'black')
   const ref = useRef<HTMLTextAreaElement>(null)
   const [composing, setComposing] = useState(false)
   const measureContentHeight = () => {
@@ -556,19 +564,21 @@ function TextEditor({
         width: geometry.width * zoom,
         height: geometry.height * zoom,
         fontSize: ptToPx(Number(props.fontSize ?? 11), zoom),
-        fontWeight: props.bold ? 700 : 400,
+        fontWeight: Number(props.fontWeight ?? (props.bold ? 700 : 400)),
         textAlign: (props.align ?? 'left') as 'left' | 'center' | 'right',
         color,
         // The editing surface occupies the same geometry as the printed text. Editor chrome
         // is intentionally transparent so the user never switches to a form-like editor.
         background: 'transparent',
-        border: '1.5px solid #2563eb',
+        border: 'none',
         boxSizing: 'border-box',
         padding: ptToPx(V5_TEXT_PADDING_PT, zoom),
         margin: 0,
         resize: 'none',
         outline: 'none',
-        fontFamily: 'inherit',
+        fontFamily: V5_FONT_FAMILY_CSS[props.fontFamily ?? 'sans'],
+        fontStyle: props.italic ? 'italic' : 'normal',
+        textDecoration: props.underline ? 'underline' : 'none',
         lineHeight: 1.2,
         transform: geometry.rotation ? `rotate(${geometry.rotation / 100}deg)` : undefined,
         transformOrigin: 'center',
@@ -582,13 +592,33 @@ function TextFormattingStrip({
   viewport,
   onUpdate,
   onOpenInspector,
+  more,
+  colorPickerOpen,
+  onColorPickerOpenChange,
+  onColorPickerDragStart,
+  onColorPickerDismissIntent,
 }: {
   node: V5Node
   viewport?: DOMRect | null
   onUpdate: (patch: Partial<V5TextProps>) => void
   onOpenInspector: () => void
+  more: MenuItem[]
+  colorPickerOpen: boolean
+  onColorPickerOpenChange: (open: boolean) => void
+  onColorPickerDragStart: () => void
+  onColorPickerDismissIntent: () => void
 }) {
   const props = node.props as unknown as V5TextProps
+  const weight = Number(props.fontWeight ?? (props.bold ? 700 : 400))
+  const fontSize = Number(props.fontSize ?? 11)
+  const fontLabel =
+    props.fontFamily === 'serif' ? 'Times' : props.fontFamily === 'mono' ? 'Courier' : 'Arial'
+  const commitFontSize = (input: HTMLInputElement) => {
+    const parsed = Number(input.value.trim())
+    const next = Number.isFinite(parsed) ? Math.min(72, Math.max(6, parsed)) : fontSize
+    input.value = String(next)
+    if (next !== fontSize) onUpdate({ fontSize: next })
+  }
   const alignments = [
     { value: 'left' as const, label: 'Align left', Icon: AlignLeft },
     { value: 'center' as const, label: 'Align center', Icon: AlignCenter },
@@ -605,36 +635,118 @@ function TextFormattingStrip({
       data-v5-editor-chrome
       role="toolbar"
       aria-label="Text formatting"
-      className="pointer-events-auto z-30 flex h-10 items-center gap-1 rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur"
+      className="pointer-events-auto z-30 flex h-10 items-center gap-1 overflow-x-auto rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur"
       style={{
         position: 'fixed',
         left: viewport ? viewport.left + viewport.width / 2 : -9999,
         top: viewport ? viewport.top + 12 : -9999,
         transform: 'translateX(-50%)',
+        maxWidth: viewport ? Math.max(160, viewport.width - 16) : undefined,
       }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <span className="px-2 text-xs text-muted-foreground">Document font</span>
-      <input
-        aria-label="Font size in points"
-        className="h-7 w-14 rounded border bg-background px-1 text-center text-xs tabular-nums"
-        type="number"
-        min={6}
-        max={72}
-        value={Number(props.fontSize ?? 11)}
-        onChange={(event) =>
-          onUpdate({ fontSize: Math.min(72, Math.max(6, Number(event.target.value) || 11)) })
-        }
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Font family: ${fontLabel}`}
+            className="flex h-7 w-24 shrink-0 items-center justify-between rounded-md border bg-background px-2 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span>{fontLabel}</span>
+            <span aria-hidden>⌄</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-36">
+          {V5_FONT_FAMILIES.map((family) => {
+            const label = family === 'sans' ? 'Arial' : family === 'serif' ? 'Times' : 'Courier'
+            return (
+              <DropdownMenuItem key={family} onSelect={() => onUpdate({ fontFamily: family })}>
+                <Check
+                  className={`h-4 w-4 ${family === (props.fontFamily ?? 'sans') ? 'opacity-100' : 'opacity-0'}`}
+                />
+                {label}
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <div className="flex h-7 shrink-0 items-center rounded-md border bg-background">
+        <button
+          type="button"
+          aria-label="Decrease font size"
+          className="grid h-full w-7 place-items-center rounded-l-md hover:bg-accent"
+          onClick={() => onUpdate({ fontSize: Math.max(6, fontSize - 1) })}
+        >
+          −
+        </button>
+        <input
+          key={`${node.id}:${fontSize}`}
+          aria-label="Font size in points"
+          className="h-full w-10 border-x bg-transparent text-center text-xs tabular-nums outline-none"
+          type="text"
+          inputMode="decimal"
+          defaultValue={fontSize}
+          onFocus={(event) => event.currentTarget.select()}
+          onBlur={(event) => commitFontSize(event.currentTarget)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              event.currentTarget.blur()
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              event.currentTarget.value = String(fontSize)
+              event.currentTarget.blur()
+            }
+          }}
+        />
+        <button
+          type="button"
+          aria-label="Increase font size"
+          className="grid h-full w-7 place-items-center rounded-r-md hover:bg-accent"
+          onClick={() => onUpdate({ fontSize: Math.min(72, fontSize + 1) })}
+        >
+          +
+        </button>
+      </div>
+      <ColorPicker
+        compact
+        label="Text color"
+        value={String(props.color ?? 'black')}
+        open={colorPickerOpen}
+        onOpenChange={onColorPickerOpenChange}
+        onDragStart={onColorPickerDragStart}
+        onDismissIntent={onColorPickerDismissIntent}
+        onChange={(color) => onUpdate({ color: color as V5TextProps['color'] })}
       />
       <button
         type="button"
         aria-label="Bold"
-        aria-pressed={Boolean(props.bold)}
-        className={`grid h-7 w-7 place-items-center rounded ${props.bold ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
+        aria-pressed={weight >= 600}
+        className={`grid h-7 w-7 shrink-0 place-items-center rounded ${weight >= 600 ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
         onPointerDown={(event) => event.preventDefault()}
-        onClick={() => onUpdate({ bold: !props.bold })}
+        onClick={() => onUpdate({ fontWeight: weight >= 600 ? 400 : 700, bold: weight < 600 })}
       >
         <Bold className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        aria-label="Italic"
+        aria-pressed={Boolean(props.italic)}
+        className={`grid h-7 w-7 shrink-0 place-items-center rounded ${props.italic ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onUpdate({ italic: !props.italic })}
+      >
+        <Italic className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        aria-label="Underline"
+        aria-pressed={Boolean(props.underline)}
+        className={`grid h-7 w-7 shrink-0 place-items-center rounded ${props.underline ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onUpdate({ underline: !props.underline })}
+      >
+        <Underline className="h-4 w-4" />
       </button>
       {alignments.map(({ value, label, Icon }) => (
         <button
@@ -663,39 +775,6 @@ function TextFormattingStrip({
           <Icon className="h-4 w-4" />
         </button>
       ))}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={`Text color: ${props.color ?? 'black'}`}
-            className="flex h-7 items-center gap-1.5 rounded border bg-background px-2 text-xs capitalize hover:bg-accent"
-            onPointerDown={(event) => event.preventDefault()}
-          >
-            <span
-              aria-hidden
-              className="h-3 w-3 rounded-full border"
-              style={{ background: V5_COLOR_HEX[props.color ?? 'black'] }}
-            />
-            {props.color ?? 'black'}
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent data-v5-editor-chrome align="center">
-          {Object.keys(V5_COLOR_HEX).map((color) => (
-            <DropdownMenuItem
-              key={color}
-              className="capitalize"
-              onSelect={() => onUpdate({ color: color as V5TextProps['color'] })}
-            >
-              <span
-                aria-hidden
-                className="h-3 w-3 rounded-full border"
-                style={{ background: V5_COLOR_HEX[color as keyof typeof V5_COLOR_HEX] }}
-              />
-              {color}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
       <button
         type="button"
         aria-label="More text properties"
@@ -705,6 +784,169 @@ function TextFormattingStrip({
       >
         <Settings2 className="h-4 w-4" />
       </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="More actions"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded hover:bg-accent"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <MenuItems items={more} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+function ShapeFormattingStrip({
+  node,
+  viewport,
+  onUpdate,
+  onOpenInspector,
+  more,
+  openPalette,
+  onOpenPaletteChange,
+  onColorPickerDragStart,
+  onColorPickerDismissIntent,
+}: {
+  node: V5Node
+  viewport?: DOMRect | null
+  onUpdate: (patch: Partial<V5ShapeProps>) => void
+  onOpenInspector: () => void
+  more: MenuItem[]
+  openPalette: 'fill' | 'stroke' | null
+  onOpenPaletteChange: (palette: 'fill' | 'stroke' | null) => void
+  onColorPickerDragStart: () => void
+  onColorPickerDismissIntent: () => void
+}) {
+  const props = node.props as unknown as V5ShapeProps
+  const isLine = props.variant === 'line'
+  return (
+    <div
+      data-v5-editor-chrome
+      role="toolbar"
+      aria-label="Shape formatting"
+      className="pointer-events-auto z-30 flex h-10 items-center gap-1 overflow-x-auto rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur"
+      style={{
+        position: 'fixed',
+        left: viewport ? viewport.left + viewport.width / 2 : -9999,
+        top: viewport ? viewport.top + 12 : -9999,
+        transform: 'translateX(-50%)',
+        maxWidth: viewport ? Math.max(160, viewport.width - 16) : undefined,
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {!isLine && (
+        <ColorPicker
+          compact
+          label="Fill"
+          value={String(props.fill ?? 'transparent')}
+          open={openPalette === 'fill'}
+          onOpenChange={(open) => onOpenPaletteChange(open ? 'fill' : null)}
+          onDragStart={onColorPickerDragStart}
+          onDismissIntent={onColorPickerDismissIntent}
+          onChange={(fill) => onUpdate({ fill: fill as V5ShapeProps['fill'] })}
+        />
+      )}
+      <ColorPicker
+        compact
+        label="Stroke"
+        value={String(props.stroke === 'none' ? 'transparent' : (props.stroke ?? 'transparent'))}
+        open={openPalette === 'stroke'}
+        onOpenChange={(open) => onOpenPaletteChange(open ? 'stroke' : null)}
+        onDragStart={onColorPickerDragStart}
+        onDismissIntent={onColorPickerDismissIntent}
+        onChange={(stroke) =>
+          onUpdate({
+            stroke: stroke === 'transparent' ? 'none' : (stroke as V5ShapeProps['stroke']),
+          })
+        }
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Stroke style: ${props.strokeStyle ?? 'solid'}`}
+            className="flex h-7 w-20 shrink-0 items-center justify-between rounded-md border bg-background px-2 text-xs capitalize outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span>{props.strokeStyle ?? 'solid'}</span>
+            <span aria-hidden>⌄</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {(['solid', 'dashed', 'dotted'] as const).map((style) => (
+            <DropdownMenuItem
+              key={style}
+              className="capitalize"
+              onSelect={() => onUpdate({ strokeStyle: style })}
+            >
+              <Check
+                className={`h-4 w-4 ${style === (props.strokeStyle ?? 'solid') ? 'opacity-100' : 'opacity-0'}`}
+              />
+              {style}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <label className="flex h-7 shrink-0 items-center gap-1 rounded border px-1 text-[11px] text-muted-foreground">
+        Stroke{' '}
+        <input
+          aria-label="Stroke width in points"
+          className="w-10 bg-transparent text-center text-xs text-foreground outline-none"
+          type="number"
+          min={0.25}
+          max={12}
+          step={0.25}
+          value={Number(props.strokeWidth ?? 1)}
+          onChange={(event) =>
+            onUpdate({ strokeWidth: Math.min(12, Math.max(0.25, Number(event.target.value) || 1)) })
+          }
+        />
+      </label>
+      {props.variant === 'rect' && (
+        <label className="flex h-7 shrink-0 items-center gap-1 rounded border px-1 text-[11px] text-muted-foreground">
+          Radius{' '}
+          <input
+            aria-label="Corner radius in points"
+            className="w-10 bg-transparent text-center text-xs text-foreground outline-none"
+            type="number"
+            min={0}
+            max={200}
+            value={Number(props.cornerRadius ?? 0)}
+            onChange={(event) =>
+              onUpdate({
+                cornerRadius: Math.min(200, Math.max(0, Number(event.target.value) || 0)),
+              })
+            }
+          />
+        </label>
+      )}
+      <button
+        type="button"
+        aria-label="Open properties"
+        className="grid h-7 w-7 shrink-0 place-items-center rounded hover:bg-accent"
+        onClick={onOpenInspector}
+      >
+        <Settings2 className="h-4 w-4" />
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="More actions"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded hover:bg-accent"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <MenuItems items={more} />
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -748,6 +990,17 @@ export function V5Canvas() {
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
   const [badge, setBadge] = useState<string | null>(null)
   const [panMode, setPanMode] = useState(false)
+  const [openToolbarPalette, setOpenToolbarPalette] = useState<'text' | 'fill' | 'stroke' | null>(
+    null,
+  )
+  const toolbarPaletteDragCloseRef = useRef(false)
+  const setToolbarPalette = (palette: 'text' | 'fill' | 'stroke' | null) => {
+    if (palette === null && toolbarPaletteDragCloseRef.current) {
+      toolbarPaletteDragCloseRef.current = false
+      return
+    }
+    setOpenToolbarPalette(palette)
+  }
   const [feedback, setFeedback] = useState<{
     message: string
     tone: 'error' | 'info'
@@ -999,7 +1252,10 @@ export function V5Canvas() {
   const handleTextAutoHeight = (nodeId: string, heightPx: number) => {
     const node = allScopeNodes.find((candidate) => candidate.id === nodeId)
     if (!node || node.layout_mode !== 'intrinsic') return
-    const next = du(heightPx / zoom)
+    // Entering edit mode must never collapse the authored selection box to the textarea's
+    // measured line height. Intrinsic text may grow while typing, but shrinking remains an
+    // explicit resize action so selection and edit geometry do not jump on double-click.
+    const next = growIntrinsicTextHeight(node.geometry.height, du(heightPx / zoom))
     if (Math.abs(next - node.geometry.height) <= 1) return
     // Coalesced by the command key, so a typing burst is one history entry.
     try {
@@ -1446,7 +1702,10 @@ export function V5Canvas() {
     }
     const alreadySelected = session.selectedNodeIds.includes(node.id)
     const toggleOnClick = additive && alreadySelected
-    if (!toggleOnClick) session.selectNode(node.id, additive)
+    // Pressing an already-selected member must preserve the whole multi-selection so the
+    // pointer can move its union. Shift-click still toggles that member on pointer-up when no
+    // drag threshold was crossed.
+    if (!alreadySelected) session.selectNode(node.id, additive)
     const candidateIds = additive
       ? alreadySelected
         ? session.selectedNodeIds
@@ -1944,7 +2203,10 @@ export function V5Canvas() {
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     const target = event.target as HTMLElement
-    if (target.closest('input, textarea, select, [contenteditable="true"]')) return
+    if (
+      target.closest('input, textarea, select, [contenteditable="true"], [data-v5-editor-chrome]')
+    )
+      return
     const mod = event.metaKey || event.ctrlKey
     const key = event.key
     if (key === 'Escape') {
@@ -2299,7 +2561,7 @@ export function V5Canvas() {
             },
           })
         }
-      } else
+      } else if (primary.kind !== 'shape')
         actions.push({
           id: 'edit',
           label: 'Edit properties',
@@ -2307,6 +2569,13 @@ export function V5Canvas() {
           run: () => setInspectorOpen(true),
         })
     }
+    if (!actions.some((action) => action.id === 'properties'))
+      actions.push({
+        id: 'properties',
+        label: 'Open properties',
+        icon: Settings2,
+        run: () => setInspectorOpen(true),
+      })
     if (selectedNodes.length >= 2)
       actions.push({ id: 'group', label: 'Group', shortcut: '⌘G', icon: Group, run: performGroup })
     if (primary.role === 'group')
@@ -2491,44 +2760,51 @@ export function V5Canvas() {
     ) {
       session.selectNode(node.id)
     }
+    const targetIds =
+      node && !session.selectedNodeIds.includes(node.id) ? [node.id] : session.selectedNodeIds
+    const targetNodes = targetIds
+      .map((id) => allScopeNodes.find((candidate) => candidate.id === id))
+      .filter((candidate): candidate is V5Node => Boolean(candidate))
+    const targetLocked = targetNodes.some((candidate) =>
+      isEffectivelyLocked(document, candidate.id),
+    )
+    const targetAllLocked =
+      targetNodes.length > 0 && targetNodes.every((candidate) => candidate.locked)
     const items: MenuItem[] = []
-    if (node || session.selectedNodeIds.length) {
+    if (targetIds.length) {
+      if (!targetLocked) {
+        items.push(
+          {
+            label: 'Copy',
+            shortcut: '⌘C',
+            run: () => setBadge(session.copySelection() ? 'Copied' : null),
+          },
+          {
+            label: 'Cut',
+            shortcut: '⌘X',
+            run: () => setBadge(session.cutSelection() ? 'Cut' : null),
+          },
+        )
+      }
       items.push(
         {
-          label: 'Copy',
-          shortcut: '⌘C',
-          run: () => setBadge(session.copySelection() ? 'Copied' : null),
+          label: targetAllLocked ? 'Unlock' : 'Lock',
+          run: () => session.execute(setNodesLocked(targetIds, !targetAllLocked)),
         },
         {
-          label: 'Cut',
-          shortcut: '⌘X',
-          run: () => setBadge(session.cutSelection() ? 'Cut' : null),
+          label: 'Hide',
+          run: () => {
+            session.execute(setNodesVisibility(targetIds, 'hidden'))
+            session.selectNode(null)
+          },
         },
-        { label: 'Duplicate', shortcut: '⌘D', run: performDuplicate },
-        {
-          label: 'Order',
-          menu: [
-            { label: 'Bring forward', run: () => shiftOrder(1) },
-            { label: 'Send backward', run: () => shiftOrder(-1) },
-            {
-              label: 'Bring to front',
-              run: () => primary && session.execute(reorderExtreme(primary.id, 'front')),
-            },
-            {
-              label: 'Send to back',
-              run: () => primary && session.execute(reorderExtreme(primary.id, 'back')),
-            },
-          ],
-        },
-        {
-          label: primary?.role === 'group' ? 'Ungroup' : 'Group',
-          run: primary?.role === 'group' ? performUngroup : performGroup,
-        },
-        { label: 'Delete', destructive: true, run: () => requestDelete(session.selectedNodeIds) },
+        { label: 'Open properties', run: () => setInspectorOpen(true) },
       )
+      if (!targetLocked)
+        items.push({ label: 'Delete', destructive: true, run: () => requestDelete(targetIds) })
     }
     if (session.clipboardCount > 0)
-      items.splice(node ? 2 : 0, 0, {
+      items.splice(node ? Math.min(2, items.length) : 0, 0, {
         label: 'Paste',
         shortcut: '⌘V',
         run: () => {
@@ -2733,18 +3009,55 @@ export function V5Canvas() {
         openContextMenu(event, node)
       }}
     >
-      {editingText &&
-        (() => {
-          const target = allScopeNodes.find((node) => node.id === editingText.id)
-          return target ? (
+      {(() => {
+        const target = editingText
+          ? allScopeNodes.find((node) => node.id === editingText.id)
+          : selectedNodes.length === 1
+            ? primary
+            : null
+        if (!target || activeTransform || selectionLocked) return null
+        if (target.kind === 'text')
+          return (
             <TextFormattingStrip
               node={target}
               viewport={hostRef.current?.getBoundingClientRect()}
               onUpdate={(patch) => session.execute(updateNodeProps(target.id, patch))}
               onOpenInspector={() => setInspectorOpen(true)}
+              more={moreItems}
+              colorPickerOpen={openToolbarPalette === 'text'}
+              onColorPickerOpenChange={(open) => setToolbarPalette(open ? 'text' : null)}
+              onColorPickerDragStart={() => {
+                toolbarPaletteDragCloseRef.current = true
+              }}
+              onColorPickerDismissIntent={() => {
+                toolbarPaletteDragCloseRef.current = false
+              }}
             />
-          ) : null
-        })()}
+          )
+        if (target.kind === 'shape')
+          return (
+            <ShapeFormattingStrip
+              node={target}
+              viewport={hostRef.current?.getBoundingClientRect()}
+              onUpdate={(patch) => session.execute(updateNodeProps(target.id, patch))}
+              onOpenInspector={() => setInspectorOpen(true)}
+              more={moreItems}
+              openPalette={
+                openToolbarPalette === 'fill' || openToolbarPalette === 'stroke'
+                  ? openToolbarPalette
+                  : null
+              }
+              onOpenPaletteChange={setToolbarPalette}
+              onColorPickerDragStart={() => {
+                toolbarPaletteDragCloseRef.current = true
+              }}
+              onColorPickerDismissIntent={() => {
+                toolbarPaletteDragCloseRef.current = false
+              }}
+            />
+          )
+        return null
+      })()}
       <div
         className="v5-page-stack relative"
         style={{ width: contentSize.width, height: contentSize.height }}
@@ -2878,30 +3191,42 @@ export function V5Canvas() {
                     />
                   ) : null
                 })()}
-              {editingText && isActive && (
-                <TextEditor
-                  node={allScopeNodes.find((candidate) => candidate.id === editingText.id)!}
-                  geometry={(() => {
-                    const edited = allScopeNodes.find(
-                      (candidate) => candidate.id === editingText.id,
-                    )!
-                    const projection = nodeProjection(edited)
-                    return {
-                      x: projection.origin.x,
-                      y: projection.origin.y,
-                      width: projection.width,
-                      height: projection.height,
-                      rotation: projection.rotation,
-                    }
-                  })()}
-                  zoom={zoom}
-                  value={editingText.value}
-                  onChange={(value) => setEditingText({ ...editingText, value })}
-                  onCommit={() => commitTextEditing(false)}
-                  onCancel={() => commitTextEditing(true)}
-                  onAutoHeight={(heightPx) => handleTextAutoHeight(editingText.id, heightPx)}
-                />
-              )}
+              {editingText &&
+                isActive &&
+                (() => {
+                  const edited = allScopeNodes.find((candidate) => candidate.id === editingText.id)!
+                  const projection = nodeProjection(edited)
+                  const geometry = {
+                    x: projection.origin.x,
+                    y: projection.origin.y,
+                    width: projection.width,
+                    height: projection.height,
+                    rotation: projection.rotation,
+                  }
+                  return (
+                    <>
+                      <TextEditor
+                        node={edited}
+                        geometry={geometry}
+                        zoom={zoom}
+                        value={editingText.value}
+                        onChange={(value) => setEditingText({ ...editingText, value })}
+                        onCommit={() => commitTextEditing(false)}
+                        onCancel={() => commitTextEditing(true)}
+                        onAutoHeight={(heightPx) => handleTextAutoHeight(editingText.id, heightPx)}
+                      />
+                      <SelectionOverlay
+                        bounds={{
+                          x: geometry.x * zoom,
+                          y: geometry.y * zoom,
+                          width: geometry.width * zoom,
+                          height: geometry.height * zoom,
+                        }}
+                        rotation={geometry.rotation}
+                      />
+                    </>
+                  )
+                })()}
               {isActive && showSelection && primary && (
                 <SelectionOverlay
                   bounds={(() => {
@@ -3081,15 +3406,19 @@ export function V5Canvas() {
           )
         })}
       </div>
-      {(!gesture || (gesture.kind === 'move' && !gesture.activated)) && !editingText && primary && (
-        <ContextToolbar
-          bounds={primaryViewportRect(primary.id)}
-          viewport={hostRef.current?.getBoundingClientRect()}
-          actions={toolbarActions}
-          more={moreItems}
-          topClearance={canRotate(primary) ? 40 : 0}
-        />
-      )}
+      {(!gesture || (gesture.kind === 'move' && !gesture.activated)) &&
+        !editingText &&
+        primary &&
+        primary.kind !== 'text' &&
+        primary.kind !== 'shape' && (
+          <ContextToolbar
+            bounds={primaryViewportRect(primary.id)}
+            viewport={hostRef.current?.getBoundingClientRect()}
+            actions={toolbarActions}
+            more={moreItems}
+            topClearance={canRotate(primary) ? 40 : 0}
+          />
+        )}
       {portalHost &&
         createPortal(
           <div

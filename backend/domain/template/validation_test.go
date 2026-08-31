@@ -1,14 +1,17 @@
 package template_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
 	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/documentmodel"
 	"quotierlabs/backend/domain/template"
 )
 
 func TestValidateTemplate(t *testing.T) {
+	valid, _ := json.Marshal(documentmodel.NewBlank("page"))
 	tests := []struct {
 		name    string
 		tmpl    domain.Template
@@ -18,7 +21,7 @@ func TestValidateTemplate(t *testing.T) {
 			name: "valid basic template",
 			tmpl: domain.Template{
 				Name:   "Standard",
-				Layout: `{"rows":[]}`,
+				Layout: string(valid),
 			},
 			wantErr: nil,
 		},
@@ -26,7 +29,7 @@ func TestValidateTemplate(t *testing.T) {
 			name: "missing name",
 			tmpl: domain.Template{
 				Name:   "",
-				Layout: `{"rows":[]}`,
+				Layout: string(valid),
 			},
 			wantErr: template.ErrNameRequired,
 		},

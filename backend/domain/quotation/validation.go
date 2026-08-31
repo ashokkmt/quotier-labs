@@ -19,24 +19,11 @@ func ValidateQuotation(q *domain.Quotation) error {
 		return ErrInvalidStatus
 	}
 
-	if q.Document != "" {
-		version, err := DocumentSchemaVersion(q.Document)
-		if err != nil {
-			return ErrInvalidDocument
-		}
-		if version == documentmodel.SchemaVersion {
-			if _, err := documentmodel.Parse([]byte(q.Document)); err != nil {
-				return ErrInvalidDocument
-			}
-			return nil
-		}
-		doc, err := ParseDocument(q.Document)
-		if err != nil {
-			return ErrInvalidDocument
-		}
-		if err := ValidateDocument(doc); err != nil {
-			return err
-		}
+	if q.Document == "" {
+		return ErrInvalidDocument
+	}
+	if _, err := documentmodel.Parse([]byte(q.Document)); err != nil {
+		return ErrInvalidDocument
 	}
 
 	return nil

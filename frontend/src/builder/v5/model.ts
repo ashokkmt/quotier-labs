@@ -55,6 +55,28 @@ export type V5Document = {
   settings: { page_size: 'A4'; orientation: 'portrait' | 'landscape'; default_master_id?: string }
 }
 
+export function createBlankV5Document(
+  nextID: () => string = () => crypto.randomUUID(),
+): V5Document {
+  return {
+    schema_version: V5_SCHEMA_VERSION,
+    root: {
+      pages: [
+        {
+          id: nextID(),
+          width: A4_WIDTH_DU,
+          height: A4_HEIGHT_DU,
+          margin: { top: 0, right: 0, bottom: 0, left: 0 },
+          child_ids: [],
+          children: [],
+        },
+      ],
+    },
+    stories: [],
+    settings: { page_size: 'A4', orientation: 'portrait' },
+  }
+}
+
 export const du = (value: number): DocumentUnit => Math.round(value) as DocumentUnit
 
 export function validateV5(document: unknown): string | null {

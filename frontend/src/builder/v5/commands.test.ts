@@ -478,6 +478,26 @@ describe('atomic selection delete (tools.md §23)', () => {
     session.undo()
     expect(session.getSnapshot().document.root.pages[0].children).toHaveLength(2)
   })
+
+  it('garbage-collects stories only after their last frame is deleted', () => {
+    const doc = emptyV5Fixture()
+    doc.stories = [{ id: 'story', kind: 'rich-text', content: { text: 'hello' } }]
+    doc.root.pages[0].child_ids = ['first', 'second']
+    doc.root.pages[0].children = ['first', 'second'].map((id) => ({
+      ...node(id),
+      kind: 'flow-frame',
+      role: 'flow-frame' as const,
+      layout_mode: 'flow-frame' as const,
+      story_id: 'story',
+    }))
+    const session = new V5Session(doc)
+    session.execute(deleteNode('first'))
+    expect(session.getSnapshot().document.stories).toHaveLength(1)
+    session.execute(deleteNode('second'))
+    expect(session.getSnapshot().document.stories).toHaveLength(0)
+    session.undo()
+    expect(session.getSnapshot().document.stories).toHaveLength(1)
+  })
 })
 
 describe('reparenting preserves page-space geometry', () => {

@@ -1,34 +1,22 @@
 import { useEffect } from 'react'
-
-const RECOVERY_PREFIX = 'quotier_recovery_'
+import { ClearRecovery, LoadRecovery, SaveRecovery } from '../../../../wailsjs/go/wails/AppHandler'
 
 export function useRecovery(quotationId: string, document: any) {
   useEffect(() => {
     if (!document || !quotationId) return
-    // Write checkpoint to localStorage
-    localStorage.setItem(
-      RECOVERY_PREFIX + quotationId,
-      JSON.stringify({
-        timestamp: Date.now(),
-        document: document,
-      }),
-    )
+    const timer = window.setTimeout(() => {
+      SaveRecovery(quotationId, JSON.stringify(document)).catch((error) => {
+        console.error('Could not write recovery checkpoint', error)
+      })
+    }, 750)
+    return () => window.clearTimeout(timer)
   }, [document, quotationId])
 
-  const clearRecovery = () => {
-    localStorage.removeItem(RECOVERY_PREFIX + quotationId)
-  }
+  const clearRecovery = () => ClearRecovery(quotationId)
 
-  const checkRecovery = (): any | null => {
-    const data = localStorage.getItem(RECOVERY_PREFIX + quotationId)
-    if (data) {
-      try {
-        return JSON.parse(data)
-      } catch {
-        return null
-      }
-    }
-    return null
+  const checkRecovery = async (): Promise<any | null> => {
+    const checkpoint = await LoadRecovery(quotationId)
+    return checkpoint?.document ?? null
   }
 
   return { clearRecovery, checkRecovery }

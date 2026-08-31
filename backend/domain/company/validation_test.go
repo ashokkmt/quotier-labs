@@ -1,9 +1,9 @@
 package company_test
 
 import (
-	"testing"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/company"
+	"testing"
 )
 
 func TestValidateCompany(t *testing.T) {
@@ -41,7 +41,7 @@ func TestValidateCompany(t *testing.T) {
 	if err != company.ErrInvalidGSTIN {
 		t.Fatalf("expected ErrInvalidGSTIN, got %v", err)
 	}
-	
+
 	validGSTIN := "27ABCDE1234F1Z5"
 	c.GSTIN = &validGSTIN
 	err = company.ValidateCompany(c)

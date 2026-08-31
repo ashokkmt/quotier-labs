@@ -1,6 +1,8 @@
 import type { V5LayoutMode, V5Node } from './model'
 import {
-  isColorToken,
+  isColorValue,
+  V5_FONT_FAMILIES,
+  V5_FONT_WEIGHTS,
   V5_SHAPE_VARIANTS,
   V5_STROKE_STYLES,
   V5_TEXT_ALIGNS,
@@ -121,6 +123,20 @@ function validateControlledProps(node: V5Node): string | null {
     }
     if (props.bold !== undefined && typeof props.bold !== 'boolean') return 'bold must be boolean'
     if (
+      props.fontFamily !== undefined &&
+      !(V5_FONT_FAMILIES as readonly string[]).includes(String(props.fontFamily))
+    )
+      return 'invalid font family'
+    if (
+      props.fontWeight !== undefined &&
+      !(V5_FONT_WEIGHTS as readonly number[]).includes(Number(props.fontWeight))
+    )
+      return 'invalid font weight'
+    if (props.italic !== undefined && typeof props.italic !== 'boolean')
+      return 'italic must be boolean'
+    if (props.underline !== undefined && typeof props.underline !== 'boolean')
+      return 'underline must be boolean'
+    if (
       props.align !== undefined &&
       !(V5_TEXT_ALIGNS as readonly string[]).includes(String(props.align))
     )
@@ -130,14 +146,14 @@ function validateControlledProps(node: V5Node): string | null {
       !(V5_TEXT_VERTICAL_ALIGNS as readonly string[]).includes(String(props.verticalAlign))
     )
       return 'invalid vertical text alignment'
-    if (props.color !== undefined && !isColorToken(props.color)) return 'invalid text color token'
+    if (props.color !== undefined && !isColorValue(props.color)) return 'invalid text color value'
   }
   if (node.kind === 'shape') {
     if (!(V5_SHAPE_VARIANTS as readonly string[]).includes(String(props.variant)))
       return 'invalid shape variant'
-    if (props.fill !== undefined && props.fill !== 'none' && !isColorToken(props.fill))
+    if (props.fill !== undefined && props.fill !== 'none' && !isColorValue(props.fill))
       return 'invalid fill token'
-    if (props.stroke !== undefined && props.stroke !== 'none' && !isColorToken(props.stroke))
+    if (props.stroke !== undefined && props.stroke !== 'none' && !isColorValue(props.stroke))
       return 'invalid stroke token'
     if (
       props.strokeStyle !== undefined &&
@@ -153,6 +169,13 @@ function validateControlledProps(node: V5Node): string | null {
       )
         return 'stroke width is out of bounds'
     }
+    if (
+      props.cornerRadius !== undefined &&
+      (!Number.isFinite(Number(props.cornerRadius)) ||
+        Number(props.cornerRadius) < 0 ||
+        Number(props.cornerRadius) > 200)
+    )
+      return 'corner radius is out of bounds'
   }
   return null
 }

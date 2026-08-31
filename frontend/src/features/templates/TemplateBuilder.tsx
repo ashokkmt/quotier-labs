@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { GetTemplate, UpdateTemplate } from '../../../wailsjs/go/wails/TemplateHandler'
-import { MigrateDocumentToV5 } from '../../../wailsjs/go/wails/DocumentHandler'
-import { BuilderEngine, V5BuilderEngine, type V5EngineHandle } from '../../builder'
-import { isFreeformV5Enabled } from '../../builder/feature'
-import type { V5Document } from '../../builder/v5/model'
-import { normalize, serialize } from '../../builder'
+import {
+  V5BuilderEngine,
+  createBlankV5Document,
+  type V5Document,
+  type V5EngineHandle,
+} from '../../builder'
 import { useAutosave } from '../quotations/hooks/useAutosave'
 import { useRecovery } from '../quotations/hooks/useRecovery'
 import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
@@ -22,7 +23,7 @@ export function TemplateBuilder({
   templateId: string
   onBack: () => void
 }) {
-  const [document, setDocument] = useState<any>(() => normalize({}))
+  const [document, setDocument] = useState<V5Document>(() => createBlankV5Document())
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
@@ -47,13 +48,12 @@ export function TemplateBuilder({
         if (cancelled) return
         setName(res.name)
         setDescription(res.description || '')
-        const raw = res.layout || JSON.stringify(normalize({}))
+        const raw = res.layout || JSON.stringify(createBlankV5Document())
         const parsed = JSON.parse(raw)
-        const nextDocument =
-          isFreeformV5Enabled() && parsed?.schema_version !== 5
-            ? JSON.parse(await withTimeout(MigrateDocumentToV5(raw), 8000))
-            : parsed
-        if (!cancelled) setDocument(nextDocument)
+        if (parsed?.schema_version !== 5) {
+          throw new Error('This template uses an unsupported document format.')
+        }
+        if (!cancelled) setDocument(parsed)
       } catch (err) {
         if (cancelled) return
         setLoadError(String(err))
@@ -88,10 +88,8 @@ export function TemplateBuilder({
       const started = v5.beginSave()
       revision = started.revision
       layout = started.document
-    } else if (docToSave?.schema_version === 5) {
-      layout = JSON.stringify(docToSave)
     } else {
-      layout = serialize(docToSave)
+      layout = JSON.stringify(docToSave)
     }
     try {
       await UpdateTemplate({
@@ -118,13 +116,13 @@ export function TemplateBuilder({
 
   const handleBack = async () => {
     if (leaving) return
-    if (!dirty) {
+    if (!dirty || saveState === 'Saved') {
       onBack()
       return
     }
     setLeaving(true)
     try {
-      await save(autosavePayload)
+      await withTimeout(save(autosavePayload), 8000)
       setDirty(false)
       onBack()
     } catch (err) {
@@ -224,34 +222,24 @@ export function TemplateBuilder({
         </div>
       </header>
       <div className="min-h-0 flex-1 relative overflow-hidden">
-        {isFreeformV5Enabled() && document?.schema_version === 5 ? (
-          <V5BuilderEngine
-            document={document as V5Document}
-            onReady={(handle) => {
-              v5EngineRef.current = handle
-              setV5UndoRedo({
-                canUndo: handle?.canUndo() ?? false,
-                canRedo: handle?.canRedo() ?? false,
-              })
-            }}
-            onChange={(newDoc) => {
-              setDocument(newDoc)
-              setDirty(true)
-              setV5UndoRedo({
-                canUndo: v5EngineRef.current?.canUndo() ?? false,
-                canRedo: v5EngineRef.current?.canRedo() ?? false,
-              })
-            }}
-          />
-        ) : (
-          <BuilderEngine
-            document={document}
-            onChange={(newDoc: any) => {
-              setDocument(newDoc)
-              setDirty(true)
-            }}
-          />
-        )}
+        <V5BuilderEngine
+          document={document as V5Document}
+          onReady={(handle) => {
+            v5EngineRef.current = handle
+            setV5UndoRedo({
+              canUndo: handle?.canUndo() ?? false,
+              canRedo: handle?.canRedo() ?? false,
+            })
+          }}
+          onChange={(newDoc) => {
+            setDocument(newDoc)
+            setDirty(true)
+            setV5UndoRedo({
+              canUndo: v5EngineRef.current?.canUndo() ?? false,
+              canRedo: v5EngineRef.current?.canRedo() ?? false,
+            })
+          }}
+        />
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import {
   clampStrokeWidth,
   defaultShapeProps,
   defaultTextProps,
+  growIntrinsicTextHeight,
   isColorToken,
   V5_COLOR_TOKENS,
   V5_TOOL_PRESETS,
@@ -12,6 +13,10 @@ import { getV5Widget, validateNodeContract } from './registry'
 import { du, type V5Node } from './model'
 
 describe('V5 design tokens', () => {
+  it('does not shrink an authored text frame merely by entering edit mode', () => {
+    expect(growIntrinsicTextHeight(4800, 2200)).toBe(4800)
+    expect(growIntrinsicTextHeight(4800, 6200)).toBe(6200)
+  })
   it('uses a closed token palette', () => {
     expect([...V5_COLOR_TOKENS].sort()).toEqual([
       'black',

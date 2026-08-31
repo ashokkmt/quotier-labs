@@ -3,7 +3,9 @@ package backup
 import "time"
 
 type BackupMetadata struct {
+	FormatVersion  int       `json:"format_version"`
 	AppVersion     string    `json:"app_version"`
+	Channel        string    `json:"channel"`
 	SchemaVersion  int       `json:"schema_version"`
 	CompanyID      string    `json:"company_id"`
 	CompanyName    string    `json:"company_name"`
@@ -19,9 +21,9 @@ type BackupInfo struct {
 }
 
 type ValidationResult struct {
-	IsValid bool           `json:"is_valid"`
-	Error   string         `json:"error,omitempty"`
-	Info    *BackupInfo    `json:"info,omitempty"`
+	IsValid bool        `json:"is_valid"`
+	Error   string      `json:"error,omitempty"`
+	Info    *BackupInfo `json:"info,omitempty"`
 }
 
 type ExportResult struct {
@@ -44,10 +46,10 @@ type ImportPreview struct {
 }
 
 type ImportMapping struct {
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	Phone     string `json:"phone"`
-	Address   string `json:"address"`
-	GSTIN     string `json:"gstin"`
-	PAN       string `json:"pan"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Phone   string `json:"phone"`
+	Address string `json:"address"`
+	GSTIN   string `json:"gstin"`
+	PAN     string `json:"pan"`
 }

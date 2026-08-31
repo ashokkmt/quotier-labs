@@ -5,7 +5,6 @@ import { AppLayout } from './layouts/AppLayout'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { OnboardingWizard } from './features/onboarding/components/OnboardingWizard'
 import { CustomerList } from './features/customers/CustomerList'
-import { SectionLibrary } from './features/sections/SectionLibrary'
 import { TemplateList } from './features/templates/TemplateList'
 import { QuotationBuilder } from './features/quotations/QuotationBuilder'
 import { QuotationList } from './features/quotations/QuotationList'
@@ -35,10 +34,6 @@ const router = createBrowserRouter([
     path: '/',
     element: <AppLayout />,
     children: [
-      {
-        path: 'sections',
-        element: <SectionLibrary />,
-      },
       {
         index: true,
         element: <Dashboard />,

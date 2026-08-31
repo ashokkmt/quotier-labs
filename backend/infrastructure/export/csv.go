@@ -48,7 +48,7 @@ func (s *CSVExportService) ExportQuotations(ctx context.Context, companyID strin
 			q.CreatedAt.Format("2006-01-02"),
 		})
 	}
-	
+
 	return &backup_domain.ExportResult{Path: destPath, Success: true}, nil
 }
 
@@ -79,7 +79,7 @@ func (s *CSVExportService) ExportCustomers(ctx context.Context, companyID string
 			getStr(c.PAN),
 		})
 	}
-	
+
 	return &backup_domain.ExportResult{Path: destPath, Success: true}, nil
 }
 

@@ -47,15 +47,30 @@ Quotier Labs relies on **Wails** to act as a bridge between a fast, modern React
 - [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation)
 
 ### Running in Development Mode
-To launch the application with Hot-Module-Reloading (HMR) for both Go and React:
-```bash
-# Navigate to the desktop app package
-cd apps/desktop
 
-# Start the Wails dev server
-wails dev
+Always start the desktop app through the repository target:
+
+```bash
+make dev
 ```
-The application will launch. Any changes you make to `frontend/` will instantly reflect in the UI. Changes to `backend/` will auto-recompile the Go binary.
+
+This derives a development version from the nearest Git tag, injects BuildInfo, enables HMR, disables in-app updating, and keeps all app-controlled test data inside ignored repository storage:
+
+```text
+.devdata/quotier-labs/
+  data/db/quotierlabs.sqlite3
+  data/assets/
+  config/settings.json
+  state/recovery/
+  logs/
+  crashes/
+  cache/
+  backups/
+  exports/
+  tmp/
+```
+
+Use `make dev-open-data` to inspect it. Use `make dev-reset` for a confirmed, marker-checked reset, or `CONFIRM=1 make dev-reset` in automation. These commands never touch installed beta or production data. Do not run `wails dev` directly: the app deliberately requires the explicit development profile/root.
 
 ### Code Generation & Bindings
 If you change any exported Go structs, DTOs, or Wails Handlers (`backend/transport/wails`), run a build or dev loop to regenerate the TypeScript bindings:
@@ -64,22 +79,91 @@ cd apps/desktop
 wails generate module
 ```
 
-## Building & Release
+## Building and releases
 
-The application includes cross-platform build scripts inside `/scripts/`. 
+A local development build is `make build`; it uses development identity/data and cannot self-update.
 
-To package the application for production, you can run the master release script which orchestrates tests and building for multiple platforms:
+### Versioning
+
+Git annotated tags are the only release-version source. Do not edit version literals in Go or the Settings UI and never move an existing release tag.
+
 ```bash
-./scripts/build-release.sh
+# Beta after v1.3.0-beta.1
+git status                       # must be clean
+git tag -s v1.3.0-beta.2 -m "Quotier Labs v1.3.0-beta.2"
+git push origin v1.3.0-beta.2
+
+# Stable release
+git tag -s v1.3.0 -m "Quotier Labs v1.3.0"
+git push origin v1.3.0
 ```
 
-Or you can build for specific platforms individually:
+Use `-a` instead of `-s` only when GPG tag signing is not configured; release scripts reject lightweight tags. `v1.3.0-beta.1` remains the version of its existing commit. New work needs a new tag.
+
+Development versions look like `1.3.0-beta.1+dev.4.gabc123.dirty`. A tagged release reports the exact tag version in Settings, backups, logs, manifests, and updater comparisons.
+
+### Required release credentials
+
+The project cannot create or store your signing credentials. Configure these outside Git:
+
+- `QUOTIER_UPDATE_PUBLIC_KEY`: base64 of the raw 32-byte Ed25519 public key; injected into signed beta/production builds.
+- `QUOTIER_UPDATE_PRIVATE_KEY_FILE`: protected Ed25519 PEM private key used only while finalizing release metadata.
+- macOS: `APPLE_DEVELOPER_ID_APPLICATION`, `APPLE_DEVELOPER_ID_INSTALLER`, and an `APPLE_NOTARY_PROFILE` created with `xcrun notarytool store-credentials`.
+- Windows: `QUOTIER_WINDOWS_CERT_SHA1` for an installed Authenticode certificate and optionally `QUOTIER_WINDOWS_TIMESTAMP_URL`.
+- Linux: `QUOTIER_LINUX_GPG_KEY` identifying the GPG release key. CI also needs `LINUX_GPG_PRIVATE_KEY_B64`; it publishes a detached armored signature beside the Debian package.
+
+Generate the update key once, back it up securely, and never commit it:
+
+```bash
+openssl genpkey -algorithm Ed25519 -out quotier-update-private.pem
+openssl pkey -in quotier-update-private.pem -pubout -outform DER \
+  | tail -c 32 | base64
+```
+
+Losing this private key prevents existing installations from trusting a replacement unless a key-rotation release was signed first.
+
+### Native signed artifacts
+
+Release builds must run on the target OS. They reject a dirty tree and require `HEAD` to have an exact annotated SemVer tag.
+
+```bash
+QUOTIER_UPDATE_PUBLIC_KEY='base64-public-key' make release
+```
+
+The native scripts are:
+
 ```bash
 ./scripts/package-macos.sh
 ./scripts/package-windows.sh
 ./scripts/package-linux.sh
 ```
 
-*(Note: Building Windows `.exe` installers on a Mac/Linux host requires NSIS to be installed locally).*
+They produce signed/checksummed artifacts in `release-artifacts/`. macOS output is a hardened, signed, notarized, stapled universal DMG for manual installation plus a signed/notarized PKG for native update handoff. Windows output is a per-user NSIS installer with a default Start Menu shortcut, optional desktop shortcut, signed app/uninstaller/installer, and preserved AppData on uninstall. Linux output is a native Debian package with a desktop entry, hicolor icon, SHA-256 file, and detached GPG signature; it never writes user data under `/usr`.
 
-The resulting production binaries will be placed in `apps/desktop/build/bin/`.
+After native artifacts are collected in one `release-artifacts/` directory, sign the update manifest:
+
+```bash
+QUOTIER_UPDATE_PRIVATE_KEY_FILE=/secure/quotier-update-private.pem \
+QUOTIER_UPDATE_PUBLIC_KEY='base64-public-key' \
+QUOTIER_MINIMUM_SOURCE_VERSION='1.3.0-beta.1' \
+QUOTIER_MINIMUM_DB_SCHEMA='10' \
+./scripts/finalize-release.sh
+```
+
+The GitHub `Signed desktop release` workflow performs the same native matrix for a pushed tag, creates a CycloneDX SBOM and provenance attestations, and opens a draft GitHub Release. Configure the repository secrets named in `.github/workflows/release.yml`, plus repository variables `QUOTIER_MINIMUM_SOURCE_VERSION` and `QUOTIER_MINIMUM_DB_SCHEMA`. Review the draft and clean-machine evidence before publishing it. Update discovery only sees published releases.
+
+For CI, export the Developer ID Application and Developer ID Installer identities separately as `MAC_CERT_P12_B64`/`MAC_CERT_PASSWORD` and `MAC_INSTALLER_CERT_P12_B64`/`MAC_INSTALLER_CERT_PASSWORD`. Beta and production have distinct app IDs and data roots; the signed update manifest is channel-bound, so moving from beta to production is an explicit install plus verified backup/import rather than an automatic in-place channel switch.
+
+### In-app updates and migrations
+
+Only signed beta/production builds with the embedded update public key enable updates. Development builds show “Development build — updates disabled.” Settings lets the user opt into a maximum once-per-24-hour check, inspect a signed candidate, download with progress/cancel, and hand the verified package to the native installer.
+
+Every update asset is accepted only after its Ed25519 manifest signature, exact size/SHA-256, platform/package match, channel/SemVer rules, and native package signature/structure pass. The old app creates a verified rollback backup before installation. On next launch, pending SQLite migrations run against a staged consistent database copy; integrity and foreign-key checks must pass before it replaces the live generation. Preferences, quotations, assets, and external backups are outside the immutable installed application and remain in the same channel-specific data root.
+
+An update that adds migration `011` needs no special old-app code: ship cumulative embedded migrations `001..011`, set the update manifest schema target through the release script, and test upgrades from every supported older version before publishing. Never edit an already released migration.
+
+### Installed data and uninstall behavior
+
+Installed builds use OS-native per-user data/config/state/log/cache roots. Beta and production are isolated. Application files are immutable; no runtime database, log, backup, or export depends on the launch working directory. Default uninstall removes package-owned application files and launcher registration but preserves quotations, assets, settings, and backups so reinstall/upgrade can rediscover them. User exports and manually selected backups always remain user-owned.
+
+Before publishing, install each artifact on a clean supported machine, launch from the native application list with an arbitrary read-only working directory, exercise backup/restore/PDF, upgrade from the oldest supported release, verify signatures and version identity, uninstall, reinstall, and confirm preserved data.

@@ -10,15 +10,15 @@ import (
 )
 
 type CompanyModel struct {
-	ID        string `gorm:"primaryKey"`
-	Name      string
-	LegalName *string
-	TaxID     *string
-	Address   *string
-	Phone     *string
-	Email     *string
-	Website   *string
-	LogoURL   *string
+	ID           string `gorm:"primaryKey"`
+	Name         string
+	LegalName    *string
+	TaxID        *string
+	Address      *string
+	Phone        *string
+	Email        *string
+	Website      *string
+	LogoURL      *string
 	State        *string
 	GSTIN        *string
 	PAN          *string
@@ -49,15 +49,15 @@ func toDomainCompany(m *CompanyModel) *domain.Company {
 		deletedAt = &m.DeletedAt.Time
 	}
 	return &domain.Company{
-		ID:        m.ID,
-		Name:      m.Name,
-		LegalName: m.LegalName,
-		TaxID:     m.TaxID,
-		Address:   m.Address,
-		Phone:     m.Phone,
-		Email:     m.Email,
-		Website:   m.Website,
-		LogoURL:   m.LogoURL,
+		ID:           m.ID,
+		Name:         m.Name,
+		LegalName:    m.LegalName,
+		TaxID:        m.TaxID,
+		Address:      m.Address,
+		Phone:        m.Phone,
+		Email:        m.Email,
+		Website:      m.Website,
+		LogoURL:      m.LogoURL,
 		State:        m.State,
 		GSTIN:        m.GSTIN,
 		PAN:          m.PAN,
@@ -65,8 +65,8 @@ func toDomainCompany(m *CompanyModel) *domain.Company {
 		SignatureURL: m.SignatureURL,
 		StampURL:     m.StampURL,
 
-		Currency:  m.Currency,
-		IsActive:  m.IsActive,
+		Currency: m.Currency,
+		IsActive: m.IsActive,
 		AuditMetadata: domain.AuditMetadata{
 			CreatedAt: m.CreatedAt,
 			UpdatedAt: m.UpdatedAt,
@@ -83,15 +83,15 @@ func fromDomainCompany(d *domain.Company) *CompanyModel {
 		return nil
 	}
 	m := &CompanyModel{
-		ID:        d.ID,
-		Name:      d.Name,
-		LegalName: d.LegalName,
-		TaxID:     d.TaxID,
-		Address:   d.Address,
-		Phone:     d.Phone,
-		Email:     d.Email,
-		Website:   d.Website,
-		LogoURL:   d.LogoURL,
+		ID:           d.ID,
+		Name:         d.Name,
+		LegalName:    d.LegalName,
+		TaxID:        d.TaxID,
+		Address:      d.Address,
+		Phone:        d.Phone,
+		Email:        d.Email,
+		Website:      d.Website,
+		LogoURL:      d.LogoURL,
 		State:        d.State,
 		GSTIN:        d.GSTIN,
 		PAN:          d.PAN,

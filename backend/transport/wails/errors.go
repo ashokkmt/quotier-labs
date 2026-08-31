@@ -33,14 +33,14 @@ func MapError(err error) ErrorDTO {
 			Message: "The requested record was not found",
 		}
 	}
-	
+
 	if errors.Is(err, domain.ErrDuplicateNumber) {
 		return ErrorDTO{
 			Code:    "DUPLICATE_NUMBER",
 			Message: "A record with this number already exists",
 		}
 	}
-	
+
 	if errors.Is(err, domain.ErrInvalidTransition) {
 		return ErrorDTO{
 			Code:    "INVALID_TRANSITION",

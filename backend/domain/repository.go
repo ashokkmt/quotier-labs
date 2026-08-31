@@ -32,15 +32,6 @@ type CustomerRepository interface {
 	Search(ctx context.Context, companyID, query string) ([]Customer, error)
 }
 
-type SectionDefinitionRepository interface {
-	Create(ctx context.Context, def *SectionDefinition) error
-	Update(ctx context.Context, def *SectionDefinition) error
-	Delete(ctx context.Context, id, companyID string) error
-	GetByID(ctx context.Context, id string) (*SectionDefinition, error)
-	ListByCompany(ctx context.Context, companyID string) ([]SectionDefinition, error)
-	ListBuiltins(ctx context.Context) ([]SectionDefinition, error)
-}
-
 type TemplateRepository interface {
 	Create(ctx context.Context, template *Template) error
 	Update(ctx context.Context, template *Template) error

@@ -108,6 +108,15 @@ function descendants(node: V5Node): string[] {
   return [node.id, ...(node.children ?? []).flatMap(descendants)]
 }
 
+function pruneUnreferencedStories(document: V5Document) {
+  const referenced = new Set(
+    document.root.pages.flatMap((page) =>
+      flatten(page.children).flatMap((node) => (node.story_id ? [node.story_id] : [])),
+    ),
+  )
+  document.stories = (document.stories ?? []).filter((story) => referenced.has(story.id))
+}
+
 /** Complete node transform in page coordinates. Groups currently carry translation/rotation
  * only, so decomposition remains deterministic and does not introduce scale/skew drift. */
 function worldMatrix(document: V5Document, id: string) {
@@ -290,6 +299,7 @@ export const deleteNode = (id: string) =>
     if (isLockedThroughAncestors(d, id)) throw new Error(`node ${id} is locked`)
     found.siblings.splice(found.siblings.indexOf(found.node), 1)
     syncContainerIDs(d, found)
+    pruneUnreferencedStories(d)
     return d
   })
 export const reorderNode = (id: string, targetIndex: number) =>
@@ -852,5 +862,6 @@ export const deleteNodes = (ids: string[]) =>
       found.siblings.splice(found.siblings.indexOf(found.node), 1)
       syncContainerIDs(d, found)
     }
+    pruneUnreferencedStories(d)
     return d
   })

@@ -13,7 +13,6 @@ import (
 	app_quot "quotierlabs/backend/application/quotation"
 	app_tmpl "quotierlabs/backend/application/template"
 	"quotierlabs/backend/domain/documentmodel"
-	domain_quotation "quotierlabs/backend/domain/quotation"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/sqlite"
 )
@@ -49,8 +48,7 @@ func setupV5Env(t *testing.T) (*gorm.DB, *app_quot.Service, *app_tmpl.Service, *
 	quotRepo := sqlite.NewQuotationRepository(db)
 	seqRepo := sqlite.NewNumberSequenceRepository(db)
 	idGen := id.NewULIDGenerator()
-	resolver := domain_quotation.NewTemplateResolver(sqlite.NewSectionDefinitionRepository(db))
-	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, resolver, txManager, idGen, nil)
+	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, txManager, idGen, nil)
 	tmplSvc := app_tmpl.NewService(tmplRepo, txManager, idGen)
 	custSvc := app_cust.NewService(custRepo, idGen)
 
@@ -142,6 +140,26 @@ func TestV5QuotationLifecycle(t *testing.T) {
 	}
 }
 
+func TestV5QuotationRecalculationUsesControlledTableLineItems(t *testing.T) {
+	_, quotSvc, _, _, compID := setupV5Env(t)
+	ctx := context.Background()
+	draft, err := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := `{"schema_version":5,"root":{"pages":[{"id":"page-1","width":59528,"height":84189,"margin":{"top":0,"right":0,"bottom":0,"left":0},"child_ids":[],"children":[]}]},"stories":[{"id":"items","kind":"table","content":{"headers":["Item","Qty","Rate"],"rows":[["Design","2","5000"]],"column_count":3,"header_enabled":true,"repeat_header":true,"row_height_mm":8,"column_widths":[10000,10000,10000],"line_items":[{"id":"line-1","quantity":2,"rate":5000,"discount":0,"tax_rate":18,"tax_inclusive":false}]}}],"settings":{"page_size":"A4","orientation":"portrait"}}`
+	if _, err := quotSvc.UpdateQuotationDocument(ctx, compID, app_quot.QuotationUpdateDocumentDTO{ID: draft.ID, Document: document}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := quotSvc.RecalculateQuotation(ctx, compID, draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Subtotal != 10000 || result.CGSTTotal != 900 || result.SGSTTotal != 900 || result.GrandTotal != 11800 {
+		t.Fatalf("unexpected V5 calculation: %+v", result)
+	}
+}
+
 // v5DocumentsEquivalent reports whether two serialized V5 documents are semantically identical.
 func v5DocumentsEquivalent(t *testing.T, a, b string) bool {
 	t.Helper()
@@ -158,8 +176,8 @@ func v5DocumentsEquivalent(t *testing.T, a, b string) bool {
 	return string(ca) == string(cb)
 }
 
-// Phase 12 gate: a V5 template resolves into an independent V5 draft; editing the draft never
-// mutates the template, and legacy template creation still works.
+// A V5 template resolves into an independent V5 draft; editing the draft never mutates the
+// template.
 func TestV5TemplateResolutionIndependence(t *testing.T) {
 	_, quotSvc, tmplSvc, _, compID := setupV5Env(t)
 	ctx := context.Background()

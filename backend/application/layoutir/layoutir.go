@@ -85,6 +85,10 @@ type Box struct {
 	Rotation             int32
 	FontSizePt           float64
 	Bold                 bool
+	FontFamily           string
+	FontWeight           int
+	Italic               bool
+	Underline            bool
 	Align                string
 	VerticalAlign        string
 	TextColor            string
@@ -92,9 +96,10 @@ type Box struct {
 
 // Shape carries the controlled fill/stroke tokens resolved from node props.
 type Shape struct {
-	Variant string
-	Fill    string // color token or "none"
-	Stroke  *Stroke
+	Variant        string
+	Fill           string // validated color value or "none"
+	Stroke         *Stroke
+	CornerRadiusPt float64
 }
 
 type Stroke struct {
@@ -210,7 +215,7 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 			text = ""
 		}
 		x, y := geometryPosition(matrix, node.Geometry.Width, node.Geometry.Height, rotation)
-		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: x / DUPerMM, Y: y / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: rotation, FontSizePt: DefaultFontSizePt, Align: "left", VerticalAlign: "top", TextColor: "black"}
+		box := Box{ID: node.ID, Kind: node.Kind, Text: text, StoryID: node.StoryID, Continuation: node.Continuation, ContinuationMasterID: node.ContinuationMasterID, X: x / DUPerMM, Y: y / DUPerMM, Width: float64(node.Geometry.Width) / DUPerMM, Height: float64(node.Geometry.Height) / DUPerMM, Rotation: rotation, FontSizePt: DefaultFontSizePt, FontFamily: "sans", FontWeight: 400, Align: "left", VerticalAlign: "top", TextColor: "black"}
 		if err := applyControlledProps(node, &box); err != nil {
 			return fmt.Errorf("node %s props: %w", node.ID, err)
 		}
@@ -370,9 +375,22 @@ func deref(v *string) string {
 // then derives continuation pages for `auto-pages` frames. Derived pages and fragments exist only
 // in the resolved layout; the persisted document is never mutated.
 func resolveFlowContent(ctx context.Context, layout *Layout, doc *documentmodel.Document, masters map[string]documentmodel.Master, input ResolveInput, m Metrics) error {
+	referencedStories := make(map[string]bool)
+	for _, page := range layout.Pages {
+		for _, box := range page.Boxes {
+			if box.StoryID != "" {
+				referencedStories[box.StoryID] = true
+			}
+		}
+	}
 	for _, story := range doc.Stories {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		// Legacy edits could leave content-only stories behind after their last frame was deleted.
+		// Unreachable content is not printable and therefore cannot be overset.
+		if !referencedStories[story.ID] {
+			continue
 		}
 		if story.Kind == "table" {
 			fillTableStory(ctx, layout, doc, masters, story, input, m)

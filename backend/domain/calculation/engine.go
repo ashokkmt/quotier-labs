@@ -36,11 +36,11 @@ func (e *Engine) Calculate(lines []LineItemInput, taxMode TaxMode) CalculationRe
 			// amount = qty * rate (rate includes tax)
 			amountFloat := line.QuantityFloat * float64(line.Rate)
 			amount = RoundToPaise(amountFloat)
-			
+
 			// For inclusive, we consider amount as the base before discount?
 			// Usually discount on inclusive price means (Amount - Discount) is inclusive of tax.
 			// line_taxable = inclusive_amount / (1 + line_rate)
-			
+
 			inclusiveAfterDiscount := float64(amount - line.Discount)
 			if inclusiveAfterDiscount < 0 {
 				inclusiveAfterDiscount = 0
@@ -54,7 +54,7 @@ func (e *Engine) Calculate(lines []LineItemInput, taxMode TaxMode) CalculationRe
 			// tax-exclusive
 			amountFloat := line.QuantityFloat * float64(line.Rate)
 			amount = RoundToPaise(amountFloat)
-			
+
 			taxable = amount - line.Discount
 			if taxable < 0 {
 				taxable = 0

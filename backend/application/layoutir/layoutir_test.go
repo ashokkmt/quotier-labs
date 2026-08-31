@@ -362,8 +362,8 @@ func TestResolveRejectsInvalidShapeAndTextTokens(t *testing.T) {
 	if _, err := Resolve(base(`{"variant":"blob","fill":"none"}`)); err == nil {
 		t.Fatal("expected invalid shape variant to be rejected")
 	}
-	if _, err := Resolve(base(`{"variant":"rect","fill":"#ff00ff"}`)); err == nil {
-		t.Fatal("expected arbitrary color to be rejected")
+	if _, err := Resolve(base(`{"variant":"rect","fill":"rgb(255,0,255)"}`)); err == nil {
+		t.Fatal("expected arbitrary CSS color to be rejected")
 	}
 	if _, err := Resolve(base(`{"variant":"rect","stroke":"black","strokeStyle":"zigzag"}`)); err == nil {
 		t.Fatal("expected invalid stroke style to be rejected")
@@ -393,6 +393,29 @@ func TestResolveStyledTextCarriesTokens(t *testing.T) {
 	}
 	if len(layout.Diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics %#v", layout.Diagnostics)
+	}
+}
+
+func TestResolveCarriesValidatedTypographyAndHexColor(t *testing.T) {
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"text"}, Children: []documentmodel.Node{{ID: "text", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{Width: 20000, Height: 3000}, LayoutMode: "fixed", Visibility: "shown", Props: []byte(`{"text":"Styled","fontFamily":"serif","fontWeight":600,"italic":true,"underline":true,"color":"#AABBCC"}`)}}}}}}
+	layout, err := Resolve(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := layout.Pages[0].Boxes[0]
+	if box.FontFamily != "serif" || box.FontWeight != 600 || !box.Bold || !box.Italic || !box.Underline || box.TextColor != "#AABBCC" {
+		t.Fatalf("typography = %#v", box)
+	}
+}
+
+func TestResolveIgnoresOrphanStoriesForDiagnostics(t *testing.T) {
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Stories: []documentmodel.Story{{ID: "orphan-text", Kind: "rich-text", Content: []byte(`{"text":"This story has no frame"}`)}, {ID: "orphan-table", Kind: "table", Content: []byte(`{"headers":["Item"],"rows":[["A"]]}`)}}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU}}}}
+	layout, err := Resolve(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(layout.Diagnostics) != 0 {
+		t.Fatalf("orphan stories produced diagnostics: %#v", layout.Diagnostics)
 	}
 }
 

@@ -1,12 +1,15 @@
 package quotation_test
 
 import (
-	"testing"
+	"encoding/json"
 	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/documentmodel"
 	"quotierlabs/backend/domain/quotation"
+	"testing"
 )
 
 func TestValidateQuotation(t *testing.T) {
+	valid, _ := json.Marshal(documentmodel.NewBlank("page"))
 	tests := []struct {
 		name    string
 		q       *domain.Quotation
@@ -15,7 +18,8 @@ func TestValidateQuotation(t *testing.T) {
 		{
 			name: "valid draft",
 			q: &domain.Quotation{
-				Status: string(quotation.StatusDraft),
+				Status:   string(quotation.StatusDraft),
+				Document: string(valid),
 			},
 			wantErr: false,
 		},
@@ -29,15 +33,15 @@ func TestValidateQuotation(t *testing.T) {
 		{
 			name: "valid with document",
 			q: &domain.Quotation{
-				Status: string(quotation.StatusDraft),
-				Document: `{"sections":[]}`,
+				Status:   string(quotation.StatusDraft),
+				Document: string(valid),
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid document json",
 			q: &domain.Quotation{
-				Status: string(quotation.StatusDraft),
+				Status:   string(quotation.StatusDraft),
 				Document: `{bad json`,
 			},
 			wantErr: true,

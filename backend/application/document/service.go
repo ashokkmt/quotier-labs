@@ -2,30 +2,12 @@ package document
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"quotierlabs/backend/application/documentmigration"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
-
-// MigrateDocumentToV5 is a pure compatibility boundary used by the guarded frontend cutover.
-// IDs are deterministic for the same input, making retries and recovery checkpoints stable.
-func (s *Service) MigrateDocumentToV5(raw string) (string, error) {
-	counter := 0
-	nextID := func(prefix string) string {
-		counter++
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", prefix, counter, raw)))
-		return fmt.Sprintf("%s-%x", prefix, sum[:8])
-	}
-	encoded, err := documentmigration.MigrateAndMarshal([]byte(raw), nextID)
-	if err != nil {
-		return "", fmt.Errorf("migrate document: %w", err)
-	}
-	return string(encoded), nil
-}
 
 type Service struct {
 	quotationRepo domain.QuotationRepository
@@ -36,7 +18,6 @@ type Service struct {
 }
 
 // ResolveQuotationLayoutDiagnostics exposes safe, renderer-derived V5 diagnostics for preview UI.
-// V1–V4 continue through their legacy preview path and return no V5 diagnostics.
 func (s *Service) ResolveQuotationLayoutDiagnostics(ctx context.Context, companyID, quotationID string) ([]layoutir.Diagnostic, error) {
 	q, err := s.quotationRepo.GetByID(ctx, quotationID, companyID)
 	if err != nil {
@@ -64,13 +45,6 @@ func (s *Service) ResolveDocumentLayoutDiagnostics(ctx context.Context, companyI
 }
 
 func (s *Service) resolveDiagnostics(ctx context.Context, q *domain.Quotation, companyID, rawDocument string) ([]layoutir.Diagnostic, error) {
-	version, err := domain_quotation.DocumentSchemaVersion(rawDocument)
-	if err != nil {
-		return nil, fmt.Errorf("inspect document: %w", err)
-	}
-	if version != documentmodel.SchemaVersion {
-		return []layoutir.Diagnostic{}, nil
-	}
 	company, err := s.companyRepo.GetByID(ctx, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("get company: %w", err)

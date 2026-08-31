@@ -1,30 +1,42 @@
 import { useState, useEffect } from 'react'
 import { BackupSettings } from './BackupSettings'
-import { GetAppInfo } from '../../../wailsjs/go/wails/AppHandler'
-import { Info, Building2 } from 'lucide-react'
+import { GetAppInfo, GetPreferences, SetDensity } from '../../../wailsjs/go/wails/AppHandler'
+import { Building2, Palette } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useNavigate } from 'react-router-dom'
 import { wails } from '../../../wailsjs/go/models'
+import { UpdateSettings } from './UpdateSettings'
 
 export function SettingsPage() {
   const [appInfo, setAppInfo] = useState<wails.AppInfo | null>(null)
   const navigate = useNavigate()
-  const [density, setDensity] = useState(
+  const [density, setDensityState] = useState(
     () => localStorage.getItem('quotierlabs-density') || 'default',
   )
   const updateDensity = (value: string) => {
-    setDensity(value)
+    setDensityState(value)
     localStorage.setItem('quotierlabs-density', value)
     document.documentElement.dataset.density = value
+    SetDensity(value).catch(console.error)
   }
 
   useEffect(() => {
     GetAppInfo().then(setAppInfo).catch(console.error)
+    GetPreferences()
+      .then((preferences) => updateDensity(preferences.density))
+      .catch(console.error)
   }, [])
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 sm:space-y-12">
+    <div className="mx-auto max-w-4xl space-y-6 pb-12">
       <div>
         <h1 className="font-heading text-2xl font-bold sm:text-3xl">Settings</h1>
         <p className="text-muted-foreground mt-2">
@@ -32,59 +44,68 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <BackupSettings />
-
-      <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
-        <h2 className="text-xl font-semibold">Appearance</h2>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span>Theme</span>
-          <ThemeToggle />
+      <section className="rounded-xl border bg-card shadow-sm" aria-labelledby="appearance-heading">
+        <div className="flex gap-3 border-b p-5 sm:p-6">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Palette className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 id="appearance-heading" className="font-semibold">
+              Appearance
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Choose how the application feels on this device.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span>UI density</span>
-          <select
-            aria-label="UI density"
-            value={density}
-            onChange={(e) => updateDensity(e.target.value)}
-            className="border rounded px-2 py-1 bg-background"
-          >
-            <option value="compact">Compact</option>
-            <option value="default">Default</option>
-            <option value="comfortable">Comfortable</option>
-          </select>
+        <div className="divide-y px-5 sm:px-6">
+          <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 py-4">
+            <div>
+              <p className="text-sm font-medium">Theme</p>
+              <p className="text-xs text-muted-foreground">
+                Light, dark, or follow the operating system.
+              </p>
+            </div>
+            <ThemeToggle />
+          </div>
+          <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 py-4">
+            <div>
+              <p className="text-sm font-medium">Interface density</p>
+              <p className="text-xs text-muted-foreground">
+                Adjust spacing without changing document layout.
+              </p>
+            </div>
+            <Select value={density} onValueChange={updateDensity}>
+              <SelectTrigger aria-label="Interface density" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="compact">Compact</SelectItem>
+                <SelectItem value="default">Default</SelectItem>
+                <SelectItem value="comfortable">Comfortable</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="space-y-3 rounded-lg border bg-card p-4 sm:p-6">
-        <h2 className="text-xl font-semibold">Company</h2>
+      <section className="space-y-3 rounded-xl border bg-card p-5 shadow-sm sm:p-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Building2 className="h-5 w-5" />
+          </span>
+          <h2 className="font-semibold">Company profile</h2>
+        </div>
         <p className="text-sm text-muted-foreground">
           Update the company details printed on your quotations.
         </p>
         <Button className="w-full sm:w-auto" variant="outline" onClick={() => navigate('/company')}>
-          <Building2 className="w-4 h-4 mr-2" /> Open Company Profile
+          Open company profile
         </Button>
-      </div>
+      </section>
 
-      <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Info className="w-5 h-5 text-primary" />
-          <h3 className="text-lg font-semibold">About Quotier Labs</h3>
-        </div>
-        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-          <div>
-            <p className="text-muted-foreground">Version</p>
-            <p className="font-medium">{appInfo?.version || 'Loading...'}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Operating System</p>
-            <p className="font-medium capitalize">{appInfo?.os || 'Loading...'}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">License</p>
-            <p className="font-medium">MVP License</p>
-          </div>
-        </div>
-      </div>
+      <BackupSettings />
+      <UpdateSettings appInfo={appInfo} />
     </div>
   )
 }

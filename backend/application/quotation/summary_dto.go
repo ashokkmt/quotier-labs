@@ -3,14 +3,14 @@ package quotation
 import "time"
 
 type QuotationSummaryDTO struct {
-	ID           string     `json:"id"`
-	Number       string     `json:"number"`
-	CustomerID   string     `json:"customer_id"`
-	CustomerName string     `json:"customer_name"`
-	Status       string     `json:"status"`
-	GrandTotal   int64      `json:"grand_total"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID           string    `json:"id"`
+	Number       string    `json:"number"`
+	CustomerID   string    `json:"customer_id"`
+	CustomerName string    `json:"customer_name"`
+	Status       string    `json:"status"`
+	GrandTotal   int64     `json:"grand_total"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type QuotationListResponse struct {

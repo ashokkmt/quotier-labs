@@ -16,53 +16,55 @@ import (
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/onboarding"
 	quotation2 "quotierlabs/backend/application/quotation"
-	"quotierlabs/backend/application/section"
 	"quotierlabs/backend/application/template"
+	"quotierlabs/backend/application/update"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/quotation"
+	"quotierlabs/backend/infrastructure/appidentity"
+	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/backup"
+	"quotierlabs/backend/infrastructure/config"
 	"quotierlabs/backend/infrastructure/export"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/import"
+	"quotierlabs/backend/infrastructure/legacydata"
 	"quotierlabs/backend/infrastructure/logging"
 	"quotierlabs/backend/infrastructure/os"
 	"quotierlabs/backend/infrastructure/pdf"
+	"quotierlabs/backend/infrastructure/recovery"
 	"quotierlabs/backend/infrastructure/sqlite"
 	"quotierlabs/backend/transport/wails"
 )
 
 // Injectors from wire.go:
 
-func InitializeApp() (*App, error) {
-	logger, err := logging.NewLogger()
+func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, error) {
+	logger, err := logging.NewLogger(paths, build)
 	if err != nil {
 		return nil, err
 	}
 	idGenerator := id.NewULIDGenerator()
-	db, err := ProvideDB()
+	db, err := ProvideDB(paths)
 	if err != nil {
 		return nil, err
 	}
 	txManager := sqlite.NewGormTxManager(db)
 	companyRepository := sqlite.NewCompanyRepository(db)
 	customerRepository := sqlite.NewCustomerRepository(db)
-	sectionDefinitionRepository := sqlite.NewSectionDefinitionRepository(db)
 	templateRepository := sqlite.NewTemplateRepository(db)
 	quotationRepository := sqlite.NewQuotationRepository(db)
 	numberSequenceRepository := sqlite.NewNumberSequenceRepository(db)
 	service := company.NewService(companyRepository, idGenerator)
-	onboardingService := onboarding.NewService(service, txManager, sectionDefinitionRepository, templateRepository, numberSequenceRepository, idGenerator)
-	appHandler := wails.NewAppHandler()
-	companyHandler := wails.NewCompanyHandler(service, onboardingService)
+	onboardingService := onboarding.NewService(service, txManager, templateRepository, numberSequenceRepository, idGenerator)
+	store := ProvidePreferences(paths)
+	recoveryStore := ProvideRecovery(paths)
+	appHandler := wails.NewAppHandler(build, paths, store, recoveryStore)
+	companyHandler := wails.NewCompanyHandler(service, onboardingService, paths)
 	customerService := customer.NewService(customerRepository, idGenerator)
 	customerHandler := wails.NewCustomerHandler(service, customerService)
-	sectionService := section.NewService(sectionDefinitionRepository, idGenerator)
-	sectionHandler := wails.NewSectionHandler(service, sectionService)
 	templateService := template.NewService(templateRepository, txManager, idGenerator)
 	templateHandler := wails.NewTemplateHandler(service, templateService)
-	templateResolver := quotation.NewTemplateResolver(sectionDefinitionRepository)
 	metrics := pdf.NewLayoutMetrics()
-	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, templateResolver, txManager, idGenerator, metrics)
+	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, txManager, idGenerator, metrics)
 	quotationHandler := wails.NewQuotationHandler(service, quotationService)
 	pdfGenerator := pdf.NewGenerator()
 	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics)
@@ -70,22 +72,29 @@ func InitializeApp() (*App, error) {
 	exportService := document.NewExportService(documentService, quotationRepository, customerRepository)
 	printService := os.NewPrintService()
 	shareService := os.NewShareService()
-	exportHandler := wails.NewExportHandler(exportService, printService, shareService)
-	sqLiteBackupService := backup.NewSQLiteBackupService(db)
-	string2 := ProvideCurrentDBPath()
-	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, string2)
+	exportHandler := wails.NewExportHandler(exportService, printService, shareService, paths)
+	sqLiteBackupService := backup.NewSQLiteBackupService(db, paths)
+	settingsRepository := sqlite.NewSettingsRepository(db)
+	string2 := ProvideCurrentDBPath(paths)
+	int64_2, err := ProvideSchemaVersion()
+	if err != nil {
+		return nil, err
+	}
+	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, settingsRepository, idGenerator, string2, build, paths, int64_2)
 	csvExportService := export.NewCSVExportService(quotationRepository, customerRepository)
 	csvImportService := csvimport.NewCSVImportService(customerRepository)
-	backupHandler := wails.NewBackupHandler(backupService, service, csvExportService, csvImportService)
-	settingsRepository := sqlite.NewSettingsRepository(db)
 	autoBackupManager := backup2.NewAutoBackupManager(logger, backupService, settingsRepository, companyRepository)
+	backupHandler := wails.NewBackupHandler(backupService, service, csvExportService, csvImportService, autoBackupManager)
+	updateService := update.NewService(build, paths, store, int64_2)
+	updateHandler := wails.NewUpdateHandler(updateService, backupService, autoBackupManager, paths)
+	legacydataService := legacydata.NewService(db, paths, build)
+	legacyHandler := wails.NewLegacyHandler(legacydataService)
 	app := &App{
 		Logger:           logger,
 		IDGenerator:      idGenerator,
 		TxManager:        txManager,
 		Companies:        companyRepository,
 		Customers:        customerRepository,
-		Sections:         sectionDefinitionRepository,
 		Templates:        templateRepository,
 		Quotations:       quotationRepository,
 		Sequences:        numberSequenceRepository,
@@ -94,34 +103,51 @@ func InitializeApp() (*App, error) {
 		AppHandler:       appHandler,
 		CompanyHandler:   companyHandler,
 		CustomerHandler:  customerHandler,
-		SectionHandler:   sectionHandler,
 		TemplateHandler:  templateHandler,
 		QuotationHandler: quotationHandler,
 		DocumentHandler:  documentHandler,
 		ExportHandler:    exportHandler,
 		BackupHandler:    backupHandler,
 		AutoBackup:       autoBackupManager,
+		UpdateHandler:    updateHandler,
+		LegacyHandler:    legacyHandler,
+		DB:               db,
+		Paths:            paths,
+		Build:            build,
 	}
 	return app, nil
 }
 
 // wire.go:
 
-func ProvideDB() (*gorm.DB, error) {
-	return sqlite.NewDB("quotierlabs.db")
+func ProvideDB(paths apppaths.Paths) (*gorm.DB, error) {
+	return sqlite.NewDB(paths.DBPath())
 }
 
-func ProvideCurrentDBPath() string {
-	return "quotierlabs.db"
+func ProvideCurrentDBPath(paths apppaths.Paths) string {
+	return paths.DBPath()
 }
 
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvideDB,
-	ProvideCurrentDBPath, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewSectionDefinitionRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
+func ProvideSchemaVersion() (int64, error) { return sqlite.TargetSchemaVersion() }
+
+func ProvidePreferences(paths apppaths.Paths) *config.Store {
+	return config.NewStore(paths.SettingsPath())
+}
+
+func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
+	return recovery.NewStore(paths.RecoveryRoot())
+}
+
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvidePreferences,
+	ProvideRecovery,
+	ProvideDB,
+	ProvideCurrentDBPath,
+	ProvideSchemaVersion, legacydata.NewService, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
 )
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, section.NewService, template.NewService, quotation2.NewService, quotation.NewTemplateResolver, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, template.NewService, quotation2.NewService, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager, update.NewService)
 
-var TransportSet = wire.NewSet(wails.NewAppHandler, wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewSectionHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler)
+var TransportSet = wire.NewSet(wails.NewAppHandler, wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler, wails.NewUpdateHandler, wails.NewLegacyHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -129,7 +155,6 @@ type App struct {
 	TxManager   domain.TxManager
 	Companies   domain.CompanyRepository
 	Customers   domain.CustomerRepository
-	Sections    domain.SectionDefinitionRepository
 	Templates   domain.TemplateRepository
 	Quotations  domain.QuotationRepository
 	Sequences   domain.NumberSequenceRepository
@@ -139,11 +164,15 @@ type App struct {
 	AppHandler       *wails.AppHandler
 	CompanyHandler   *wails.CompanyHandler
 	CustomerHandler  *wails.CustomerHandler
-	SectionHandler   *wails.SectionHandler
 	TemplateHandler  *wails.TemplateHandler
 	QuotationHandler *wails.QuotationHandler
 	DocumentHandler  *wails.DocumentHandler
 	ExportHandler    *wails.ExportHandler
 	BackupHandler    *wails.BackupHandler
 	AutoBackup       *backup2.AutoBackupManager
+	UpdateHandler    *wails.UpdateHandler
+	LegacyHandler    *wails.LegacyHandler
+	DB               *gorm.DB
+	Paths            apppaths.Paths
+	Build            appidentity.BuildInfo
 }

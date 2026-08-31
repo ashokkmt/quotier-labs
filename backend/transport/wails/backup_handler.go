@@ -13,11 +13,12 @@ import (
 )
 
 type BackupHandler struct {
-	backupSvc   *backup.Service
-	companySvc  *company.Service
-	exportSvc   *export.CSVExportService
-	importSvc   *csvimport.CSVImportService
-	ctx         context.Context
+	backupSvc  *backup.Service
+	companySvc *company.Service
+	exportSvc  *export.CSVExportService
+	importSvc  *csvimport.CSVImportService
+	autoBackup *backup.AutoBackupManager
+	ctx        context.Context
 }
 
 func NewBackupHandler(
@@ -25,12 +26,14 @@ func NewBackupHandler(
 	companySvc *company.Service,
 	exportSvc *export.CSVExportService,
 	importSvc *csvimport.CSVImportService,
+	autoBackup *backup.AutoBackupManager,
 ) *BackupHandler {
 	return &BackupHandler{
 		backupSvc:  backupSvc,
 		companySvc: companySvc,
 		exportSvc:  exportSvc,
 		importSvc:  importSvc,
+		autoBackup: autoBackup,
 	}
 }
 
@@ -61,7 +64,7 @@ func (h *BackupHandler) CreateBackup() (*backup_domain.BackupInfo, error) {
 func (h *BackupHandler) ValidateBackup() (*backup_domain.ValidationResult, error) {
 	// Pick file
 	file, err := wailsRuntime.OpenFileDialog(h.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Select Backup Archive",
+		Title:   "Select Backup Archive",
 		Filters: []wailsRuntime.FileFilter{{DisplayName: "ZIP Archive", Pattern: "*.zip"}},
 	})
 	if err != nil || file == "" {
@@ -72,38 +75,82 @@ func (h *BackupHandler) ValidateBackup() (*backup_domain.ValidationResult, error
 }
 
 func (h *BackupHandler) RestoreBackup(path string) error {
+	h.autoBackup.Stop()
 	err := h.backupSvc.RestoreBackup(h.ctx, path)
 	if err == nil {
-		// Signal frontend to reload completely or restart
-		wailsRuntime.EventsEmit(h.ctx, "restore-complete")
+		// SQLite has been replaced while closed. A process restart is required so
+		// every repository receives a fresh connection to the restored generation.
+		wailsRuntime.Quit(h.ctx)
+	} else {
+		h.autoBackup.Start()
 	}
 	return err
 }
 
+func (h *BackupHandler) GetAutoBackupSettings() (backup.AutoBackupSettings, error) {
+	companyID, err := h.getCompanyID()
+	if err != nil {
+		return backup.AutoBackupSettings{}, err
+	}
+	return h.backupSvc.GetAutoBackupSettings(h.ctx, companyID), nil
+}
+
+func (h *BackupHandler) ChooseAutoBackupDirectory() (backup.AutoBackupSettings, error) {
+	dir, err := wailsRuntime.OpenDirectoryDialog(h.ctx, wailsRuntime.OpenDialogOptions{Title: "Choose Automatic Backup Location"})
+	if err != nil || dir == "" {
+		return backup.AutoBackupSettings{}, fmt.Errorf("backup location selection cancelled")
+	}
+	companyID, err := h.getCompanyID()
+	if err != nil {
+		return backup.AutoBackupSettings{}, err
+	}
+	if err := h.backupSvc.ConfigureAutoBackup(h.ctx, companyID, dir, true); err != nil {
+		return backup.AutoBackupSettings{}, err
+	}
+	return h.backupSvc.GetAutoBackupSettings(h.ctx, companyID), nil
+}
+
+func (h *BackupHandler) DisableAutoBackup() error {
+	companyID, err := h.getCompanyID()
+	if err != nil {
+		return err
+	}
+	current := h.backupSvc.GetAutoBackupSettings(h.ctx, companyID)
+	return h.backupSvc.ConfigureAutoBackup(h.ctx, companyID, current.Directory, false)
+}
+
 func (h *BackupHandler) ExportQuotations() (*backup_domain.ExportResult, error) {
 	compID, err := h.getCompanyID()
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	path, err := wailsRuntime.SaveFileDialog(h.ctx, wailsRuntime.SaveDialogOptions{
-		Title: "Export Quotations",
+		Title:           "Export Quotations",
 		DefaultFilename: "quotations_export.csv",
-		Filters: []wailsRuntime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
+		Filters:         []wailsRuntime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
 	})
-	if err != nil || path == "" { return nil, fmt.Errorf("cancelled") }
+	if err != nil || path == "" {
+		return nil, fmt.Errorf("cancelled")
+	}
 
 	return h.exportSvc.ExportQuotations(h.ctx, compID, path)
 }
 
 func (h *BackupHandler) ExportCustomers() (*backup_domain.ExportResult, error) {
 	compID, err := h.getCompanyID()
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	path, err := wailsRuntime.SaveFileDialog(h.ctx, wailsRuntime.SaveDialogOptions{
-		Title: "Export Customers",
+		Title:           "Export Customers",
 		DefaultFilename: "customers_export.csv",
-		Filters: []wailsRuntime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
+		Filters:         []wailsRuntime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
 	})
-	if err != nil || path == "" { return nil, fmt.Errorf("cancelled") }
+	if err != nil || path == "" {
+		return nil, fmt.Errorf("cancelled")
+	}
 
 	return h.exportSvc.ExportCustomers(h.ctx, compID, path)
 }
@@ -114,7 +161,7 @@ func (h *BackupHandler) PreviewImport(path string) (*backup_domain.ImportPreview
 
 func (h *BackupHandler) SelectImportFile() (string, error) {
 	file, err := wailsRuntime.OpenFileDialog(h.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Select CSV File",
+		Title:   "Select CSV File",
 		Filters: []wailsRuntime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
 	})
 	return file, err
@@ -122,7 +169,9 @@ func (h *BackupHandler) SelectImportFile() (string, error) {
 
 func (h *BackupHandler) ImportCustomers(path string, mapping backup_domain.ImportMapping) (int, error) {
 	compID, err := h.getCompanyID()
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 
 	return h.importSvc.ImportCustomers(h.ctx, compID, path, mapping)
 }

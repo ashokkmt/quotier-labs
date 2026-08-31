@@ -10,8 +10,10 @@ import {
   EyeOff,
   Group,
   Image as ImageIcon,
+  Italic,
   Lock,
   Unlock,
+  Underline,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useV5Session } from './store'
@@ -28,7 +30,8 @@ import {
   updateTableContent,
 } from './commands'
 import {
-  V5_COLOR_TOKENS,
+  V5_FONT_FAMILIES,
+  V5_FONT_WEIGHTS,
   V5_STROKE_STYLES,
   V5_TEXT_ALIGNS,
   V5_TEXT_VERTICAL_ALIGNS,
@@ -36,8 +39,8 @@ import {
   V5_FONT_SIZE_MIN_PT,
   clampFontSize,
   clampStrokeWidth,
-  type V5ColorToken,
 } from './tokens'
+import { ColorPicker } from './ColorPicker'
 import { ancestorChain, findNode, isEffectivelyLocked } from './selectors'
 import { getV5Widget } from './registry'
 import { du, type V5Node } from './model'
@@ -400,6 +403,14 @@ function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
         Edit words directly on the page with Enter or double-click.
       </p>
       <div className="grid grid-cols-2 gap-2">
+        <OptionSelect
+          label="Font"
+          value={String(props.fontFamily ?? 'sans')}
+          options={[...V5_FONT_FAMILIES]}
+          optionLabels={{ sans: 'Arial', serif: 'Times', mono: 'Courier' }}
+          disabled={disabled}
+          onChange={(fontFamily) => set({ fontFamily })}
+        />
         <BufferedNumber
           label="Size (pt)"
           value={Number(props.fontSize ?? 11)}
@@ -407,6 +418,23 @@ function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
           max={V5_FONT_SIZE_MAX_PT}
           disabled={disabled}
           onCommit={(value) => set({ fontSize: clampFontSize(value) })}
+        />
+        <OptionSelect
+          label="Weight"
+          value={String(props.fontWeight ?? (props.bold ? 700 : 400))}
+          options={V5_FONT_WEIGHTS.map(String)}
+          optionLabels={{
+            '300': 'Light',
+            '400': 'Regular',
+            '500': 'Medium',
+            '600': 'Semibold',
+            '700': 'Bold',
+          }}
+          disabled={disabled}
+          onChange={(value) => {
+            const fontWeight = Number(value)
+            set({ fontWeight, bold: fontWeight >= 600 })
+          }}
         />
         <OptionSelect
           label="Horizontal"
@@ -424,21 +452,36 @@ function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="flex h-8 items-center gap-2 rounded-md border px-2 text-xs">
-          <input
-            type="checkbox"
-            checked={Boolean(props.bold)}
-            disabled={disabled}
-            onChange={(event) => set({ bold: event.target.checked })}
-          />
-          Bold
-        </label>
-        <ColorSelect
-          value={String(props.color ?? 'black')}
-          onChange={(value) => set({ color: value as V5ColorToken })}
+        <button
+          type="button"
+          aria-pressed={Boolean(props.italic)}
           disabled={disabled}
-        />
+          className={`mt-1 flex h-8 items-center justify-center gap-2 rounded-md border text-xs ${props.italic ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
+          onClick={() => set({ italic: !props.italic })}
+        >
+          <Italic className="h-3.5 w-3.5" />
+          Italic
+        </button>
+        <button
+          type="button"
+          aria-pressed={Boolean(props.underline)}
+          disabled={disabled}
+          className={`mt-1 flex h-8 items-center justify-center gap-2 rounded-md border text-xs ${props.underline ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}
+          onClick={() => set({ underline: !props.underline })}
+        >
+          <Underline className="h-3.5 w-3.5" />
+          Underline
+        </button>
       </div>
+      <label className="block text-xs text-muted-foreground">
+        Color
+        <ColorPicker
+          label="Text color"
+          value={String(props.color ?? 'black')}
+          disabled={disabled}
+          onChange={(color) => set({ color })}
+        />
+      </label>
     </Section>
   )
 }
@@ -449,22 +492,26 @@ function ShapeStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
   const set = (patch: Record<string, unknown>) => session.execute(updateNodeProps(node.id, patch))
   return (
     <Section title="Style">
-      <div className="grid grid-cols-2 gap-2">
-        <ColorSelect
-          label="Fill"
-          allowNone
-          value={String(props.fill ?? 'none')}
-          onChange={(value) => set({ fill: value })}
-          disabled={disabled}
-        />
-        <ColorSelect
+      {String(props.variant ?? 'rect') !== 'line' && (
+        <label className="block text-xs text-muted-foreground">
+          Fill
+          <ColorPicker
+            label="Fill"
+            value={String(props.fill === 'none' ? 'transparent' : (props.fill ?? 'transparent'))}
+            disabled={disabled}
+            onChange={(fill) => set({ fill: fill === 'transparent' ? 'none' : fill })}
+          />
+        </label>
+      )}
+      <label className="block text-xs text-muted-foreground">
+        Stroke
+        <ColorPicker
           label="Stroke"
-          allowNone
-          value={String(props.stroke ?? 'none')}
-          onChange={(value) => set({ stroke: value })}
+          value={String(props.stroke === 'none' ? 'transparent' : (props.stroke ?? 'transparent'))}
           disabled={disabled}
+          onChange={(stroke) => set({ stroke: stroke === 'transparent' ? 'none' : stroke })}
         />
-      </div>
+      </label>
       <div className="grid grid-cols-2 gap-2">
         <OptionSelect
           label="Line style"
@@ -482,32 +529,17 @@ function ShapeStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
           onCommit={(value) => set({ strokeWidth: clampStrokeWidth(value) })}
         />
       </div>
+      {String(props.variant ?? 'rect') === 'rect' && (
+        <BufferedNumber
+          label="Corner radius (pt)"
+          value={Number(props.cornerRadius ?? 0)}
+          min={0}
+          max={200}
+          disabled={disabled}
+          onCommit={(cornerRadius) => set({ cornerRadius })}
+        />
+      )}
     </Section>
-  )
-}
-
-function ColorSelect({
-  label = 'Color',
-  value,
-  allowNone,
-  disabled,
-  onChange,
-}: {
-  label?: string
-  value: string
-  allowNone?: boolean
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  return (
-    <OptionSelect
-      label={label}
-      value={value}
-      options={[...(allowNone ? ['none'] : []), ...V5_COLOR_TOKENS]}
-      disabled={disabled}
-      onChange={onChange}
-      color
-    />
   )
 }
 
@@ -517,14 +549,14 @@ function OptionSelect({
   options,
   disabled,
   onChange,
-  color = false,
+  optionLabels,
 }: {
   label: string
   value: string
   options: string[]
   disabled?: boolean
   onChange: (value: string) => void
-  color?: boolean
+  optionLabels?: Record<string, string>
 }) {
   return (
     <label className="text-xs text-muted-foreground">
@@ -536,31 +568,7 @@ function OptionSelect({
         <SelectContent data-v5-editor-chrome>
           {options.map((option) => (
             <SelectItem key={option} value={option} className="capitalize">
-              <span className="flex items-center gap-2">
-                {color && (
-                  <span
-                    aria-hidden
-                    className="h-3 w-3 rounded-full border"
-                    style={{
-                      background:
-                        option === 'none'
-                          ? 'transparent'
-                          : option === 'black'
-                            ? '#111827'
-                            : option === 'gray'
-                              ? '#6b7280'
-                              : option === 'white'
-                                ? '#fff'
-                                : option === 'primary'
-                                  ? '#2563eb'
-                                  : option === 'danger'
-                                    ? '#dc2626'
-                                    : '#16a34a',
-                    }}
-                  />
-                )}
-                {option}
-              </span>
+              <span className="flex items-center gap-2">{optionLabels?.[option] ?? option}</span>
             </SelectItem>
           ))}
         </SelectContent>

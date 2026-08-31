@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -9,11 +10,12 @@ import (
 )
 
 type AutoBackupManager struct {
-	logger      *zap.Logger
-	backupSvc   *Service
+	logger       *zap.Logger
+	backupSvc    *Service
 	settingsRepo domain.SettingsRepository
 	companyRepo  domain.CompanyRepository
-	ctx          context.Context
+	mu           sync.Mutex
+	wg           sync.WaitGroup
 	cancel       context.CancelFunc
 }
 
@@ -32,33 +34,50 @@ func NewAutoBackupManager(
 }
 
 func (m *AutoBackupManager) Start() {
-	m.ctx, m.cancel = context.WithCancel(context.Background())
-	
+	m.mu.Lock()
+	if m.cancel != nil {
+		m.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.wg.Add(1)
+	m.mu.Unlock()
+
 	go func() {
+		defer m.wg.Done()
 		m.logger.Info("Auto-backup manager started")
 		ticker := time.NewTicker(1 * time.Hour)
+		startup := time.NewTimer(30 * time.Second)
 		defer ticker.Stop()
+		defer startup.Stop()
 
 		for {
 			select {
-			case <-m.ctx.Done():
+			case <-ctx.Done():
 				m.logger.Info("Auto-backup manager stopped")
 				return
+			case <-startup.C:
+				m.runBackupIfEnabled(ctx)
 			case <-ticker.C:
-				m.runBackupIfEnabled()
+				m.runBackupIfEnabled(ctx)
 			}
 		}
 	}()
 }
 
 func (m *AutoBackupManager) Stop() {
-	if m.cancel != nil {
-		m.cancel()
+	m.mu.Lock()
+	cancel := m.cancel
+	m.cancel = nil
+	if cancel != nil {
+		cancel()
+		m.wg.Wait()
 	}
+	m.mu.Unlock()
 }
 
-func (m *AutoBackupManager) runBackupIfEnabled() {
-	ctx := context.Background()
+func (m *AutoBackupManager) runBackupIfEnabled(ctx context.Context) {
 	comp, err := m.companyRepo.GetActive(ctx)
 	if err != nil {
 		return
@@ -73,15 +92,15 @@ func (m *AutoBackupManager) runBackupIfEnabled() {
 	var backupDir string
 	if err == nil && dirSet.Value != "" {
 		backupDir = dirSet.Value
-	} else {
-		// Fallback to current directory
-		backupDir = "./backups"
 	}
 
 	_, err = m.backupSvc.CreateBackup(ctx, backupDir)
 	if err != nil {
-		m.logger.Error("auto-backup failed", zap.Error(err))
+		m.backupSvc.RecordAutoBackupResult(ctx, comp.ID, false)
+		m.logger.Error("auto-backup failed", zap.String("error_class", "destination-or-snapshot-unavailable"))
 	} else {
+		m.backupSvc.RecordAutoBackupResult(ctx, comp.ID, true)
+		m.backupSvc.PruneAutomaticBackups(ctx, backupDir)
 		m.logger.Info("auto-backup completed successfully")
 	}
 }

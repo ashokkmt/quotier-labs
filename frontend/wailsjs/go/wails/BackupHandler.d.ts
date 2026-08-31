@@ -3,11 +3,17 @@
 import {backup} from '../models';
 import {context} from '../models';
 
+export function ChooseAutoBackupDirectory():Promise<backup.AutoBackupSettings>;
+
 export function CreateBackup():Promise<backup.BackupInfo>;
+
+export function DisableAutoBackup():Promise<void>;
 
 export function ExportCustomers():Promise<backup.ExportResult>;
 
 export function ExportQuotations():Promise<backup.ExportResult>;
+
+export function GetAutoBackupSettings():Promise<backup.AutoBackupSettings>;
 
 export function ImportCustomers(arg1:string,arg2:backup.ImportMapping):Promise<number>;
 

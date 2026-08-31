@@ -18,10 +18,6 @@ export function GetQuotationPreviewPDF(arg1, arg2) {
   return window['go']['wails']['DocumentHandler']['GetQuotationPreviewPDF'](arg1, arg2);
 }
 
-export function MigrateDocumentToV5(arg1) {
-  return window['go']['wails']['DocumentHandler']['MigrateDocumentToV5'](arg1);
-}
-
 export function Startup(arg1) {
   return window['go']['wails']['DocumentHandler']['Startup'](arg1);
 }

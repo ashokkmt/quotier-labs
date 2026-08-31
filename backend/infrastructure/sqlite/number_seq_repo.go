@@ -68,7 +68,7 @@ func NewNumberSequenceRepository(db *gorm.DB) domain.NumberSequenceRepository {
 func (r *numberSequenceRepository) ReserveNext(ctx context.Context, companyID, documentType string, year int) (int, error) {
 	db := GetDB(ctx, r.db)
 	var model NumberSequenceModel
-	
+
 	// Ensure we lock for update if possible. SQLite locks database during writes anyway but let's be explicit
 	err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("company_id = ? AND document_type = ? AND year = ?", companyID, documentType, year).
