@@ -34,9 +34,11 @@ function SessionHandle({ onReady }: { onReady?: (handle: V5EngineHandle | null) 
       canRedo: session.canRedo,
     })
     return () => onReady?.(null)
-    // The handle is stable; session methods are live-bound by the provider.
+    // The provider owns one V5Session for the engine lifetime. useV5Session returns a fresh
+    // facade for snapshots, so depending on that facade would call the host's onReady setter on
+    // every render and can trap route transitions in a maximum-update loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session])
+  }, [])
   return null
 }
 

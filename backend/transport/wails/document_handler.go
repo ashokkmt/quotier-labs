@@ -48,7 +48,3 @@ func (h *DocumentHandler) GetQuotationLayoutDiagnostics(companyID, quotationID s
 func (h *DocumentHandler) GetDocumentLayoutDiagnostics(companyID, quotationID, document string) (interface{}, error) {
 	return h.docService.ResolveDocumentLayoutDiagnostics(h.ctx, companyID, quotationID, document)
 }
-
-func (h *DocumentHandler) MigrateDocumentToV5(raw string) (string, error) {
-	return h.docService.MigrateDocumentToV5(raw)
-}

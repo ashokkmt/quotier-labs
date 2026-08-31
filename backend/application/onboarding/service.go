@@ -11,7 +11,6 @@ import (
 type Service struct {
 	companyService *company.Service
 	txManager      domain.TxManager
-	sectionsRepo   domain.SectionDefinitionRepository
 	templatesRepo  domain.TemplateRepository
 	sequencesRepo  domain.NumberSequenceRepository
 	idGen          domain.IDGenerator
@@ -20,7 +19,6 @@ type Service struct {
 func NewService(
 	companyService *company.Service,
 	txManager domain.TxManager,
-	sectionsRepo domain.SectionDefinitionRepository,
 	templatesRepo domain.TemplateRepository,
 	sequencesRepo domain.NumberSequenceRepository,
 	idGen domain.IDGenerator,
@@ -28,7 +26,6 @@ func NewService(
 	return &Service{
 		companyService: companyService,
 		txManager:      txManager,
-		sectionsRepo:   sectionsRepo,
 		templatesRepo:  templatesRepo,
 		sequencesRepo:  sequencesRepo,
 		idGen:          idGen,
@@ -66,31 +63,12 @@ func (s *Service) CompleteOnboarding(ctx context.Context, input company.CompanyC
 		return err
 	}
 
-	// Seed built-in sections if they don't exist
-	builtins, err := s.sectionsRepo.ListBuiltins(txCtx)
-	if err != nil {
-		return err
-	}
-
-	if len(builtins) == 0 {
-		for _, def := range BuiltinSectionDefinitions {
-			newDef := def
-			newDef.ID = s.idGen.Generate()
-			newDef.CreatedAt = time.Now().UTC()
-			newDef.UpdatedAt = time.Now().UTC()
-			newDef.Version = 1
-			if err := s.sectionsRepo.Create(txCtx, &newDef); err != nil {
-				return err
-			}
-		}
-	}
-
 	// Seed built-in templates
 	builtinTmpls, err := s.templatesRepo.ListBuiltins(txCtx)
 	if err != nil {
 		return err
 	}
-	
+
 	if len(builtinTmpls) == 0 {
 		for _, tmpl := range BuiltinTemplates {
 			newTmpl := tmpl

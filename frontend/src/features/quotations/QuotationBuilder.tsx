@@ -17,27 +17,20 @@ import {
   UpdateQuotationCustomer,
   SaveAsTemplate,
 } from '../../../wailsjs/go/wails/QuotationHandler'
-import {
-  GetDocumentLayoutDiagnostics,
-  MigrateDocumentToV5,
-} from '../../../wailsjs/go/wails/DocumentHandler'
+import { GetDocumentLayoutDiagnostics } from '../../../wailsjs/go/wails/DocumentHandler'
 import { BuilderHeader } from './BuilderHeader'
-import { BuilderEngine, V5BuilderEngine, type V5EngineHandle } from '../../builder'
-import { isFreeformV5Enabled } from '../../builder/feature'
+import { V5BuilderEngine, type V5EngineHandle } from '../../builder'
 import type { V5Document } from '../../builder/v5/model'
 import { Preview } from './components/Preview'
-import { useUndoRedo } from './hooks/useUndoRedo'
 import { useAutosave } from './hooks/useAutosave'
 import { useRecovery } from './hooks/useRecovery'
 import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
-import { SnapshotCommand } from './commands/base'
 import { UndoRedoControls } from './components/UndoRedoControls'
 import { SaveIndicator } from './components/SaveIndicator'
 import {
   FinalizeQuotation,
   UpdateQuotationStatus,
 } from '../../../wailsjs/go/wails/QuotationHandler'
-import { normalize, serialize } from '../../builder'
 
 export function QuotationBuilder({
   quotationId,
@@ -47,17 +40,8 @@ export function QuotationBuilder({
   onBack: () => void
 }) {
   const [quotation, setQuotation] = useState<any>(null)
-  const {
-    state: document,
-    setState: setDocument,
-    applyCommand,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    dirty,
-    setDirty,
-  } = useUndoRedo(null)
+  const [document, setDocument] = useState<V5Document | null>(null)
+  const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const [readOnly, setReadOnly] = useState(false)
@@ -65,6 +49,7 @@ export function QuotationBuilder({
   const [templateName, setTemplateName] = useState('')
   const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const { toast } = useToast()
   const v5EngineRef = useRef<V5EngineHandle | null>(null)
   const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
@@ -79,15 +64,12 @@ export function QuotationBuilder({
         setQuotation(res)
         if (res.document) {
           const raw = JSON.parse(res.document)
-          const parsed =
-            isFreeformV5Enabled() && raw?.schema_version !== 5
-              ? JSON.parse(await MigrateDocumentToV5(res.document))
-              : raw?.schema_version === 5
-                ? raw
-                : normalize(raw)
+          if (raw?.schema_version !== 5) {
+            throw new Error('This quotation uses an unsupported document format.')
+          }
           // Never replace persisted content silently with a local checkpoint.
           // A stale checkpoint previously made an existing quotation appear empty.
-          setDocument(parsed)
+          setDocument(raw)
           setDirty(false)
         }
         if (res.status !== 'DRAFT') setReadOnly(true)
@@ -117,10 +99,8 @@ export function QuotationBuilder({
       const started = v5.beginSave()
       revision = started.revision
       payload = started.document
-    } else if (docToSave?.schema_version === 5) {
-      payload = JSON.stringify(docToSave)
     } else {
-      payload = serialize(docToSave)
+      payload = JSON.stringify(docToSave)
     }
     try {
       const res = await SaveQuotationDocument({ id: quotationId, document: payload })
@@ -158,7 +138,7 @@ export function QuotationBuilder({
       return
     }
     try {
-      // The PDF preview is intentionally rendered from the persisted V4
+      // The PDF preview is intentionally rendered from the persisted V5
       // document, so save the current builder state before switching modes.
       await executeSave(document)
       setDirty(false)
@@ -211,6 +191,27 @@ export function QuotationBuilder({
     }
   }
 
+  const handleBack = async () => {
+    if (leaving) return
+    if (!dirty || saveState === 'Saved') {
+      onBack()
+      return
+    }
+    setLeaving(true)
+    try {
+      await executeSave(document)
+      setDirty(false)
+      onBack()
+    } catch (error) {
+      toast({
+        title: 'Could not leave quotation',
+        description: `Your latest changes could not be saved. ${String(error)}`,
+        variant: 'destructive',
+      })
+      setLeaving(false)
+    }
+  }
+
   const handleSaveAsTemplate = async () => {
     const name = templateName.trim()
     if (!name) return
@@ -236,13 +237,11 @@ export function QuotationBuilder({
     )
   }
 
-  const v5Active = isFreeformV5Enabled() && document?.schema_version === 5
-
   return (
     <div className="flex flex-col h-full min-h-0 bg-muted/20">
       <BuilderHeader
         quotation={quotation}
-        onBack={onBack}
+        onBack={() => void handleBack()}
         onSave={forceSave}
         saving={saveState === 'Saving…'}
         readOnly={readOnly}
@@ -250,16 +249,12 @@ export function QuotationBuilder({
         onCustomerChange={handleCustomerChange}
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={
-          v5Active ? (
-            <UndoRedoControls
-              onUndo={() => v5EngineRef.current?.undo()}
-              onRedo={() => v5EngineRef.current?.redo()}
-              canUndo={v5UndoRedo.canUndo}
-              canRedo={v5UndoRedo.canRedo}
-            />
-          ) : (
-            <UndoRedoControls onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} />
-          )
+          <UndoRedoControls
+            onUndo={() => v5EngineRef.current?.undo()}
+            onRedo={() => v5EngineRef.current?.redo()}
+            canUndo={v5UndoRedo.canUndo}
+            canRedo={v5UndoRedo.canRedo}
+          />
         }
         onFinalize={() => setFinalizeDialogOpen(true)}
         onStatusChange={handleStatusChange}
@@ -269,7 +264,7 @@ export function QuotationBuilder({
         }}
       />
 
-      <div className={`min-h-0 flex flex-1 overflow-hidden ${!readOnly && !v5Active ? 'p-6' : ''}`}>
+      <div className="min-h-0 flex flex-1 overflow-hidden">
         <div className="min-h-0 flex-1 overflow-hidden">
           {readOnly ? (
             <Preview
@@ -278,7 +273,7 @@ export function QuotationBuilder({
               // eslint-disable-next-line react/purity
               version={lastSaved ? lastSaved.getTime() : new Date().getTime()}
             />
-          ) : v5Active ? (
+          ) : document ? (
             <V5BuilderEngine
               document={document as V5Document}
               onChange={(newDoc) => {
@@ -305,14 +300,7 @@ export function QuotationBuilder({
                 )
               }
             />
-          ) : (
-            <BuilderEngine
-              document={document}
-              onChange={(newDoc: any) =>
-                applyCommand(new SnapshotCommand(document, newDoc, 'Edit'))
-              }
-            />
-          )}
+          ) : null}
         </div>
       </div>
       <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>

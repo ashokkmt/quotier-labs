@@ -1,8 +1,8 @@
 package quotation_test
 
 import (
-	"testing"
 	"quotierlabs/backend/domain/quotation"
+	"testing"
 )
 
 func TestStatusTransitions(t *testing.T) {

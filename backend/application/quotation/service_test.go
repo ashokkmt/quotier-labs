@@ -3,6 +3,7 @@ package quotation_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"quotierlabs/backend/application/quotation"
+	"quotierlabs/backend/domain/documentmodel"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 	infra_id "quotierlabs/backend/infrastructure/id"
 	infra_sqlite "quotierlabs/backend/infrastructure/sqlite"
@@ -39,12 +41,21 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func blankDocument(t *testing.T, pageID string) string {
+	t.Helper()
+	raw, err := json.Marshal(documentmodel.NewBlank(pageID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 func TestQuotationService(t *testing.T) {
 	db := setupTestDB(t)
 	db.Exec("INSERT INTO companies (id, name, currency, created_at, updated_at, version) VALUES ('comp-1', 'Test Comp', 'INR', ?, ?, 1)", time.Now(), time.Now())
 	db.Exec("INSERT INTO customers (id, company_id, name, created_at, updated_at, version) VALUES ('cust-1', 'comp-1', 'Test Cust', ?, ?, 1)", time.Now(), time.Now())
 	db.Exec("INSERT INTO customers (id, company_id, name, created_at, updated_at, version) VALUES ('cust-2', 'comp-1', 'Test Cust 2', ?, ?, 1)", time.Now(), time.Now())
-	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-1', 'BuiltinTmpl', 1, '{\"rows\":[]}', 1, 1, ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-1', 'BuiltinTmpl', 1, ?, 5, 1, ?, ?, 1)", blankDocument(t, "tmpl-page-1"), time.Now(), time.Now())
 	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('seq-1', 'comp-1', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", time.Now().UTC().Year(), time.Now(), time.Now())
 
 	repo := infra_sqlite.NewQuotationRepository(db)
@@ -52,12 +63,10 @@ func TestQuotationService(t *testing.T) {
 	customerRepo := infra_sqlite.NewCustomerRepository(db)
 	companyRepo := infra_sqlite.NewCompanyRepository(db)
 	seqRepo := infra_sqlite.NewNumberSequenceRepository(db)
-	sectionRepo := infra_sqlite.NewSectionDefinitionRepository(db)
-	resolver := domain_quotation.NewTemplateResolver(sectionRepo)
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
 
-	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen, nil)
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, txManager, idGen, nil)
 	ctx := context.Background()
 
 	// 1. Create Draft
@@ -74,11 +83,14 @@ func TestQuotationService(t *testing.T) {
 	if q.Number == "" {
 		t.Fatalf("expected sequence number")
 	}
+	if parsed, err := documentmodel.Parse([]byte(q.Document)); err != nil || parsed.SchemaVersion != documentmodel.SchemaVersion {
+		t.Fatalf("V5 template was not copied into the draft: %v (%s)", err, q.Document)
+	}
 
 	// 2. Update Document
 	_, err = svc.UpdateQuotationDocument(ctx, "comp-1", quotation.QuotationUpdateDocumentDTO{
 		ID:       q.ID,
-		Document: `{"rows":[]}`,
+		Document: blankDocument(t, "updated-page-1"),
 	})
 	if err != nil {
 		t.Fatalf("failed to update doc: %v", err)
@@ -106,7 +118,7 @@ func TestCreateQuotationDraftFromScratch(t *testing.T) {
 	svc := quotation.NewService(
 		infra_sqlite.NewQuotationRepository(dborm), infra_sqlite.NewTemplateRepository(dborm),
 		infra_sqlite.NewCustomerRepository(dborm), infra_sqlite.NewCompanyRepository(dborm),
-		infra_sqlite.NewNumberSequenceRepository(dborm), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(dborm)),
+		infra_sqlite.NewNumberSequenceRepository(dborm),
 		infra_sqlite.NewGormTxManager(dborm), infra_id.NewULIDGenerator(), nil,
 	)
 	q, err := svc.CreateQuotationDraft(context.Background(), "scratch-comp", quotation.QuotationCreateDTO{})
@@ -116,8 +128,9 @@ func TestCreateQuotationDraftFromScratch(t *testing.T) {
 	if q.TemplateID != "" || q.CustomerID != "" {
 		t.Fatalf("scratch draft unexpectedly has dependencies: template=%q customer=%q", q.TemplateID, q.CustomerID)
 	}
-	if q.Document != `{"rows":[]}` {
-		t.Fatalf("expected empty document, got %s", q.Document)
+	document, err := documentmodel.Parse([]byte(q.Document))
+	if err != nil || document.SchemaVersion != documentmodel.SchemaVersion || len(document.Root.Pages) != 1 || len(document.Root.Pages[0].Children) != 0 {
+		t.Fatalf("expected empty V5 A4 document, got %s (err=%v)", q.Document, err)
 	}
 }
 
@@ -126,15 +139,14 @@ func TestSaveQuotationAsTemplate(t *testing.T) {
 	now := time.Now()
 	db.Exec("INSERT INTO companies (id, name, currency, state, is_active, created_at, updated_at, version) VALUES ('template-comp', 'Template Co', 'INR', 'Maharashtra', 1, ?, ?, 1)", now, now)
 	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('template-seq', 'template-comp', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", now.Year(), now, now)
-	db.Exec("INSERT INTO section_definitions (id, name, schema, schema_version, is_builtin, created_at, updated_at, version) VALUES ('def-1', 'Notes', '{\"elements\":[]}', 1, 1, ?, ?, 1)", now, now)
 	repo := infra_sqlite.NewQuotationRepository(db)
 	templateRepo := infra_sqlite.NewTemplateRepository(db)
-	svc := quotation.NewService(repo, templateRepo, infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), domain_quotation.NewTemplateResolver(infra_sqlite.NewSectionDefinitionRepository(db)), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator(), nil)
+	svc := quotation.NewService(repo, templateRepo, infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator(), nil)
 	q, err := svc.CreateQuotationDraft(context.Background(), "template-comp", quotation.QuotationCreateDTO{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.UpdateQuotationDocument(context.Background(), "template-comp", quotation.QuotationUpdateDocumentDTO{ID: q.ID, Document: `{"rows":[{"id":"r1","columns":[{"id":"c1","width":"100%","sections":[{"id":"s1","section_definition_id":"def-1","visibility":true,"optional":false}]}]}]}`})
+	_, err = svc.UpdateQuotationDocument(context.Background(), "template-comp", quotation.QuotationUpdateDocumentDTO{ID: q.ID, Document: blankDocument(t, "saved-template-page")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +166,7 @@ func TestRecalculateQuotation(t *testing.T) {
 	db := setupTestDB(t)
 	db.Exec("INSERT INTO companies (id, name, currency, state, created_at, updated_at, version) VALUES ('comp-2', 'Test Comp', 'INR', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
 	db.Exec("INSERT INTO customers (id, company_id, name, state, created_at, updated_at, version) VALUES ('cust-3', 'comp-2', 'Test Cust', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
-	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-2', 'BuiltinTmpl', 1, '{\"rows\":[]}', 1, 1, ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-2', 'BuiltinTmpl', 1, ?, 5, 1, ?, ?, 1)", blankDocument(t, "tmpl-page-2"), time.Now(), time.Now())
 	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('seq-2', 'comp-2', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", time.Now().UTC().Year(), time.Now(), time.Now())
 
 	repo := infra_sqlite.NewQuotationRepository(db)
@@ -162,12 +174,10 @@ func TestRecalculateQuotation(t *testing.T) {
 	customerRepo := infra_sqlite.NewCustomerRepository(db)
 	companyRepo := infra_sqlite.NewCompanyRepository(db)
 	seqRepo := infra_sqlite.NewNumberSequenceRepository(db)
-	sectionRepo := infra_sqlite.NewSectionDefinitionRepository(db)
-	resolver := domain_quotation.NewTemplateResolver(sectionRepo)
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
 
-	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen, nil)
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, txManager, idGen, nil)
 	ctx := context.Background()
 
 	// 1. Create Draft
@@ -180,7 +190,7 @@ func TestRecalculateQuotation(t *testing.T) {
 	}
 
 	// 2. Inject Document with a table having totals
-	docJSON := `{"rows":[{"id":"r1","columns":[{"id":"c1","sections":[{"id":"s1","tables":[{"id":"tbl-1","has_totals":true,"totals_config":{"qty_col":"qty","rate_col":"rate","tax_rate_col":"tax"},"rows":[{"qty":2,"rate":5000,"tax":18.0}]}]}]}]}]}`
+	docJSON := `{"schema_version":5,"root":{"pages":[{"id":"page-2","width":59528,"height":84189,"margin":{"top":0,"right":0,"bottom":0,"left":0},"child_ids":[],"children":[]}]},"stories":[{"id":"items","kind":"table","content":{"headers":["Item"],"rows":[["Service"]],"column_count":1,"line_items":[{"id":"line-1","quantity":2,"rate":5000,"discount":0,"tax_rate":18,"tax_inclusive":false}]}}],"settings":{"page_size":"A4","orientation":"portrait"}}`
 	_, err = svc.UpdateQuotationDocument(ctx, "comp-2", quotation.QuotationUpdateDocumentDTO{
 		ID:       q.ID,
 		Document: docJSON,
@@ -210,7 +220,7 @@ func TestFinalizeAndStatusTransitions(t *testing.T) {
 	db := setupTestDB(t)
 	db.Exec("INSERT INTO companies (id, name, currency, state, created_at, updated_at, version) VALUES ('comp-3', 'Test Comp', 'INR', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
 	db.Exec("INSERT INTO customers (id, company_id, name, state, created_at, updated_at, version) VALUES ('cust-4', 'comp-3', 'Test Cust', 'Maharashtra', ?, ?, 1)", time.Now(), time.Now())
-	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-3', 'BuiltinTmpl', 1, '{\"rows\":[]}', 1, 1, ?, ?, 1)", time.Now(), time.Now())
+	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES ('tmpl-3', 'BuiltinTmpl', 1, ?, 5, 1, ?, ?, 1)", blankDocument(t, "tmpl-page-3"), time.Now(), time.Now())
 	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('seq-3', 'comp-3', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", time.Now().UTC().Year(), time.Now(), time.Now())
 
 	repo := infra_sqlite.NewQuotationRepository(db)
@@ -218,11 +228,9 @@ func TestFinalizeAndStatusTransitions(t *testing.T) {
 	customerRepo := infra_sqlite.NewCustomerRepository(db)
 	companyRepo := infra_sqlite.NewCompanyRepository(db)
 	seqRepo := infra_sqlite.NewNumberSequenceRepository(db)
-	sectionRepo := infra_sqlite.NewSectionDefinitionRepository(db)
-	resolver := domain_quotation.NewTemplateResolver(sectionRepo)
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
-	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, resolver, txManager, idGen, nil)
+	svc := quotation.NewService(repo, templateRepo, customerRepo, companyRepo, seqRepo, txManager, idGen, nil)
 	ctx := context.Background()
 
 	// 1. Create Draft

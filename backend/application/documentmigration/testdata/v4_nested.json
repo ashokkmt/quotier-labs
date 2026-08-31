@@ -1,1 +1,0 @@
-{"schema_version":4,"root":{"id":"root","kind":"root","role":"root","children":[{"id":"group-1","kind":"container","role":"container","type":"container","children":[{"id":"text-1","kind":"widget","role":"widget","type":"field.heading","props":{"text":"Quotation"},"children":[]}]}]}}

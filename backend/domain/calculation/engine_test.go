@@ -10,10 +10,10 @@ func TestEngine(t *testing.T) {
 	engine := calculation.NewEngine()
 
 	tests := []struct {
-		name      string
-		lines     []calculation.LineItemInput
-		taxMode   calculation.TaxMode
-		want      calculation.CalculationResult
+		name    string
+		lines   []calculation.LineItemInput
+		taxMode calculation.TaxMode
+		want    calculation.CalculationResult
 	}{
 		{
 			name: "Basic tax-exclusive intra-state",
@@ -107,12 +107,12 @@ func TestEngine(t *testing.T) {
 			},
 			taxMode: calculation.TaxModeIntraState,
 			want: calculation.CalculationResult{
-				Subtotal:      21800,
-				TaxableTotal:  20000,
-				CGSTTotal:     1150, // 250 + 900
-				SGSTTotal:     1150, // 250 + 900
-				IGSTTotal:     0,
-				GrandTotal:    22300, // 20000 + 2300
+				Subtotal:     21800,
+				TaxableTotal: 20000,
+				CGSTTotal:    1150, // 250 + 900
+				SGSTTotal:    1150, // 250 + 900
+				IGSTTotal:    0,
+				GrandTotal:   22300, // 20000 + 2300
 			},
 		},
 		{
@@ -140,7 +140,7 @@ func TestEngine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := engine.Calculate(tt.lines, tt.taxMode)
-			
+
 			if got.Subtotal != tt.want.Subtotal {
 				t.Errorf("Subtotal: got %v, want %v", got.Subtotal, tt.want.Subtotal)
 			}

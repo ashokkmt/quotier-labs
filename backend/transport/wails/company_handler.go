@@ -5,21 +5,25 @@ import (
 
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/onboarding"
+	"quotierlabs/backend/infrastructure/apppaths"
 )
 
 type CompanyHandler struct {
 	ctx               context.Context
 	companyService    *company.Service
 	onboardingService *onboarding.Service
+	paths             apppaths.Paths
 }
 
 func NewCompanyHandler(
 	companyService *company.Service,
 	onboardingService *onboarding.Service,
+	paths apppaths.Paths,
 ) *CompanyHandler {
 	return &CompanyHandler{
 		companyService:    companyService,
 		onboardingService: onboardingService,
+		paths:             paths,
 	}
 }
 

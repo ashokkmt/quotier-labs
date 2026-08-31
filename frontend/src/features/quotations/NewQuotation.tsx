@@ -44,7 +44,7 @@ export function NewQuotation() {
         <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Start From Scratch</h2>
           <p className="text-sm text-muted-foreground">
-            Build an empty quotation with rows, columns, sections, and tables.
+            Start with a clean A4 page and add quotation widgets, text, tables, and images.
           </p>
           <Button className="w-full sm:w-auto" onClick={() => create()} disabled={creating}>
             Create Empty Draft

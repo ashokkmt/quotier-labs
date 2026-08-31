@@ -2,8 +2,8 @@ package company_test
 
 import (
 	"context"
-	"testing"
 	"database/sql"
+	"testing"
 
 	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
@@ -89,8 +89,8 @@ func TestCompanyService(t *testing.T) {
 	newName := "Test Updated"
 	active.Name = newName
 	updated, err := svc.UpdateCompany(ctx, company.CompanyUpdateDTO{
-		ID: active.ID,
-		Name: newName,
+		ID:    active.ID,
+		Name:  newName,
 		State: active.State,
 	})
 	if err != nil || updated.Name != newName {

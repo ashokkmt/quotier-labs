@@ -127,7 +127,7 @@ func (s *Service) ListCustomers(ctx context.Context, companyID string, filter Cu
 		Limit:  filter.Limit,
 		Offset: filter.Offset,
 	}
-	
+
 	items, err := s.repo.List(ctx, companyID, domainFilter)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (s *Service) ListCustomers(ctx context.Context, companyID string, filter Cu
 	}
 
 	// Assuming a total is needed but SQLite repository didn't return a total count.
-	// For MVP, we can return length. 
+	// For MVP, we can return length.
 	// To do proper pagination, we'd add Count to repo, but for now length + offset is fine.
 	return &CustomerListDTO{
 		Items: dtoItems,

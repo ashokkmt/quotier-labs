@@ -2,8 +2,8 @@ package onboarding_test
 
 import (
 	"context"
-	"testing"
 	"database/sql"
+	"testing"
 
 	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
@@ -42,13 +42,12 @@ func setupTestDB(t *testing.T) *gorm.DB {
 func TestCompleteOnboarding(t *testing.T) {
 	db := setupTestDB(t)
 	compRepo := infra_sqlite.NewCompanyRepository(db)
-	secRepo := infra_sqlite.NewSectionDefinitionRepository(db)
 	tmplRepo := infra_sqlite.NewTemplateRepository(db)
 	txManager := infra_sqlite.NewGormTxManager(db)
 	idGen := infra_id.NewULIDGenerator()
 
 	compSvc := company.NewService(compRepo, idGen)
-	svc := onboarding.NewService(compSvc, txManager, secRepo, tmplRepo, infra_sqlite.NewNumberSequenceRepository(db), idGen)
+	svc := onboarding.NewService(compSvc, txManager, tmplRepo, infra_sqlite.NewNumberSequenceRepository(db), idGen)
 
 	ctx := context.Background()
 	state := "MH"
@@ -65,12 +64,6 @@ func TestCompleteOnboarding(t *testing.T) {
 	isFirst, _ := compSvc.IsFirstRun(ctx)
 	if isFirst {
 		t.Fatalf("expected IsFirstRun false")
-	}
-
-	// Verify seeds
-	builtins, _ := secRepo.ListBuiltins(ctx)
-	if len(builtins) != len(onboarding.BuiltinSectionDefinitions) {
-		t.Fatalf("expected %d builtins, got %d", len(onboarding.BuiltinSectionDefinitions), len(builtins))
 	}
 
 	tmpl, _ := tmplRepo.ListBuiltins(ctx)

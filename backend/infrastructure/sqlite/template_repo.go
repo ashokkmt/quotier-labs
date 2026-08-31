@@ -127,7 +127,7 @@ func (r *templateRepository) Create(ctx context.Context, template *domain.Templa
 func (r *templateRepository) Update(ctx context.Context, template *domain.Template) error {
 	db := GetDB(ctx, r.db)
 	model := fromDomainTemplate(template)
-	
+
 	query := db.Model(model).Where("id = ? AND version = ?", model.ID, model.Version)
 	if model.CompanyID != nil {
 		query = query.Where("company_id = ?", *model.CompanyID)

@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"quotierlabs/backend/domain/quotation"
+	"encoding/json"
+	sqlite_driver "gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	app_cust "quotierlabs/backend/application/customer"
 	app_quot "quotierlabs/backend/application/quotation"
 	app_tmpl "quotierlabs/backend/application/template"
+	"quotierlabs/backend/domain/documentmodel"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/sqlite"
-	sqlite_driver "gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func setupDB(t *testing.T) *gorm.DB {
@@ -35,13 +36,11 @@ func TestE2ECriticalPath(t *testing.T) {
 	tmplRepo := sqlite.NewTemplateRepository(db)
 	quotRepo := sqlite.NewQuotationRepository(db)
 	seqRepo := sqlite.NewNumberSequenceRepository(db)
-	secRepo := sqlite.NewSectionDefinitionRepository(db)
 	idGen := id.NewULIDGenerator()
-	resolver := quotation.NewTemplateResolver(secRepo)
 
 	custSvc := app_cust.NewService(custRepo, idGen)
 	tmplSvc := app_tmpl.NewService(tmplRepo, txManager, idGen)
-	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, resolver, txManager, idGen, nil)
+	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, txManager, idGen, nil)
 
 	ctx := context.Background()
 
@@ -53,38 +52,66 @@ func TestE2ECriticalPath(t *testing.T) {
 	// 3. Create Customer
 	custDTO := app_cust.CustomerCreateDTO{Name: "Client A"}
 	cust, err := custSvc.CreateCustomer(ctx, compID, custDTO)
-	if err != nil { t.Fatalf("CreateCustomer failed: %v", err) }
+	if err != nil {
+		t.Fatalf("CreateCustomer failed: %v", err)
+	}
 
 	// 4. Create Template
-	tmplDTO := app_tmpl.TemplateCreateDTO{Name: "Standard Template", Layout: `{"rows":[]}`}
+	blank, _ := json.Marshal(documentmodel.NewBlank("template-page"))
+	tmplDTO := app_tmpl.TemplateCreateDTO{Name: "Standard Template", Layout: string(blank)}
 	tmpl, err := tmplSvc.CreateTemplate(ctx, compID, tmplDTO)
-	if err != nil { t.Fatalf("CreateTemplate failed: %v", err) }
+	if err != nil {
+		t.Fatalf("CreateTemplate failed: %v", err)
+	}
 
 	// 5. Create Quotation Draft
 	qDTOInput := app_quot.QuotationCreateDTO{TemplateID: tmpl.ID, CustomerID: cust.ID}
 	qDTO, err := quotSvc.CreateQuotationDraft(ctx, compID, qDTOInput)
-	if err != nil { t.Fatalf("CreateQuotationDraft failed: %v", err) }
-	if qDTO.Status != "DRAFT" { t.Fatalf("Expected DRAFT, got %v", qDTO.Status) }
-	if qDTO.Number == "" { t.Fatalf("Expected number for DRAFT, got empty") }
+	if err != nil {
+		t.Fatalf("CreateQuotationDraft failed: %v", err)
+	}
+	if qDTO.Status != "DRAFT" {
+		t.Fatalf("Expected DRAFT, got %v", qDTO.Status)
+	}
+	if qDTO.Number == "" {
+		t.Fatalf("Expected number for DRAFT, got empty")
+	}
 
 	// 6. Update Quotation
-	upDTO := app_quot.QuotationUpdateDocumentDTO{ID: qDTO.ID, Document: `{"sections":[]}`}
+	updated, _ := json.Marshal(documentmodel.NewBlank("quotation-page"))
+	upDTO := app_quot.QuotationUpdateDocumentDTO{ID: qDTO.ID, Document: string(updated)}
 	qDTO, err = quotSvc.UpdateQuotationDocument(ctx, compID, upDTO)
-	if err != nil { t.Fatalf("UpdateQuotationDocument failed: %v", err) }
+	if err != nil {
+		t.Fatalf("UpdateQuotationDocument failed: %v", err)
+	}
 
 	// 7. Calculate Totals
 	calcRes, err := quotSvc.RecalculateQuotation(ctx, compID, qDTO.ID)
-	if err != nil { t.Fatalf("RecalculateQuotation failed: %v", err) }
-	if calcRes.GrandTotal != 0 { t.Fatalf("Expected 0 total, got %v", calcRes.GrandTotal) }
+	if err != nil {
+		t.Fatalf("RecalculateQuotation failed: %v", err)
+	}
+	if calcRes.GrandTotal != 0 {
+		t.Fatalf("Expected 0 total, got %v", calcRes.GrandTotal)
+	}
 
 	// 8. Finalize Quotation
 	finalized, err := quotSvc.FinalizeQuotation(ctx, compID, qDTO.ID)
-	if err != nil { t.Fatalf("FinalizeQuotation failed: %v", err) }
-	if finalized.Status != "FINALIZED" { t.Fatalf("Expected FINALIZED, got %v", finalized.Status) }
-	if finalized.Number == "" { t.Fatalf("Expected number to be present, got empty") }
+	if err != nil {
+		t.Fatalf("FinalizeQuotation failed: %v", err)
+	}
+	if finalized.Status != "FINALIZED" {
+		t.Fatalf("Expected FINALIZED, got %v", finalized.Status)
+	}
+	if finalized.Number == "" {
+		t.Fatalf("Expected number to be present, got empty")
+	}
 
 	// 9. Verify in List
 	list, err := quotSvc.ListQuotations(ctx, compID, app_quot.QuotationListFilterDTO{Limit: 10})
-	if err != nil { t.Fatalf("ListQuotations failed: %v", err) }
-	if list.Total != 1 { t.Fatalf("Expected 1 quote in list, got %v", list.Total) }
+	if err != nil {
+		t.Fatalf("ListQuotations failed: %v", err)
+	}
+	if list.Total != 1 {
+		t.Fatalf("Expected 1 quote in list, got %v", list.Total)
+	}
 }

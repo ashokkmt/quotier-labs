@@ -49,7 +49,7 @@ func (s *CSVImportService) PreviewCustomers(path string) (*backup_domain.ImportP
 				data[h] = record[i]
 			}
 		}
-		
+
 		isValid := len(data) > 0
 		var errors []string
 
@@ -105,11 +105,21 @@ func (s *CSVImportService) ImportCustomers(ctx context.Context, companyID string
 			CompanyID: companyID,
 			Name:      name,
 		}
-		if email != "" { cust.Email = &email }
-		if phone != "" { cust.Phone = &phone }
-		if address != "" { cust.Address = &address }
-		if gstin != "" { cust.GSTIN = &gstin }
-		if pan != "" { cust.PAN = &pan }
+		if email != "" {
+			cust.Email = &email
+		}
+		if phone != "" {
+			cust.Phone = &phone
+		}
+		if address != "" {
+			cust.Address = &address
+		}
+		if gstin != "" {
+			cust.GSTIN = &gstin
+		}
+		if pan != "" {
+			cust.PAN = &pan
+		}
 
 		// Ideally wrap in tx or handle duplicates gracefully. For MVP, just create.
 		if err := s.customerRepo.Create(ctx, cust); err == nil {

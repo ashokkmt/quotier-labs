@@ -13,6 +13,7 @@ import {
   DuplicateTemplate,
   DeleteTemplate,
 } from '../../../wailsjs/go/wails/TemplateHandler'
+import { createBlankV5Document } from '../../builder'
 
 export function TemplateList() {
   const [templates, setTemplates] = useState<any[]>([])
@@ -65,7 +66,7 @@ export function TemplateList() {
     try {
       const res = await CreateTemplate({
         name: 'New Template',
-        layout: JSON.stringify({ schema_version: 1, children: [] }),
+        layout: JSON.stringify(createBlankV5Document()),
       })
       toast({ title: 'Template created' })
       navigate(`/templates/${res.id}/edit`)

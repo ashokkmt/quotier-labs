@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { GetPreferences, SetTheme } from '../../wailsjs/go/wails/AppHandler'
 
 type Theme = 'dark' | 'light' | 'system'
 
@@ -31,6 +32,19 @@ export function ThemeProvider({
   )
 
   useEffect(() => {
+    GetPreferences()
+      .then((preferences) => {
+        if (preferences?.theme) {
+          setTheme(preferences.theme as Theme)
+          localStorage.setItem(storageKey, preferences.theme)
+        }
+      })
+      .catch(() => {
+        // The local cache keeps first paint stable if native preferences are unavailable.
+      })
+  }, [storageKey])
+
+  useEffect(() => {
     const root = window.document.documentElement
 
     root.classList.remove('light', 'dark')
@@ -52,6 +66,7 @@ export function ThemeProvider({
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme)
       setTheme(theme)
+      SetTheme(theme).catch(console.error)
     },
   }
 

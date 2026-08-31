@@ -1,7 +1,27 @@
 export namespace backup {
 	
+	export class AutoBackupSettings {
+	    enabled: boolean;
+	    directory: string;
+	    last_status?: string;
+	    last_backup_utc?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoBackupSettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.directory = source["directory"];
+	        this.last_status = source["last_status"];
+	        this.last_backup_utc = source["last_backup_utc"];
+	    }
+	}
 	export class BackupMetadata {
+	    format_version: number;
 	    app_version: string;
+	    channel: string;
 	    schema_version: number;
 	    company_id: string;
 	    company_name: string;
@@ -16,7 +36,9 @@ export namespace backup {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.format_version = source["format_version"];
 	        this.app_version = source["app_version"];
+	        this.channel = source["channel"];
 	        this.schema_version = source["schema_version"];
 	        this.company_id = source["company_id"];
 	        this.company_name = source["company_name"];
@@ -337,6 +359,39 @@ export namespace company {
 
 }
 
+export namespace config {
+	
+	export class Preferences {
+	    schema_version: number;
+	    theme: string;
+	    density: string;
+	    automatic_updates: boolean;
+	    skipped_version?: string;
+	    last_update_check_utc?: string;
+	    last_observed_update_version?: string;
+	    update_feed_etag?: string;
+	    update_feed_last_modified?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Preferences(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.schema_version = source["schema_version"];
+	        this.theme = source["theme"];
+	        this.density = source["density"];
+	        this.automatic_updates = source["automatic_updates"];
+	        this.skipped_version = source["skipped_version"];
+	        this.last_update_check_utc = source["last_update_check_utc"];
+	        this.last_observed_update_version = source["last_observed_update_version"];
+	        this.update_feed_etag = source["update_feed_etag"];
+	        this.update_feed_last_modified = source["update_feed_last_modified"];
+	    }
+	}
+
+}
+
 export namespace customer {
 	
 	export class CustomerCreateDTO {
@@ -495,6 +550,33 @@ export namespace customer {
 	        this.billing_address = source["billing_address"];
 	        this.shipping_address = source["shipping_address"];
 	        this.notes = source["notes"];
+	    }
+	}
+
+}
+
+export namespace legacydata {
+	
+	export class Candidate {
+	    path: string;
+	    display_path: string;
+	    modified_at: string;
+	    size: number;
+	    company_count: number;
+	    quotation_count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Candidate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.display_path = source["display_path"];
+	        this.modified_at = source["modified_at"];
+	        this.size = source["size"];
+	        this.company_count = source["company_count"];
+	        this.quotation_count = source["quotation_count"];
 	    }
 	}
 
@@ -765,56 +847,23 @@ export namespace quotation {
 
 }
 
-export namespace section {
+export namespace recovery {
 	
-	export class SectionCreateDTO {
-	    name: string;
-	    description?: string;
-	    category?: string;
-	    schema: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new SectionCreateDTO(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.description = source["description"];
-	        this.category = source["category"];
-	        this.schema = source["schema"];
-	    }
-	}
-	export class SectionDefinitionDTO {
-	    id: string;
-	    company_id?: string;
-	    name: string;
-	    description?: string;
-	    schema: string;
+	export class Checkpoint {
 	    schema_version: number;
-	    is_builtin: boolean;
-	    category?: string;
-	    // Go type: time
-	    created_at: any;
 	    // Go type: time
 	    updated_at: any;
+	    document: number[];
 	
 	    static createFrom(source: any = {}) {
-	        return new SectionDefinitionDTO(source);
+	        return new Checkpoint(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.company_id = source["company_id"];
-	        this.name = source["name"];
-	        this.description = source["description"];
-	        this.schema = source["schema"];
 	        this.schema_version = source["schema_version"];
-	        this.is_builtin = source["is_builtin"];
-	        this.category = source["category"];
-	        this.created_at = this.convertValues(source["created_at"], null);
 	        this.updated_at = this.convertValues(source["updated_at"], null);
+	        this.document = source["document"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -834,26 +883,6 @@ export namespace section {
 		    }
 		    return a;
 		}
-	}
-	export class SectionUpdateDTO {
-	    id: string;
-	    name: string;
-	    description?: string;
-	    category?: string;
-	    schema: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new SectionUpdateDTO(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.description = source["description"];
-	        this.category = source["category"];
-	        this.schema = source["schema"];
-	    }
 	}
 
 }
@@ -947,12 +976,86 @@ export namespace template {
 
 }
 
+export namespace update {
+	
+	export class Candidate {
+	    version: string;
+	    release_url: string;
+	    release_notes: string;
+	    published_at: string;
+	    size: number;
+	    critical: boolean;
+	    package: string;
+	    db_schema_after: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Candidate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.release_url = source["release_url"];
+	        this.release_notes = source["release_notes"];
+	        this.published_at = source["published_at"];
+	        this.size = source["size"];
+	        this.critical = source["critical"];
+	        this.package = source["package"];
+	        this.db_schema_after = source["db_schema_after"];
+	    }
+	}
+	export class CheckResult {
+	    status: string;
+	    current_version: string;
+	    candidate?: Candidate;
+	    checked_at_utc: string;
+	    message?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CheckResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.current_version = source["current_version"];
+	        this.candidate = this.convertValues(source["candidate"], Candidate);
+	        this.checked_at_utc = source["checked_at_utc"];
+	        this.message = source["message"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace wails {
 	
 	export class AppInfo {
 	    version: string;
 	    name: string;
 	    os: string;
+	    arch: string;
+	    channel: string;
+	    commit: string;
+	    build_time: string;
+	    updates_enabled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -963,6 +1066,11 @@ export namespace wails {
 	        this.version = source["version"];
 	        this.name = source["name"];
 	        this.os = source["os"];
+	        this.arch = source["arch"];
+	        this.channel = source["channel"];
+	        this.commit = source["commit"];
+	        this.build_time = source["build_time"];
+	        this.updates_enabled = source["updates_enabled"];
 	    }
 	}
 

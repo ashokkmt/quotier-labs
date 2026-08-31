@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 )
 
 const (
@@ -17,6 +18,17 @@ const (
 	MaxNodes      = 2000
 	MaxDepth      = 8
 )
+
+func NewBlank(pageID string) *Document {
+	return &Document{
+		SchemaVersion: SchemaVersion,
+		Root: Root{Pages: []Page{{
+			ID: pageID, Width: A4WidthDU, Height: A4HeightDU,
+			Margin: Insets{}, ChildIDs: []string{}, Children: []Node{},
+		}}},
+		Settings: Settings{PageSize: "A4", Orientation: "portrait"},
+	}
+}
 
 type Document struct {
 	SchemaVersion int      `json:"schema_version"`
@@ -134,6 +146,9 @@ func Parse(data []byte) (*Document, error) {
 	if err := dec.Decode(&d); err != nil {
 		return nil, err
 	}
+	if dec.Decode(&struct{}{}) != io.EOF {
+		return nil, fmt.Errorf("%w: trailing document data", ErrInvalid)
+	}
 	if d.SchemaVersion != SchemaVersion {
 		return nil, fmt.Errorf("%w: %d", ErrSchemaVersion, d.SchemaVersion)
 	}
@@ -229,6 +244,14 @@ func validateTableStory(story Story) error {
 		RepeatHeader  *bool      `json:"repeat_header"`
 		RowHeightMM   float64    `json:"row_height_mm"`
 		ColumnWidths  []int64    `json:"column_widths"`
+		LineItems     []struct {
+			ID           string  `json:"id"`
+			Quantity     float64 `json:"quantity"`
+			Rate         int64   `json:"rate"`
+			Discount     int64   `json:"discount"`
+			TaxRate      float64 `json:"tax_rate"`
+			TaxInclusive bool    `json:"tax_inclusive"`
+		} `json:"line_items,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(story.Content))
 	decoder.DisallowUnknownFields()
@@ -241,6 +264,21 @@ func validateTableStory(story Story) error {
 	}
 	if len(value.Rows) < 1 || len(value.Rows) > 500 {
 		return fmt.Errorf("%w: table story %q row count is out of bounds", ErrInvalid, story.ID)
+	}
+	if len(value.LineItems) > 500 {
+		return fmt.Errorf("%w: table story %q line item count is out of bounds", ErrInvalid, story.ID)
+	}
+	seenLineItems := map[string]bool{}
+	for _, item := range value.LineItems {
+		if item.ID != "" && seenLineItems[item.ID] {
+			return fmt.Errorf("%w: table story %q has duplicate line item ids", ErrInvalid, story.ID)
+		}
+		if item.ID != "" {
+			seenLineItems[item.ID] = true
+		}
+		if item.Quantity < 0 || item.Rate < 0 || item.Discount < 0 || item.TaxRate < 0 || item.TaxRate > 100 {
+			return fmt.Errorf("%w: table story %q has invalid line item values", ErrInvalid, story.ID)
+		}
 	}
 	for _, row := range value.Rows {
 		if len(row) > columns {

@@ -17,6 +17,14 @@ export type V5TableData = {
   repeat_header: boolean
   row_height_mm: number
   column_widths: number[]
+  line_items?: Array<{
+    id?: string
+    quantity: number
+    rate: number
+    discount: number
+    tax_rate: number
+    tax_inclusive: boolean
+  }>
 }
 
 export function createBlankTable(rows: number, columns: number, widthDU: number): V5TableData {
@@ -64,6 +72,16 @@ export function normalizeTableData(content: unknown): V5TableData {
         ? Math.max(minimumColumnWidth, du(widths[index]))
         : 0,
     ),
+    line_items: Array.isArray(value.line_items)
+      ? value.line_items.map((item) => ({
+          id: item.id,
+          quantity: Number(item.quantity),
+          rate: Number(item.rate),
+          discount: Number(item.discount),
+          tax_rate: Number(item.tax_rate),
+          tax_inclusive: Boolean(item.tax_inclusive),
+        }))
+      : undefined,
   }
 }
 

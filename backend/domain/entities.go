@@ -8,15 +8,15 @@ type Money struct {
 }
 
 type Company struct {
-	ID        string
-	Name      string
-	LegalName *string
-	TaxID     *string
-	Address   *string
-	Phone     *string
-	Email     *string
-	Website   *string
-	LogoURL   *string
+	ID           string
+	Name         string
+	LegalName    *string
+	TaxID        *string
+	Address      *string
+	Phone        *string
+	Email        *string
+	Website      *string
+	LogoURL      *string
 	State        *string
 	GSTIN        *string
 	PAN          *string
@@ -24,8 +24,8 @@ type Company struct {
 	SignatureURL *string
 	StampURL     *string
 
-	Currency  string
-	IsActive  bool
+	Currency string
+	IsActive bool
 	AuditMetadata
 }
 
@@ -53,18 +53,6 @@ type Customer struct {
 	BillingAddress  *string
 	ShippingAddress *string
 	Notes           *string
-	AuditMetadata
-}
-
-type SectionDefinition struct {
-	ID            string
-	CompanyID     *string
-	Name          string
-	Description   *string
-	Schema        string
-	SchemaVersion int
-	IsBuiltin     bool
-	Category      *string
 	AuditMetadata
 }
 

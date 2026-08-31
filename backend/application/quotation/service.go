@@ -24,7 +24,6 @@ type Service struct {
 	customerRepo  domain.CustomerRepository
 	companyRepo   domain.CompanyRepository
 	seqRepo       domain.NumberSequenceRepository
-	resolver      *domain_quotation.TemplateResolver
 	txManager     domain.TxManager
 	idGen         domain.IDGenerator
 	layoutMetrics layoutir.Metrics
@@ -36,7 +35,6 @@ func NewService(
 	customerRepo domain.CustomerRepository,
 	companyRepo domain.CompanyRepository,
 	seqRepo domain.NumberSequenceRepository,
-	resolver *domain_quotation.TemplateResolver,
 	txManager domain.TxManager,
 	idGen domain.IDGenerator,
 	layoutMetrics layoutir.Metrics,
@@ -50,7 +48,6 @@ func NewService(
 		customerRepo:  customerRepo,
 		companyRepo:   companyRepo,
 		seqRepo:       seqRepo,
-		resolver:      resolver,
 		txManager:     txManager,
 		idGen:         idGen,
 		layoutMetrics: layoutMetrics,
@@ -118,11 +115,11 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	var docJSON string
 	var docVersion int
 	if tmpl != nil {
-		docJSON, docVersion, err = s.resolveDraftDocument(txCtx, tmpl)
+		docJSON, docVersion, err = s.resolveDraftDocument(tmpl)
 	} else {
-		doc := &domain_quotation.Document{Rows: []domain_quotation.Row{}}
-		docJSON, err = doc.ToJSON()
-		docVersion = 1
+		raw, marshalErr := json.Marshal(documentmodel.NewBlank(s.idGen.Generate()))
+		docJSON, err = string(raw), marshalErr
+		docVersion = documentmodel.SchemaVersion
 	}
 	if err != nil {
 		return nil, err
@@ -192,35 +189,18 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	return &dto, nil
 }
 
-// resolveDraftDocument builds the starting document for a new draft. A V5 template resolves to an
-// independent, validated deep copy of its layout so quotation edits can never mutate the template;
-// legacy templates keep their existing resolution path.
-func (s *Service) resolveDraftDocument(ctx context.Context, tmpl *domain.Template) (string, int, error) {
-	if version, err := domain_quotation.DocumentSchemaVersion(tmpl.Layout); err == nil && version == documentmodel.SchemaVersion {
-		parsed, err := documentmodel.Parse([]byte(tmpl.Layout))
-		if err != nil {
-			return "", 0, fmt.Errorf("invalid V5 template layout: %w", err)
-		}
-		var deepCopy documentmodel.Document
-		encoded, err := json.Marshal(parsed)
-		if err != nil {
-			return "", 0, err
-		}
-		if err := json.Unmarshal(encoded, &deepCopy); err != nil {
-			return "", 0, err
-		}
-		out, err := json.Marshal(&deepCopy)
-		if err != nil {
-			return "", 0, err
-		}
-		return string(out), documentmodel.SchemaVersion, nil
+// resolveDraftDocument validates and deep-copies a V5 template. Templates and quotations are
+// separate persisted values even when their initial JSON is identical.
+func (s *Service) resolveDraftDocument(tmpl *domain.Template) (string, int, error) {
+	parsed, err := documentmodel.Parse([]byte(tmpl.Layout))
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid V5 template layout: %w", err)
 	}
-	doc, err := s.resolver.Resolve(ctx, tmpl)
+	out, err := json.Marshal(parsed)
 	if err != nil {
 		return "", 0, err
 	}
-	docJSON, err := doc.ToJSON()
-	return docJSON, 1, err
+	return string(out), documentmodel.SchemaVersion, nil
 }
 
 func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input SaveAsTemplateDTO) (*domain.Template, error) {
@@ -240,61 +220,15 @@ func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input Sa
 	if q.Status != string(domain_quotation.StatusDraft) {
 		return nil, ErrQuotationNotDraft
 	}
-	doc, err := domain_quotation.ParseDocument(q.Document)
+	_, err = documentmodel.Parse([]byte(q.Document))
 	if err != nil {
 		return nil, fmt.Errorf("invalid quotation document: %w", err)
 	}
-	if doc.SchemaVersion >= 4 {
-		// V4/V5 layouts are already complete document snapshots. Preserve them exactly;
-		// flattening into the legacy rows envelope would lose geometry and layer order.
-		layoutJSON := q.Document
-		t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: layoutJSON, SchemaVersion: doc.SchemaVersion, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
-		if err := s.templateRepo.Create(txCtx, t); err != nil {
-			return nil, err
-		}
-		if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: t.SchemaVersion, CreatedAt: t.CreatedAt}); err != nil {
-			return nil, err
-		}
-		if err := s.txManager.Commit(txCtx); err != nil {
-			return nil, err
-		}
-		return t, nil
-	}
-	if len(doc.Children) > 0 {
-		layoutJSON, err := json.Marshal(map[string]interface{}{"schema_version": 1, "children": doc.Children})
-		if err != nil {
-			return nil, err
-		}
-		t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: string(layoutJSON), SchemaVersion: 1, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
-		if err := s.templateRepo.Create(txCtx, t); err != nil {
-			return nil, err
-		}
-		if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: 1, CreatedAt: t.CreatedAt}); err != nil {
-			return nil, err
-		}
-		if err := s.txManager.Commit(txCtx); err != nil {
-			return nil, err
-		}
-		return t, nil
-	}
-	layout := make([]map[string]interface{}, 0, len(doc.Rows))
-	for _, row := range doc.Rows {
-		cols := make([]map[string]interface{}, 0, len(row.Columns))
-		for _, col := range row.Columns {
-			secs := make([]map[string]interface{}, 0, len(col.Sections))
-			for _, sec := range col.Sections {
-				secs = append(secs, map[string]interface{}{"id": sec.ID, "section_definition_id": sec.SectionDefinitionID, "visibility": sec.Visibility, "optional": sec.Optional})
-			}
-			cols = append(cols, map[string]interface{}{"id": col.ID, "order": col.Order, "width": col.Width, "sections": secs})
-		}
-		layout = append(layout, map[string]interface{}{"id": row.ID, "order": row.Order, "columns": cols})
-	}
-	layoutJSON, _ := json.Marshal(map[string]interface{}{"rows": layout})
-	t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: string(layoutJSON), SchemaVersion: 1, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
+	t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: q.Document, SchemaVersion: documentmodel.SchemaVersion, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
 	if err := s.templateRepo.Create(txCtx, t); err != nil {
 		return nil, err
 	}
-	if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: 1, CreatedAt: t.CreatedAt}); err != nil {
+	if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: documentmodel.SchemaVersion, CreatedAt: t.CreatedAt}); err != nil {
 		return nil, err
 	}
 	if err := s.txManager.Commit(txCtx); err != nil {
@@ -321,15 +255,11 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 		return nil, ErrQuotationNotDraft
 	}
 
-	version, err := domain_quotation.DocumentSchemaVersion(input.Document)
-	if err != nil {
-		return nil, &domain.ValidationError{Field: "document", Message: "invalid JSON document"}
-	}
-	if version > 5 {
-		return nil, &domain.ValidationError{Field: "document", Message: "unsupported document schema version"}
+	if _, err := documentmodel.Parse([]byte(input.Document)); err != nil {
+		return nil, &domain.ValidationError{Field: "document", Message: "document must be a valid schema 5 document"}
 	}
 	q.Document = input.Document
-	q.SchemaVersion = version
+	q.SchemaVersion = documentmodel.SchemaVersion
 	q.UpdatedAt = time.Now().UTC()
 
 	if err := domain_quotation.ValidateQuotation(q); err != nil {

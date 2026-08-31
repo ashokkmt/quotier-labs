@@ -169,8 +169,8 @@ func TestTransactions(t *testing.T) {
 
 	txCtx, _ := txManager.BeginTx(ctx)
 	_ = companyRepo.Create(txCtx, &domain.Company{
-		ID:       "comp-1",
-		Name:     "Rollback Test",
+		ID:   "comp-1",
+		Name: "Rollback Test",
 		AuditMetadata: domain.AuditMetadata{
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -182,53 +182,6 @@ func TestTransactions(t *testing.T) {
 	_, err := companyRepo.GetByID(ctx, "comp-1")
 	if err == nil {
 		t.Fatalf("expected record to not exist due to rollback")
-	}
-}
-
-func TestSectionDefinitionRepository(t *testing.T) {
-	db := setupTestDB(t)
-	db.Exec("INSERT INTO companies (id, name, currency, created_at, updated_at, version) VALUES ('comp-1', 'Test', 'INR', ?, ?, 1)", time.Now(), time.Now())
-
-	repo := infra_sqlite.NewSectionDefinitionRepository(db)
-	ctx := context.Background()
-
-	def := &domain.SectionDefinition{
-		ID:            "sec-1",
-		Name:          "Header",
-		Schema:        "{}",
-		SchemaVersion: 1,
-		IsBuiltin:     true,
-		AuditMetadata: domain.AuditMetadata{
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Version:   1,
-		},
-	}
-	_ = repo.Create(ctx, def)
-
-	compDef := &domain.SectionDefinition{
-		ID:            "sec-2",
-		CompanyID:     func(s string) *string { return &s }("comp-1"),
-		Name:          "Custom",
-		Schema:        "{}",
-		SchemaVersion: 1,
-		IsBuiltin:     false,
-		AuditMetadata: domain.AuditMetadata{
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Version:   1,
-		},
-	}
-	_ = repo.Create(ctx, compDef)
-
-	builtins, _ := repo.ListBuiltins(ctx)
-	if len(builtins) != 1 || builtins[0].ID != "sec-1" {
-		t.Fatalf("expected 1 builtin section")
-	}
-
-	byComp, _ := repo.ListByCompany(ctx, "comp-1")
-	if len(byComp) != 1 || byComp[0].ID != "sec-2" {
-		t.Fatalf("expected 1 company section")
 	}
 }
 
@@ -321,11 +274,11 @@ func TestQuotationRepository(t *testing.T) {
 func TestQuotationRepository_Phase13(t *testing.T) {
 	db := setupTestDB(t)
 	db.Exec("INSERT INTO companies (id, name, currency, created_at, updated_at, version) VALUES ('comp-1', 'Test', 'INR', ?, ?, 1)", time.Now(), time.Now())
-	
+
 	// Create some customers to test search
 	db.Exec("INSERT INTO customers (id, company_id, name, created_at, updated_at, version) VALUES ('cust-1', 'comp-1', 'Apple Corp', ?, ?, 1)", time.Now(), time.Now())
 	db.Exec("INSERT INTO customers (id, company_id, name, created_at, updated_at, version) VALUES ('cust-2', 'comp-1', 'Banana Inc', ?, ?, 1)", time.Now(), time.Now())
-	
+
 	// Create template to satisfy foreign key
 	db.Exec("INSERT INTO templates (id, company_id, name, layout, schema_version, created_at, updated_at, version) VALUES ('tmpl-1', 'comp-1', 'Tmpl', '{}', 1, ?, ?, 1)", time.Now(), time.Now())
 
@@ -361,7 +314,7 @@ func TestQuotationRepository_Phase13(t *testing.T) {
 	}
 
 	// Test Pagination (Limit and Offset)
-	paginated, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{Limit: 2, Offset: 0, SortBy: func(s string) *string {return &s}("date"), SortDesc: true})
+	paginated, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{Limit: 2, Offset: 0, SortBy: func(s string) *string { return &s }("date"), SortDesc: true})
 	if len(paginated) != 2 {
 		t.Fatalf("expected 2 paginated results")
 	}
@@ -370,7 +323,7 @@ func TestQuotationRepository_Phase13(t *testing.T) {
 	}
 
 	// Test Sort (Amount ASC)
-	amountSort, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{SortBy: func(s string) *string {return &s}("amount"), SortDesc: false})
+	amountSort, _ := repo.List(ctx, "comp-1", domain.QuotationListFilter{SortBy: func(s string) *string { return &s }("amount"), SortDesc: false})
 	if len(amountSort) != 3 {
 		t.Fatalf("expected 3 results")
 	}

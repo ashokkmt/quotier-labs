@@ -23,6 +23,18 @@ dist/
 frontend/dist/
 build/
 apps/desktop/build/bin/
+!apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/appicon.png
+!apps/desktop/build/darwin/
+apps/desktop/build/darwin/*
+!apps/desktop/build/darwin/Info.plist
+!apps/desktop/build/windows/
+apps/desktop/build/windows/*
+!apps/desktop/build/windows/icon.ico
+!apps/desktop/build/windows/installer/
+apps/desktop/build/windows/installer/*
+!apps/desktop/build/windows/installer/project.nsi
 
 # IDE and OS files
 .DS_Store
@@ -39,6 +51,8 @@ quotierlabs.db-shm
 quotierlabs.db-wal
 quotierlabs.log
 quotierlabs
+.devdata/
+/release-artifacts/
 
 # Temporaries
 temp/

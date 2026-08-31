@@ -70,8 +70,9 @@ describe('shape widget contract', () => {
       validateNodeContract(shape({ variant: 'line', fill: 'none', stroke: 'black' })),
     ).toBeNull()
   })
-  it('rejects arbitrary colors, variants, and out-of-bounds widths', () => {
-    expect(validateNodeContract(shape({ variant: 'rect', fill: '#00ff00' }))).toMatch(
+  it('accepts validated hex but rejects CSS colors, variants, and out-of-bounds widths', () => {
+    expect(validateNodeContract(shape({ variant: 'rect', fill: '#00ff00' }))).toBeNull()
+    expect(validateNodeContract(shape({ variant: 'rect', fill: 'rgb(0,255,0)' }))).toMatch(
       /invalid fill/,
     )
     expect(validateNodeContract(shape({ variant: 'blob' }))).toMatch(/invalid shape variant/)

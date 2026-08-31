@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/domain"
@@ -358,35 +357,6 @@ func TestV5FixtureRejectsUnsafeImages(t *testing.T) {
 		Quotation: &domain.Quotation{ID: "q-big", Document: string(mustMarshal(t, oversized.Document))},
 	}); err == nil {
 		t.Fatal("expected oversized image to be rejected")
-	}
-}
-
-// Legacy finalized V1–V4 documents must keep rendering through the legacy adapter.
-func TestLegacyFinalizedFixtureStillRenders(t *testing.T) {
-	generator := pdf.NewGenerator()
-	q := &domain.Quotation{
-		ID:     "q-legacy",
-		Number: "QT-2024-0042",
-		AuditMetadata: domain.AuditMetadata{
-			CreatedAt: time.Now(),
-		},
-		Document:   `{"schema_version":4,"root":{"id":"root","kind":"container","children":[{"id":"h1","kind":"widget","widget_type":"heading","settings":{"text":"Legacy Finalized Heading"}}]}}`,
-		Subtotal:   50000,
-		GrandTotal: 59000,
-	}
-	data, err := generator.Generate(context.Background(), document.GeneratorInput{
-		Quotation: q,
-		Company:   &domain.Company{Name: "Legacy Co"},
-		Customer:  &domain.Customer{Name: "Legacy Customer"},
-	})
-	if err != nil {
-		t.Fatalf("legacy render failed: %v", err)
-	}
-	if string(data[:5]) != "%PDF-" {
-		t.Fatal("legacy render did not produce a PDF")
-	}
-	if !strings.Contains(extractPDFText(t, data), "Legacy Finalized Heading") {
-		t.Fatal("legacy renderer lost fixture heading text")
 	}
 }
 

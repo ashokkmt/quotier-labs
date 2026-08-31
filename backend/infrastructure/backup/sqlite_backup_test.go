@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	backup_domain "quotierlabs/backend/domain/backup"
+	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/backup"
 )
 
@@ -31,10 +32,11 @@ func TestBackupAndRestore(t *testing.T) {
 	db.Exec("CREATE TABLE dummy (id INTEGER PRIMARY KEY, name TEXT)")
 	db.Exec("INSERT INTO dummy (name) VALUES ('test-record')")
 
-	svc := backup.NewSQLiteBackupService(db)
+	svc := backup.NewSQLiteBackupService(db, apppaths.Paths{TempRoot: tempDir})
 
 	backupPath := filepath.Join(tempDir, "backup.zip")
 	meta := backup_domain.BackupMetadata{
+		FormatVersion: 1,
 		AppVersion:    "1.0.0",
 		SchemaVersion: 9,
 		CompanyID:     "comp-1",
@@ -43,7 +45,11 @@ func TestBackupAndRestore(t *testing.T) {
 	}
 
 	// 1. Create Backup
-	info, err := svc.CreateBackup(context.Background(), backupPath, meta)
+	assetsRoot := filepath.Join(tempDir, "assets")
+	if err := os.MkdirAll(assetsRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := svc.CreateBackup(context.Background(), backupPath, meta, assetsRoot)
 	if err != nil {
 		t.Fatalf("create backup failed: %v", err)
 	}
@@ -66,7 +72,7 @@ func TestBackupAndRestore(t *testing.T) {
 	// 3. Restore Backup to a new path
 	restorePath := filepath.Join(tempDir, "restored.db")
 	// For testing, we pass restorePath as the currentDBPath.
-	err = svc.RestoreBackup(context.Background(), backupPath, restorePath)
+	err = svc.RestoreBackup(context.Background(), backupPath, restorePath, filepath.Join(tempDir, "restored-assets"))
 	if err != nil {
 		t.Fatalf("restore backup failed: %v", err)
 	}
@@ -94,7 +100,7 @@ func TestValidateInvalidBackup(t *testing.T) {
 	invalidZipPath := filepath.Join(tempDir, "invalid.zip")
 	_ = os.WriteFile(invalidZipPath, []byte("not a zip file"), 0644)
 
-	svc := backup.NewSQLiteBackupService(nil)
+	svc := backup.NewSQLiteBackupService(nil, apppaths.Paths{TempRoot: tempDir})
 	valRes, err := svc.ValidateBackup(context.Background(), invalidZipPath)
 	if err != nil {
 		t.Fatalf("unexpected error validating invalid zip: %v", err)
