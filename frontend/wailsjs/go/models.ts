@@ -1190,6 +1190,7 @@ export namespace wails {
 	    commit: string;
 	    build_time: string;
 	    updates_enabled: boolean;
+	    manual_updates_enabled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -1205,6 +1206,7 @@ export namespace wails {
 	        this.commit = source["commit"];
 	        this.build_time = source["build_time"];
 	        this.updates_enabled = source["updates_enabled"];
+	        this.manual_updates_enabled = source["manual_updates_enabled"];
 	    }
 	}
 

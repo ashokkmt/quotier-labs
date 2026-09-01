@@ -1,4 +1,4 @@
-.PHONY: build dev dev-reset dev-open-data test lint generate migrate release check-runtime-paths perf-bench perf-size
+.PHONY: build dev dev-reset dev-open-data test lint generate migrate release unsigned-release-macos unsigned-release-windows check-runtime-paths perf-bench perf-size
 
 build:
 	@./scripts/build-local.sh
@@ -39,6 +39,12 @@ check-runtime-paths:
 
 release:
 	@QL_RELEASE_BUILD=1 ./scripts/build-release.sh
+
+unsigned-release-macos:
+	@./scripts/package-unsigned-macos.sh
+
+unsigned-release-windows:
+	@./scripts/package-unsigned-windows.sh
 
 perf-bench:
 	go test -bench=. -benchmem ./backend/application/layoutir ./backend/infrastructure/pdf

@@ -46,6 +46,7 @@ type AppInfo struct {
 	Commit         string `json:"commit"`
 	BuildTime      string `json:"build_time"`
 	UpdatesEnabled bool   `json:"updates_enabled"`
+	ManualUpdates  bool   `json:"manual_updates_enabled"`
 }
 
 func (h *AppHandler) GetAppInfo() AppInfo {
@@ -58,6 +59,7 @@ func (h *AppHandler) GetAppInfo() AppInfo {
 		Commit:         h.build.GitCommit,
 		BuildTime:      h.build.BuildTime,
 		UpdatesEnabled: h.build.UpdatesEnabled,
+		ManualUpdates:  h.build.ManualUpdates,
 	}
 }
 

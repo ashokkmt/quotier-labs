@@ -284,10 +284,17 @@ function AutomaticUpdateCheck() {
             void CheckForUpdates()
               .then(async (result) => {
                 await RecordUpdateCheck()
-                if (!cancelled && result.status === 'available' && result.candidate) {
+                if (
+                  !cancelled &&
+                  (result.status === 'available' || result.status === 'manual-available') &&
+                  result.candidate
+                ) {
                   toast({
                     title: `Quotier Labs ${result.candidate.version} is available`,
-                    description: 'Open Settings when you are ready to review and install it.',
+                    description:
+                      result.status === 'manual-available'
+                        ? 'Open Settings to view the GitHub release and manual install instructions.'
+                        : 'Open Settings when you are ready to review and install it.',
                   })
                 }
               })

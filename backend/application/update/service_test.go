@@ -73,6 +73,47 @@ func TestManifestSignatureFailureIsNotAccepted(t *testing.T) {
 	}
 }
 
+func TestUnsignedReleaseOnlyOffersManualGitHubUpdate(t *testing.T) {
+	root := t.TempDir()
+	service := NewService(appidentity.BuildInfo{
+		AppID: appidentity.AppID, Version: "1.0.0", Channel: "production", Production: true,
+		ManualUpdates: true, Repository: "owner/repo",
+	}, apppaths.Paths{CacheRoot: root, StateRoot: root}, appconfig.NewStore(root+"/settings.json"), 10)
+	service.provider = &fakeProvider{releases: []Release{{
+		TagName: "v1.1.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.1.0",
+		Body: "Changes", PublishedAt: "2026-09-01T00:00:00Z",
+	}}}
+
+	result, err := service.Check(context.Background())
+	if err != nil || result.Status != "manual-available" || result.Candidate == nil {
+		t.Fatalf("expected manual update candidate, got %#v %v", result, err)
+	}
+	if result.Candidate.Package != "manual" || result.Candidate.ReleaseURL != "https://github.com/owner/repo/releases/tag/v1.1.0" {
+		t.Fatalf("manual candidate must only link to GitHub: %#v", result.Candidate)
+	}
+	if _, err := service.Download(context.Background(), func(Progress) {}); err == nil {
+		t.Fatal("manual update must not become downloadable through the trusted updater")
+	}
+}
+
+func TestManualUpdateRespectsReleaseChannel(t *testing.T) {
+	root := t.TempDir()
+	service := NewService(appidentity.BuildInfo{
+		Version: "1.0.0-beta.1", Channel: "beta", Production: true, ManualUpdates: true, Repository: "owner/repo",
+	}, apppaths.Paths{CacheRoot: root, StateRoot: root}, appconfig.NewStore(root+"/settings.json"), 10)
+	service.provider = &fakeProvider{releases: []Release{
+		{TagName: "v2.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v2.0.0"},
+		{TagName: "v1.0.0-beta.2", Prerelease: true, HTMLURL: "https://example.invalid/release"},
+	}}
+	result, err := service.Check(context.Background())
+	if err != nil || result.Candidate == nil || result.Candidate.Version != "1.0.0-beta.2" {
+		t.Fatalf("beta build should only see newer beta release: %#v %v", result, err)
+	}
+	if result.Candidate.ReleaseURL != "https://github.com/owner/repo/releases/tag/v1.0.0-beta.2" {
+		t.Fatalf("untrusted release URL was not replaced: %q", result.Candidate.ReleaseURL)
+	}
+}
+
 func signedProvider(t *testing.T, key ed25519.PrivateKey, version string) *fakeProvider {
 	t.Helper()
 	packageKind := map[string]string{"darwin": "pkg", "windows": "nsis", "linux": "deb"}[runtime.GOOS]

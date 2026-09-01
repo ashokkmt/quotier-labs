@@ -21,6 +21,7 @@ var (
 	BuildTime        = "unknown"
 	Channel          = "development"
 	ReleasePublicKey = ""
+	ManualUpdates    = "false"
 	Repository       = "ashokkmt/quotier-labs"
 )
 
@@ -36,6 +37,7 @@ type BuildInfo struct {
 	Arch             string `json:"arch"`
 	Production       bool   `json:"production"`
 	UpdatesEnabled   bool   `json:"updates_enabled"`
+	ManualUpdates    bool   `json:"manual_updates_enabled"`
 	ReleasePublicKey string `json:"-"`
 	Repository       string `json:"-"`
 }
@@ -43,6 +45,7 @@ type BuildInfo struct {
 func Current() BuildInfo {
 	channel := normaliseChannel(Channel, Version)
 	productionBuild := channel == "production" || channel == "beta"
+	manualUpdates := productionBuild && strings.EqualFold(strings.TrimSpace(ManualUpdates), "true")
 	return BuildInfo{
 		AppID:            channelAppID(channel),
 		Name:             channelName(channel),
@@ -55,6 +58,7 @@ func Current() BuildInfo {
 		Arch:             runtime.GOARCH,
 		Production:       productionBuild,
 		UpdatesEnabled:   productionBuild && ReleasePublicKey != "",
+		ManualUpdates:    manualUpdates && ReleasePublicKey == "",
 		ReleasePublicKey: ReleasePublicKey,
 		Repository:       Repository,
 	}

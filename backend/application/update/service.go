@@ -89,10 +89,13 @@ type Progress struct {
 }
 
 type Release struct {
-	TagName    string         `json:"tag_name"`
-	Draft      bool           `json:"draft"`
-	Prerelease bool           `json:"prerelease"`
-	Assets     []ReleaseAsset `json:"assets"`
+	TagName     string         `json:"tag_name"`
+	Draft       bool           `json:"draft"`
+	Prerelease  bool           `json:"prerelease"`
+	HTMLURL     string         `json:"html_url"`
+	Body        string         `json:"body"`
+	PublishedAt string         `json:"published_at"`
+	Assets      []ReleaseAsset `json:"assets"`
 }
 
 type ReleaseAsset struct {
@@ -147,7 +150,10 @@ func NewService(build appidentity.BuildInfo, paths apppaths.Paths, preferences *
 
 func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	if !s.build.Production || !s.build.UpdatesEnabled {
+	if !s.build.Production {
+		return CheckResult{Status: "disabled", Current: s.build.Version, CheckedAtUTC: now, Message: "Updates are disabled for this build."}, nil
+	}
+	if !s.build.UpdatesEnabled && !s.build.ManualUpdates {
 		return CheckResult{Status: "disabled", Current: s.build.Version, CheckedAtUTC: now, Message: "Updates are disabled for this build."}, nil
 	}
 	current, err := parseSemVersion(s.build.Version)
@@ -158,12 +164,15 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 	if err != nil {
 		return CheckResult{}, err
 	}
+	if !s.build.UpdatesEnabled {
+		return s.checkManual(releases, current, now), nil
+	}
 	var bestVersion semVersion
 	var bestManifest *Manifest
 	var bestAsset *Asset
 	var bestCandidate *Candidate
 	for _, release := range releases {
-		if release.Draft || (s.build.Channel == "production" && release.Prerelease) {
+		if !releaseMatchesChannel(release, s.build.Channel) {
 			continue
 		}
 		remote, err := parseSemVersion(release.TagName)
@@ -232,6 +241,61 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 		return CheckResult{Status: status, Current: s.build.Version, Candidate: bestCandidate, CheckedAtUTC: now}, nil
 	}
 	return CheckResult{Status: "up-to-date", Current: s.build.Version, CheckedAtUTC: now}, nil
+}
+
+// checkManual is intentionally advisory. Unsigned local releases may discover a
+// newer GitHub release and open its HTTPS release page, but they never download,
+// verify, or execute a package. The signed updater remains the only automatic
+// installation path.
+func (s *Service) checkManual(releases []Release, current semVersion, now string) CheckResult {
+	var best *Candidate
+	var bestVersion semVersion
+	for _, release := range releases {
+		if !releaseMatchesChannel(release, s.build.Channel) {
+			continue
+		}
+		remote, err := parseSemVersion(release.TagName)
+		if err != nil || compareSemVersion(remote, current) <= 0 || (best != nil && compareSemVersion(remote, bestVersion) <= 0) {
+			continue
+		}
+		releaseURL := release.HTMLURL
+		if !trustedReleasePage(releaseURL) {
+			releaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", s.build.Repository, url.PathEscape(release.TagName))
+		}
+		bestVersion = remote
+		best = &Candidate{
+			Version:      strings.TrimPrefix(release.TagName, "v"),
+			ReleaseURL:   releaseURL,
+			ReleaseNotes: release.Body,
+			PublishedAt:  release.PublishedAt,
+			Package:      "manual",
+		}
+	}
+	if best == nil {
+		return CheckResult{Status: "up-to-date", Current: s.build.Version, CheckedAtUTC: now}
+	}
+	return CheckResult{
+		Status:       "manual-available",
+		Current:      s.build.Version,
+		Candidate:    best,
+		CheckedAtUTC: now,
+		Message:      "Download this unsigned release manually from GitHub and quit Quotier Labs before installing it.",
+	}
+}
+
+func releaseMatchesChannel(release Release, channel string) bool {
+	if release.Draft {
+		return false
+	}
+	if channel == "beta" {
+		return release.Prerelease && isPrerelease(release.TagName)
+	}
+	return channel == "production" && !release.Prerelease && !isPrerelease(release.TagName)
+}
+
+func trustedReleasePage(target string) bool {
+	u, err := url.Parse(target)
+	return err == nil && u.Scheme == "https" && strings.EqualFold(u.Hostname(), "github.com")
 }
 
 func (s *Service) SkipCurrentVersion() error {

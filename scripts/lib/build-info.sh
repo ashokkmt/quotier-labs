@@ -12,8 +12,15 @@ fi
 QL_BUILD_TIME="${QL_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 QL_PUBLIC_KEY="${QUOTIER_UPDATE_PUBLIC_KEY:-}"
 
-if [[ "${QL_RELEASE_BUILD:-0}" == "1" ]]; then
-	[[ "$QL_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "QUOTIER_UPDATE_PUBLIC_KEY must be the base64-encoded raw 32-byte Ed25519 public key." >&2; exit 1; }
+if [[ "${QL_RELEASE_BUILD:-0}" == "1" && "${QL_UNSIGNED_RELEASE_BUILD:-0}" == "1" ]]; then
+  echo "Signed and unsigned release modes are mutually exclusive." >&2
+  exit 1
+fi
+
+if [[ "${QL_RELEASE_BUILD:-0}" == "1" || "${QL_UNSIGNED_RELEASE_BUILD:-0}" == "1" ]]; then
+	if [[ "${QL_RELEASE_BUILD:-0}" == "1" ]]; then
+		[[ "$QL_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "QUOTIER_UPDATE_PUBLIC_KEY must be the base64-encoded raw 32-byte Ed25519 public key." >&2; exit 1; }
+	fi
   [[ -z "$(git -C "$QL_ROOT" status --porcelain)" ]] || { echo "Release builds require a clean worktree." >&2; exit 1; }
   QL_TAG="$(git -C "$QL_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)"
   [[ "$QL_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[1-9][0-9]*)?$ ]] || { echo "HEAD must have an exact stable or beta SemVer tag such as v1.3.0-beta.2." >&2; exit 1; }
@@ -43,6 +50,9 @@ if [[ "$QL_CHANNEL" == "development" ]]; then QL_NAME="Quotier Labs Dev"; QL_APP
 QL_LDFLAGS="-X quotierlabs/backend/infrastructure/appidentity.Version=${QL_VERSION} -X quotierlabs/backend/infrastructure/appidentity.GitTag=${QL_TAG} -X quotierlabs/backend/infrastructure/appidentity.GitCommit=${QL_COMMIT} -X quotierlabs/backend/infrastructure/appidentity.BuildTime=${QL_BUILD_TIME} -X quotierlabs/backend/infrastructure/appidentity.Channel=${QL_CHANNEL}"
 if [[ -n "$QL_PUBLIC_KEY" ]]; then
   QL_LDFLAGS+=" -X quotierlabs/backend/infrastructure/appidentity.ReleasePublicKey=${QL_PUBLIC_KEY}"
+fi
+if [[ "${QL_UNSIGNED_RELEASE_BUILD:-0}" == "1" ]]; then
+  QL_LDFLAGS+=" -X quotierlabs/backend/infrastructure/appidentity.ManualUpdates=true"
 fi
 
 # Wails' macOS file dialogs use UTType on current SDKs. Export this explicitly
