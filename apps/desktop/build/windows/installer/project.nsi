@@ -92,6 +92,14 @@ Function .onInit
    ${GetOptions} $R0 "/UPDATE" $R1
    StrCmp $R1 "" +2
    StrCpy $R9 "update"
+   # Manual installers must not replace the running application. The signed
+   # updater uses /UPDATE and owns its separate quit-and-handoff sequence.
+   StrCmp $R9 "update" installer_ready
+   FindWindow $R2 "" "${INFO_PRODUCTNAME}"
+   StrCmp $R2 0 installer_ready
+   MessageBox MB_OK|MB_ICONEXCLAMATION "Please save your work and quit ${INFO_PRODUCTNAME}, then run this installer again."
+   Abort
+   installer_ready:
 FunctionEnd
 
 Section

@@ -1,4 +1,4 @@
-name: Signed desktop release
+name: Signed desktop release (enable only after signing credentials are configured)
 
 on:
   push:
@@ -9,15 +9,23 @@ permissions:
   id-token: write
   attestations: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
         with: { go-version: '1.25.7' }
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json }
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
       - run: ./scripts/check-runtime-paths.sh
@@ -36,11 +44,14 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version: '1.25.7' }
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json }
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
-      - name: Import Developer ID certificate
+      - name: Import Developer ID identities
         env:
           MAC_CERT_P12_B64: ${{ secrets.MAC_CERT_P12_B64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
@@ -50,18 +61,18 @@ jobs:
           security create-keychain -p actions build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p actions build.keychain
-          echo "$MAC_CERT_P12_B64" | base64 --decode > certificate.p12
+          printf '%s' "$MAC_CERT_P12_B64" | base64 -D > certificate.p12
           security import certificate.p12 -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
-          echo "$MAC_INSTALLER_CERT_P12_B64" | base64 --decode > installer-certificate.p12
+          printf '%s' "$MAC_INSTALLER_CERT_P12_B64" | base64 -D > installer-certificate.p12
           security import installer-certificate.p12 -k build.keychain -P "$MAC_INSTALLER_CERT_PASSWORD" -T /usr/bin/productbuild
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-      - name: Configure notarization
+      - name: Configure Apple notarization
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: xcrun notarytool store-credentials quotier-ci --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
-      - name: Build, sign, notarize
+      - name: Build, sign, notarize, and staple
         env:
           APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
           APPLE_DEVELOPER_ID_INSTALLER: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
@@ -69,7 +80,10 @@ jobs:
           QUOTIER_UPDATE_PUBLIC_KEY: ${{ secrets.QUOTIER_UPDATE_PUBLIC_KEY }}
         run: ./scripts/package-macos.sh
       - uses: actions/upload-artifact@v4
-        with: { name: macos-release, path: release-artifacts/* }
+        with:
+          name: macos-release
+          path: release-artifacts/*
+          if-no-files-found: error
 
   windows:
     needs: verify
@@ -80,57 +94,60 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version: '1.25.7' }
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json }
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
       - run: choco install nsis windows-sdk-10-version-2004-all -y
-      - name: Import Authenticode certificate
+      - name: Prepare DigiCert KeyLocker authentication certificate
+        shell: bash
+        env:
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+        run: printf '%s' "$SM_CLIENT_CERT_FILE_B64" | base64 --decode > /d/sm_client_cert.p12
+      - name: Set up DigiCert KeyLocker
+        uses: digicert/code-signing-software-trust-action@v1.0.0
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\sm_client_cert.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+      - name: Synchronize signing certificate and locate SignTool
         shell: pwsh
         env:
-          WINDOWS_CERT_PFX_B64: ${{ secrets.WINDOWS_CERT_PFX_B64 }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\sm_client_cert.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
         run: |
-          [IO.File]::WriteAllBytes('certificate.pfx', [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_B64))
-          $secure = ConvertTo-SecureString $env:WINDOWS_CERT_PASSWORD -AsPlainText -Force
-          $cert = Import-PfxCertificate -FilePath certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
-          "QUOTIER_WINDOWS_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build and sign
+          smctl windows certsync
+          $signTool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter signtool.exe -Recurse |
+            Where-Object FullName -Match '\\x64\\' |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'signtool.exe was not found' }
+          $signTool.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Build and sign Windows application and installer
         shell: bash
         env:
           QUOTIER_UPDATE_PUBLIC_KEY: ${{ secrets.QUOTIER_UPDATE_PUBLIC_KEY }}
+          QUOTIER_WINDOWS_CERT_SHA1: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
+          QUOTIER_WINDOWS_TIMESTAMP_URL: http://timestamp.digicert.com
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\sm_client_cert.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
         run: ./scripts/package-windows.sh
       - uses: actions/upload-artifact@v4
-        with: { name: windows-release, path: release-artifacts/* }
-
-  linux:
-    needs: verify
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
-        with: { go-version: '1.25.7' }
-      - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json }
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils dpkg-dev
-      - name: Import Linux release signing key
-        env:
-          LINUX_GPG_PRIVATE_KEY_B64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_B64 }}
-        run: echo "$LINUX_GPG_PRIVATE_KEY_B64" | base64 --decode | gpg --batch --import
-      - run: npm ci
-        working-directory: frontend
-      - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
-      - name: Build package
-        env:
-          QUOTIER_UPDATE_PUBLIC_KEY: ${{ secrets.QUOTIER_UPDATE_PUBLIC_KEY }}
-          QUOTIER_LINUX_GPG_KEY: ${{ secrets.QUOTIER_LINUX_GPG_KEY }}
-        run: ./scripts/package-linux.sh
-      - uses: actions/upload-artifact@v4
-        with: { name: linux-release, path: release-artifacts/* }
+        with:
+          name: windows-release
+          path: release-artifacts/*
+          if-no-files-found: error
 
   publish:
-    needs: [macos, windows, linux]
+    needs: [macos, windows]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -138,11 +155,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - uses: actions/download-artifact@v4
-        with: { pattern: '*-release', path: release-artifacts, merge-multiple: true }
-      - name: Create protected update key
+        with:
+          pattern: '*-release'
+          path: release-artifacts
+          merge-multiple: true
+      - name: Restore protected update-manifest key
         env:
           UPDATE_PRIVATE_KEY_PEM_B64: ${{ secrets.UPDATE_PRIVATE_KEY_PEM_B64 }}
-        run: echo "$UPDATE_PRIVATE_KEY_PEM_B64" | base64 --decode > "$RUNNER_TEMP/update-key.pem"
+        run: printf '%s' "$UPDATE_PRIVATE_KEY_PEM_B64" | base64 --decode > "$RUNNER_TEMP/update-key.pem"
       - name: Sign update metadata
         env:
           QUOTIER_UPDATE_PRIVATE_KEY_FILE: ${{ runner.temp }}/update-key.pem
@@ -151,7 +171,10 @@ jobs:
           QUOTIER_MINIMUM_DB_SCHEMA: ${{ vars.QUOTIER_MINIMUM_DB_SCHEMA }}
         run: ./scripts/finalize-release.sh
       - uses: anchore/sbom-action@v0
-        with: { path: '.', format: cyclonedx-json, output-file: release-artifacts/sbom.cdx.json }
+        with:
+          path: '.'
+          format: cyclonedx-json
+          output-file: release-artifacts/sbom.cdx.json
       - uses: actions/attest-build-provenance@v2
         with: { subject-path: 'release-artifacts/*' }
       - uses: softprops/action-gh-release@v2

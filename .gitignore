@@ -53,6 +53,7 @@ quotierlabs.log
 quotierlabs
 .devdata/
 /release-artifacts/
+/local-release-artifacts/
 
 # Temporaries
 temp/

@@ -11,9 +11,9 @@ mkdir -p "$QL_ROOT/release-artifacts"
 
 case "$(uname -s)" in
   Darwin) "$QL_ROOT/scripts/package-macos.sh" ;;
-  Linux) "$QL_ROOT/scripts/package-linux.sh" ;;
   MINGW*|MSYS*|CYGWIN*) "$QL_ROOT/scripts/package-windows.sh" ;;
-  *) echo "Unsupported release host. Build each package on its native OS." >&2; exit 1 ;;
+  Linux) echo "Linux release packaging is deferred. Use the macOS or Windows GitHub Actions jobs." >&2; exit 1 ;;
+  *) echo "Unsupported release host. Build macOS on macOS and Windows on Windows." >&2; exit 1 ;;
 esac
 
-echo "Native artifact built. Combine all native-job artifacts, generate an SBOM with Syft, then run scripts/finalize-release.sh."
+echo "Native artifact built. Combine the macOS and Windows artifacts, generate an SBOM with Syft, then run scripts/finalize-release.sh."

@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 
-type ViewState = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error'
+type ViewState =
+  'idle' | 'checking' | 'current' | 'available' | 'manual' | 'downloading' | 'ready' | 'error'
 
 export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
   const { toast } = useToast()
@@ -50,6 +51,13 @@ export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
         if (result.status === 'available' && result.candidate) {
           setCandidate(result.candidate)
           setState('available')
+        } else if (result.status === 'manual-available' && result.candidate) {
+          setCandidate(result.candidate)
+          setState('manual')
+          setMessage(
+            result.message ||
+              'Download the release manually and quit Quotier Labs before running the installer.',
+          )
         } else if (result.status === 'skipped' && result.candidate) {
           setCandidate(null)
           setState('idle')
@@ -124,7 +132,8 @@ export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
   }
 
   const size = candidate?.size ? `${(candidate.size / 1024 / 1024).toFixed(1)} MB` : ''
-  const disabled = !appInfo?.updates_enabled
+  const manualUpdates = appInfo?.manual_updates_enabled === true
+  const disabled = !appInfo?.updates_enabled && !manualUpdates
 
   return (
     <section className="rounded-xl border bg-card shadow-sm" aria-labelledby="updates-heading">
@@ -138,7 +147,9 @@ export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
               About &amp; updates
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Signed application updates and build information.
+              {manualUpdates
+                ? 'Release notifications and build information.'
+                : 'Signed application updates and build information.'}
             </p>
           </div>
         </div>
@@ -164,8 +175,9 @@ export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
             <span>
               <span className="block text-sm font-medium">Automatically check for updates</span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                Checks at most once every 24 hours. Downloads and installation still require your
-                action.
+                {manualUpdates
+                  ? 'Checks at most once every 24 hours. Unsigned packages are downloaded and installed manually from GitHub.'
+                  : 'Checks at most once every 24 hours. Downloads and installation still require your action.'}
               </span>
             </span>
             <Checkbox
@@ -185,105 +197,117 @@ export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
             <CheckCircle2 className="h-4 w-4" /> You’re up to date.
           </div>
         )}
-        {candidate && (state === 'available' || state === 'downloading' || state === 'ready') && (
-          <div className="rounded-lg border bg-background p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-medium">Quotier Labs {candidate.version} is available</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {size}
-                  {candidate.critical ? ' · Important security update' : ''}
+        {candidate &&
+          (state === 'available' ||
+            state === 'manual' ||
+            state === 'downloading' ||
+            state === 'ready') && (
+            <div className="rounded-lg border bg-background p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium">Quotier Labs {candidate.version} is available</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {size}
+                    {candidate.critical ? ' · Important security update' : ''}
+                  </p>
+                </div>
+                {candidate.release_url && state !== 'manual' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => BrowserOpenURL(candidate.release_url)}
+                  >
+                    Release notes <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+              {candidate.release_notes && (
+                <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">
+                  {candidate.release_notes}
                 </p>
-              </div>
-              {candidate.release_url && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => BrowserOpenURL(candidate.release_url)}
-                >
-                  Release notes <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                </Button>
               )}
-            </div>
-            {candidate.release_notes && (
-              <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">
-                {candidate.release_notes}
-              </p>
-            )}
-            {state === 'downloading' && (
-              <div className="mt-4" aria-live="polite">
-                <div className="mb-2 flex justify-between text-xs text-muted-foreground">
-                  <span>
-                    {progress.stage === 'verifying' ? 'Verifying signed package…' : 'Downloading…'}
-                  </span>
-                  <span>{progress.percent}%</span>
+              {state === 'downloading' && (
+                <div className="mt-4" aria-live="polite">
+                  <div className="mb-2 flex justify-between text-xs text-muted-foreground">
+                    <span>
+                      {progress.stage === 'verifying'
+                        ? 'Verifying signed package…'
+                        : 'Downloading…'}
+                    </span>
+                    <span>{progress.percent}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-150"
+                      style={{ width: `${progress.percent}%` }}
+                    />
+                  </div>
+                  <Button
+                    className="mt-3"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      CancelUpdateDownload()
+                      setState('available')
+                    }}
+                  >
+                    Cancel
+                  </Button>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-150"
-                    style={{ width: `${progress.percent}%` }}
-                  />
-                </div>
-                <Button
-                  className="mt-3"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    CancelUpdateDownload()
-                    setState('available')
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-            <div className="mt-4 flex gap-2">
-              {state === 'available' && (
-                <Button onClick={download}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download update
-                </Button>
               )}
-              {state === 'available' && (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setCandidate(null)
-                    setState('idle')
-                    setMessage('Update deferred. You can check again at any time.')
-                  }}
-                >
-                  Later
-                </Button>
-              )}
-              {state === 'available' && !candidate.critical && (
-                <Button
-                  variant="ghost"
-                  onClick={async () => {
-                    try {
-                      await SkipUpdateVersion()
+              <div className="mt-4 flex gap-2">
+                {state === 'manual' && candidate.release_url && (
+                  <Button onClick={() => BrowserOpenURL(candidate.release_url)}>
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open GitHub release
+                  </Button>
+                )}
+                {state === 'available' && (
+                  <Button onClick={download}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download update
+                  </Button>
+                )}
+                {(state === 'available' || state === 'manual') && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
                       setCandidate(null)
                       setState('idle')
-                      setMessage(
-                        `Version ${candidate.version} is skipped. A newer release will still be offered.`,
-                      )
-                    } catch (error) {
-                      setState('error')
-                      setMessage(String(error))
-                    }
-                  }}
-                >
-                  Skip this version
-                </Button>
-              )}
-              {state === 'ready' && (
-                <Button onClick={install}>
-                  {candidate.package === 'nsis' ? 'Restart and install' : 'Open system installer'}
-                </Button>
-              )}
+                      setMessage('Update deferred. You can check again at any time.')
+                    }}
+                  >
+                    Later
+                  </Button>
+                )}
+                {state === 'available' && !candidate.critical && (
+                  <Button
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await SkipUpdateVersion()
+                        setCandidate(null)
+                        setState('idle')
+                        setMessage(
+                          `Version ${candidate.version} is skipped. A newer release will still be offered.`,
+                        )
+                      } catch (error) {
+                        setState('error')
+                        setMessage(String(error))
+                      }
+                    }}
+                  >
+                    Skip this version
+                  </Button>
+                )}
+                {state === 'ready' && (
+                  <Button onClick={install}>
+                    {candidate.package === 'nsis' ? 'Restart and install' : 'Open system installer'}
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {message && (
           <p

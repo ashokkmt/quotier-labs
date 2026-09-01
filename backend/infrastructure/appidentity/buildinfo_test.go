@@ -14,3 +14,25 @@ func TestNormaliseChannel(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsignedTaggedBuildEnablesOnlyManualUpdates(t *testing.T) {
+	originalVersion, originalChannel := Version, Channel
+	originalKey, originalManual := ReleasePublicKey, ManualUpdates
+	t.Cleanup(func() {
+		Version, Channel = originalVersion, originalChannel
+		ReleasePublicKey, ManualUpdates = originalKey, originalManual
+	})
+	Version, Channel = "1.3.0-beta.2", "beta"
+	ReleasePublicKey, ManualUpdates = "", "true"
+
+	build := Current()
+	if !build.Production || build.UpdatesEnabled || !build.ManualUpdates {
+		t.Fatalf("unexpected unsigned release capabilities: %#v", build)
+	}
+
+	ReleasePublicKey = "embedded-trust-key"
+	build = Current()
+	if !build.UpdatesEnabled || build.ManualUpdates {
+		t.Fatalf("signed releases must not use advisory-only updates: %#v", build)
+	}
+}

@@ -128,7 +128,6 @@ The project cannot create or store your signing credentials. Configure these out
 - `QUOTIER_UPDATE_PRIVATE_KEY_FILE`: protected Ed25519 PEM private key used only while finalizing release metadata.
 - macOS: `APPLE_DEVELOPER_ID_APPLICATION`, `APPLE_DEVELOPER_ID_INSTALLER`, and an `APPLE_NOTARY_PROFILE` created with `xcrun notarytool store-credentials`.
 - Windows: `QUOTIER_WINDOWS_CERT_SHA1` for an installed Authenticode certificate and optionally `QUOTIER_WINDOWS_TIMESTAMP_URL`.
-- Linux: `QUOTIER_LINUX_GPG_KEY` identifying the GPG release key. CI also needs `LINUX_GPG_PRIVATE_KEY_B64`; it publishes a detached armored signature beside the Debian package.
 
 Generate the update key once, back it up securely, and never commit it:
 
@@ -142,6 +141,11 @@ Losing this private key prevents existing installations from trusting a replacem
 
 ### Native signed artifacts
 
+The signed GitHub Actions workflow is currently parked as
+`.github/workflows/release.yml.disabled`. GitHub will not execute a file with that suffix. Keep it
+disabled until the Apple and Windows signing credentials in `plans/release-steps.md` are ready;
+then rename it back to `release.yml` before creating the release tag.
+
 Release builds must run on the target OS. They reject a dirty tree and require `HEAD` to have an exact annotated SemVer tag.
 
 ```bash
@@ -153,10 +157,9 @@ The native scripts are:
 ```bash
 ./scripts/package-macos.sh
 ./scripts/package-windows.sh
-./scripts/package-linux.sh
 ```
 
-They produce signed/checksummed artifacts in `release-artifacts/`. macOS output is a hardened, signed, notarized, stapled universal DMG for manual installation plus a signed/notarized PKG for native update handoff. Windows output is a per-user NSIS installer with a default Start Menu shortcut, optional desktop shortcut, signed app/uninstaller/installer, and preserved AppData on uninstall. Linux output is a native Debian package with a desktop entry, hicolor icon, SHA-256 file, and detached GPG signature; it never writes user data under `/usr`.
+They produce signed/checksummed artifacts in `release-artifacts/`. macOS output is a hardened, signed, notarized, stapled universal DMG for manual installation plus a signed/notarized PKG for native update handoff. Windows output is a per-user NSIS installer with a default Start Menu shortcut, optional desktop shortcut, signed app/uninstaller/installer, and preserved AppData on uninstall. Linux distribution is deferred and is not part of the release pipeline.
 
 After native artifacts are collected in one `release-artifacts/` directory, sign the update manifest:
 
@@ -168,13 +171,37 @@ QUOTIER_MINIMUM_DB_SCHEMA='10' \
 ./scripts/finalize-release.sh
 ```
 
-The GitHub `Signed desktop release` workflow performs the same native matrix for a pushed tag, creates a CycloneDX SBOM and provenance attestations, and opens a draft GitHub Release. Configure the repository secrets named in `.github/workflows/release.yml`, plus repository variables `QUOTIER_MINIMUM_SOURCE_VERSION` and `QUOTIER_MINIMUM_DB_SCHEMA`. Review the draft and clean-machine evidence before publishing it. Update discovery only sees published releases.
+When enabled, the GitHub `Signed desktop release` workflow builds on native macOS and Windows runners for a pushed tag, creates a CycloneDX SBOM and provenance attestations, and opens a draft GitHub Release. Configure the repository secrets and variables listed in [`plans/release-steps.md`](plans/release-steps.md) before pushing a release tag. Review the draft and clean-machine evidence before publishing it. Update discovery only sees published releases.
+
+### Native unsigned artifacts (temporary distribution path)
+
+Until signing certificates are available, build independently on each target OS from an exact,
+annotated SemVer tag and clean worktree:
+
+```bash
+# macOS
+./scripts/package-unsigned-macos.sh
+
+# Windows, from Git Bash
+./scripts/package-unsigned-windows.sh
+```
+
+Outputs are isolated under `local-release-artifacts/`, so these scripts cannot overwrite the
+signed pipeline's `release-artifacts/`. The macOS script produces an `.app` and `.dmg`; the Windows
+script produces the standalone app `.exe` and per-user NSIS installer `.exe`. These packages are
+versioned release builds but are neither notarized nor code-signed. Follow
+[`plans/release-without-sign.md`](plans/release-without-sign.md) for prerequisites, publishing,
+checksums, OS warning instructions, manual upgrades, and later migration to signed releases.
 
 For CI, export the Developer ID Application and Developer ID Installer identities separately as `MAC_CERT_P12_B64`/`MAC_CERT_PASSWORD` and `MAC_INSTALLER_CERT_P12_B64`/`MAC_INSTALLER_CERT_PASSWORD`. Beta and production have distinct app IDs and data roots; the signed update manifest is channel-bound, so moving from beta to production is an explicit install plus verified backup/import rather than an automatic in-place channel switch.
 
 ### In-app updates and migrations
 
-Only signed beta/production builds with the embedded update public key enable updates. Development builds show “Development build — updates disabled.” Settings lets the user opt into a maximum once-per-24-hour check, inspect a signed candidate, download with progress/cancel, and hand the verified package to the native installer.
+Signed beta/production builds with the embedded update public key enable verified in-app download
+and installer handoff. Unsigned tagged builds use a separate notification-only mode: they may check
+published GitHub Releases and open the selected release page, but they never download or execute a
+package inside the app. Development builds show “Development build — updates disabled.” Settings
+lets the user opt into a maximum once-per-24-hour check.
 
 Every update asset is accepted only after its Ed25519 manifest signature, exact size/SHA-256, platform/package match, channel/SemVer rules, and native package signature/structure pass. The old app creates a verified rollback backup before installation. On next launch, pending SQLite migrations run against a staged consistent database copy; integrity and foreign-key checks must pass before it replaces the live generation. Preferences, quotations, assets, and external backups are outside the immutable installed application and remain in the same channel-specific data root.
 

@@ -21,7 +21,6 @@ if (!Number.isSafeInteger(minimumDBSchema) || minimumDBSchema < 1 || minimumDBSc
 const classify = (name) => {
   if (/windows-amd64-installer\.exe$/.test(name)) return { os: 'windows', arch: 'amd64', package: 'nsis' }
   if (/macos-universal\.pkg$/.test(name)) return [{ os: 'darwin', arch: 'amd64', package: 'pkg' }, { os: 'darwin', arch: 'arm64', package: 'pkg' }]
-  if (/_amd64\.deb$/.test(name)) return { os: 'linux', arch: 'amd64', package: 'deb' }
   return null
 }
 const files = readdirSync(artifactDir)
