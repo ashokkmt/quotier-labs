@@ -85,6 +85,7 @@ import {
 } from './tokens'
 import { ColorPicker } from './ColorPicker'
 import { readValidatedImage } from './imageAssets'
+import { RecordDiagnosticsOperation } from '../../../wailsjs/go/wails/DiagnosticsHandler'
 import { createStory } from './stories'
 import {
   ancestorChain,
@@ -2865,6 +2866,8 @@ export function V5Canvas() {
   const libraryDragPageId = libraryDragTarget?.getAttribute('data-v5-page-id') ?? null
 
   const insertExternalImage = async (file: File, pageId: string, point: Point, client: Point) => {
+    const started = performance.now()
+    let result = 'success'
     try {
       const image = await readValidatedImage(file)
       const preset = V5_TOOL_PRESETS.find((candidate) => candidate.id === 'image')
@@ -2877,12 +2880,17 @@ export function V5Canvas() {
       })
       session.setTool('select')
     } catch (error) {
+      result = 'error'
       setFeedback({
         message: error instanceof Error ? error.message : 'The image could not be inserted.',
         tone: 'error',
         clientX: client.x,
         clientY: client.y,
       })
+    } finally {
+      void RecordDiagnosticsOperation('image.import', performance.now() - started, result, {
+        input_bytes_bucket: file.size > 0 ? Math.ceil(Math.log2(file.size)) : 0,
+      }).catch(() => undefined)
     }
   }
   const portalHost = hostRef.current?.ownerDocument.body

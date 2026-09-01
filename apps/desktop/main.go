@@ -35,6 +35,7 @@ func (a *DesktopApp) startup(ctx context.Context) {
 
 	// Start Wails handlers
 	a.diApp.AppHandler.Startup(ctx)
+	a.diApp.DiagnosticsHandler.Startup(ctx)
 	a.diApp.CompanyHandler.Startup(ctx)
 	a.diApp.CustomerHandler.Startup(ctx)
 	a.diApp.TemplateHandler.Startup(ctx)
@@ -52,6 +53,9 @@ func (a *DesktopApp) startup(ctx context.Context) {
 func (a *DesktopApp) shutdown(ctx context.Context) {
 	if a.diApp.AutoBackup != nil {
 		a.diApp.AutoBackup.Stop()
+	}
+	if a.diApp.Diagnostics != nil {
+		a.diApp.Diagnostics.Shutdown()
 	}
 	if a.diApp.DB != nil {
 		if sqlDB, err := a.diApp.DB.DB(); err == nil {
@@ -113,6 +117,7 @@ func main() {
 		Bind: []interface{}{
 			app,
 			diApp.AppHandler,
+			diApp.DiagnosticsHandler,
 			diApp.CompanyHandler,
 			diApp.CustomerHandler,
 			diApp.TemplateHandler,

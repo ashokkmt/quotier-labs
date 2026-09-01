@@ -66,11 +66,29 @@ This derives a development version from the nearest Git tag, injects BuildInfo, 
   crashes/
   cache/
   backups/
+	  diagnostics/
   exports/
   tmp/
 ```
 
 Use `make dev-open-data` to inspect it. Use `make dev-reset` for a confirmed, marker-checked reset, or `CONFIRM=1 make dev-reset` in automation. These commands never touch installed beta or production data. Do not run `wails dev` directly: the app deliberately requires the explicit development profile/root.
+
+### Local performance diagnostics
+
+Development and beta builds include an explicit, local-only recording in **Settings → Developer diagnostics**. Start a recording before reproducing a CPU, memory, autosave, preview, PDF, or canvas responsiveness issue, then stop it to save a bounded report under `diagnostics/`. The report has timestamped resource samples, allowlisted operation timings, and aggregated frame timing—never quotation contents, customer data, document IDs, SQL, paths, or telemetry uploads.
+
+Development builds also expose bounded CPU (30 seconds), heap, goroutine, and trace (5 seconds) captures while a recording is active. Use `go tool pprof <profile>` or `go tool trace <trace.out>` outside the app. Beta builds deliberately offer recording plus heap/goroutine snapshots only; production keeps the existing user-initiated logs/crash export and does not sample continuously.
+
+On macOS, the in-app report intentionally omits native process-tree CPU/RSS/FD/I/O counters to keep
+the embedded WebKit host stable; its Go and frontend measurements remain available. Use Instruments
+for native/WebKit memory or CPU investigation.
+
+Use the repeatable workflow and leak interpretation in [`plans/monitoring.md`](plans/monitoring.md). The report-only baselines are available through:
+
+```bash
+make perf-bench
+make perf-size                 # after a local build has produced build/bin
+```
 
 ### Code Generation & Bindings
 If you change any exported Go structs, DTOs, or Wails Handlers (`backend/transport/wails`), run a build or dev loop to regenerate the TypeScript bindings:

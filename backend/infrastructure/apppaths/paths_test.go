@@ -14,11 +14,29 @@ func TestDevelopmentPathsStayInRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(repo, ".devdata", "quotier-labs")
-	for _, got := range []string{p.DataRoot, p.ConfigRoot, p.LogRoot, p.CrashRoot, p.BackupRoot, p.ExportRoot, p.TempRoot} {
+	for _, got := range []string{p.DataRoot, p.ConfigRoot, p.LogRoot, p.CrashRoot, p.BackupRoot, p.ExportRoot, p.DiagnosticsRoot, p.TempRoot} {
 		rel, err := filepath.Rel(want, got)
 		if err != nil || rel == ".." || filepath.IsAbs(rel) {
 			t.Fatalf("path %q escaped development root %q", got, want)
 		}
+	}
+}
+
+func TestDiagnosticsRootIsOnlyCreatedForDevelopmentAndBeta(t *testing.T) {
+	home := t.TempDir()
+	production, err := Resolve(Options{Build: appidentity.BuildInfo{Channel: "production", AppID: appidentity.AppID}, GOOS: "linux", HomeDir: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if production.DiagnosticsRoot != "" {
+		t.Fatalf("production diagnostics root = %q", production.DiagnosticsRoot)
+	}
+	beta, err := Resolve(Options{Build: appidentity.BuildInfo{Channel: "beta", AppID: appidentity.AppID + ".Beta"}, GOOS: "linux", HomeDir: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if beta.DiagnosticsRoot != filepath.Join(beta.StateRoot, "diagnostics") {
+		t.Fatalf("beta diagnostics root = %q", beta.DiagnosticsRoot)
 	}
 }
 

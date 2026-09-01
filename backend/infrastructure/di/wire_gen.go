@@ -23,6 +23,7 @@ import (
 	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/backup"
 	"quotierlabs/backend/infrastructure/config"
+	"quotierlabs/backend/infrastructure/diagnostics"
 	"quotierlabs/backend/infrastructure/export"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/import"
@@ -58,18 +59,20 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	store := ProvidePreferences(paths)
 	recoveryStore := ProvideRecovery(paths)
 	appHandler := wails.NewAppHandler(build, paths, store, recoveryStore)
+	manager := diagnostics.NewManager(paths, build)
+	diagnosticsHandler := wails.NewDiagnosticsHandler(manager)
 	companyHandler := wails.NewCompanyHandler(service, onboardingService, paths)
 	customerService := customer.NewService(customerRepository, idGenerator)
 	customerHandler := wails.NewCustomerHandler(service, customerService)
-	templateService := template.NewService(templateRepository, txManager, idGenerator)
+	templateService := template.NewService(templateRepository, txManager, idGenerator, manager)
 	templateHandler := wails.NewTemplateHandler(service, templateService)
 	metrics := pdf.NewLayoutMetrics()
-	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, txManager, idGenerator, metrics)
+	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, txManager, idGenerator, metrics, manager)
 	quotationHandler := wails.NewQuotationHandler(service, quotationService)
-	pdfGenerator := pdf.NewGenerator()
-	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics)
+	pdfGenerator := pdf.NewGenerator(manager)
+	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics, manager)
 	documentHandler := wails.NewDocumentHandler(documentService)
-	exportService := document.NewExportService(documentService, quotationRepository, customerRepository)
+	exportService := document.NewExportService(documentService, quotationRepository, customerRepository, manager)
 	printService := os.NewPrintService()
 	shareService := os.NewShareService()
 	exportHandler := wails.NewExportHandler(exportService, printService, shareService, paths)
@@ -80,7 +83,7 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	if err != nil {
 		return nil, err
 	}
-	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, settingsRepository, idGenerator, string2, build, paths, int64_2)
+	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, settingsRepository, idGenerator, string2, build, paths, int64_2, manager)
 	csvExportService := export.NewCSVExportService(quotationRepository, customerRepository)
 	csvImportService := csvimport.NewCSVImportService(customerRepository)
 	autoBackupManager := backup2.NewAutoBackupManager(logger, backupService, settingsRepository, companyRepository)
@@ -90,30 +93,32 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	legacydataService := legacydata.NewService(db, paths, build)
 	legacyHandler := wails.NewLegacyHandler(legacydataService)
 	app := &App{
-		Logger:           logger,
-		IDGenerator:      idGenerator,
-		TxManager:        txManager,
-		Companies:        companyRepository,
-		Customers:        customerRepository,
-		Templates:        templateRepository,
-		Quotations:       quotationRepository,
-		Sequences:        numberSequenceRepository,
-		CompanyService:   service,
-		OnboardService:   onboardingService,
-		AppHandler:       appHandler,
-		CompanyHandler:   companyHandler,
-		CustomerHandler:  customerHandler,
-		TemplateHandler:  templateHandler,
-		QuotationHandler: quotationHandler,
-		DocumentHandler:  documentHandler,
-		ExportHandler:    exportHandler,
-		BackupHandler:    backupHandler,
-		AutoBackup:       autoBackupManager,
-		UpdateHandler:    updateHandler,
-		LegacyHandler:    legacyHandler,
-		DB:               db,
-		Paths:            paths,
-		Build:            build,
+		Logger:             logger,
+		IDGenerator:        idGenerator,
+		TxManager:          txManager,
+		Companies:          companyRepository,
+		Customers:          customerRepository,
+		Templates:          templateRepository,
+		Quotations:         quotationRepository,
+		Sequences:          numberSequenceRepository,
+		CompanyService:     service,
+		OnboardService:     onboardingService,
+		AppHandler:         appHandler,
+		Diagnostics:        manager,
+		DiagnosticsHandler: diagnosticsHandler,
+		CompanyHandler:     companyHandler,
+		CustomerHandler:    customerHandler,
+		TemplateHandler:    templateHandler,
+		QuotationHandler:   quotationHandler,
+		DocumentHandler:    documentHandler,
+		ExportHandler:      exportHandler,
+		BackupHandler:      backupHandler,
+		AutoBackup:         autoBackupManager,
+		UpdateHandler:      updateHandler,
+		LegacyHandler:      legacyHandler,
+		DB:                 db,
+		Paths:              paths,
+		Build:              build,
 	}
 	return app, nil
 }
@@ -138,7 +143,7 @@ func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
 	return recovery.NewStore(paths.RecoveryRoot())
 }
 
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, ProvidePreferences,
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, diagnostics.NewManager, ProvidePreferences,
 	ProvideRecovery,
 	ProvideDB,
 	ProvideCurrentDBPath,
@@ -147,7 +152,7 @@ var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, Prov
 
 var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, template.NewService, quotation2.NewService, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager, update.NewService)
 
-var TransportSet = wire.NewSet(wails.NewAppHandler, wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler, wails.NewUpdateHandler, wails.NewLegacyHandler)
+var TransportSet = wire.NewSet(wails.NewAppHandler, wails.NewDiagnosticsHandler, wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler, wails.NewUpdateHandler, wails.NewLegacyHandler)
 
 type App struct {
 	Logger      *zap.Logger
@@ -159,20 +164,22 @@ type App struct {
 	Quotations  domain.QuotationRepository
 	Sequences   domain.NumberSequenceRepository
 
-	CompanyService   *company.Service
-	OnboardService   *onboarding.Service
-	AppHandler       *wails.AppHandler
-	CompanyHandler   *wails.CompanyHandler
-	CustomerHandler  *wails.CustomerHandler
-	TemplateHandler  *wails.TemplateHandler
-	QuotationHandler *wails.QuotationHandler
-	DocumentHandler  *wails.DocumentHandler
-	ExportHandler    *wails.ExportHandler
-	BackupHandler    *wails.BackupHandler
-	AutoBackup       *backup2.AutoBackupManager
-	UpdateHandler    *wails.UpdateHandler
-	LegacyHandler    *wails.LegacyHandler
-	DB               *gorm.DB
-	Paths            apppaths.Paths
-	Build            appidentity.BuildInfo
+	CompanyService     *company.Service
+	OnboardService     *onboarding.Service
+	AppHandler         *wails.AppHandler
+	Diagnostics        *diagnostics.Manager
+	DiagnosticsHandler *wails.DiagnosticsHandler
+	CompanyHandler     *wails.CompanyHandler
+	CustomerHandler    *wails.CustomerHandler
+	TemplateHandler    *wails.TemplateHandler
+	QuotationHandler   *wails.QuotationHandler
+	DocumentHandler    *wails.DocumentHandler
+	ExportHandler      *wails.ExportHandler
+	BackupHandler      *wails.BackupHandler
+	AutoBackup         *backup2.AutoBackupManager
+	UpdateHandler      *wails.UpdateHandler
+	LegacyHandler      *wails.LegacyHandler
+	DB                 *gorm.DB
+	Paths              apppaths.Paths
+	Build              appidentity.BuildInfo
 }

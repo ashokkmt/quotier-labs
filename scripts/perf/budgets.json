@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "mode": "report-only",
+  "note": "No pass/fail performance budgets exist until repeatable clean-machine baselines have been collected.",
+  "fixtures": ["blank", "typical", "image-heavy", "large-table", "multi-page"]
+}

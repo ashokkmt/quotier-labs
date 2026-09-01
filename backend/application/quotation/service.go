@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
@@ -27,6 +28,7 @@ type Service struct {
 	txManager     domain.TxManager
 	idGen         domain.IDGenerator
 	layoutMetrics layoutir.Metrics
+	recorder      appdiagnostics.Recorder
 }
 
 func NewService(
@@ -38,9 +40,14 @@ func NewService(
 	txManager domain.TxManager,
 	idGen domain.IDGenerator,
 	layoutMetrics layoutir.Metrics,
+	recorders ...appdiagnostics.Recorder,
 ) *Service {
 	if layoutMetrics == nil {
 		layoutMetrics = layoutir.DefaultMetrics{}
+	}
+	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
+	if len(recorders) > 0 && recorders[0] != nil {
+		recorder = recorders[0]
 	}
 	return &Service{
 		repo:          repo,
@@ -51,6 +58,7 @@ func NewService(
 		txManager:     txManager,
 		idGen:         idGen,
 		layoutMetrics: layoutMetrics,
+		recorder:      recorder,
 	}
 }
 
@@ -237,7 +245,15 @@ func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input Sa
 	return t, nil
 }
 
-func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string, input QuotationUpdateDocumentDTO) (*QuotationDTO, error) {
+func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string, input QuotationUpdateDocumentDTO) (dto *QuotationDTO, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "quotation.save", time.Since(started), result, nil)
+	}()
 	txCtx, err := s.txManager.BeginTx(ctx)
 	if err != nil {
 		return nil, err
@@ -274,8 +290,9 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 		return nil, err
 	}
 
-	dto := mapToDTO(q)
-	return &dto, nil
+	value := mapToDTO(q)
+	dto = &value
+	return dto, nil
 }
 
 func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string, input QuotationUpdateCustomerDTO) (*QuotationDTO, error) {
@@ -323,7 +340,15 @@ func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string,
 	return &dto, nil
 }
 
-func (s *Service) GetQuotation(ctx context.Context, companyID, id string) (*QuotationDTO, error) {
+func (s *Service) GetQuotation(ctx context.Context, companyID, id string) (dto *QuotationDTO, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "quotation.load", time.Since(started), result, nil)
+	}()
 	q, err := s.repo.GetByID(ctx, id, companyID)
 	if err != nil {
 		return nil, err
@@ -331,6 +356,7 @@ func (s *Service) GetQuotation(ctx context.Context, companyID, id string) (*Quot
 	if q.CompanyID != companyID {
 		return nil, domain.ErrNotFound
 	}
-	dto := mapToDTO(q)
-	return &dto, nil
+	value := mapToDTO(q)
+	dto = &value
+	return dto, nil
 }

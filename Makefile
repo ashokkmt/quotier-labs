@@ -1,4 +1,4 @@
-.PHONY: build dev dev-reset dev-open-data test lint generate migrate release check-runtime-paths
+.PHONY: build dev dev-reset dev-open-data test lint generate migrate release check-runtime-paths perf-bench perf-size
 
 build:
 	@./scripts/build-local.sh
@@ -39,3 +39,9 @@ check-runtime-paths:
 
 release:
 	@QL_RELEASE_BUILD=1 ./scripts/build-release.sh
+
+perf-bench:
+	go test -bench=. -benchmem ./backend/application/layoutir ./backend/infrastructure/pdf
+
+perf-size:
+	node scripts/perf/report-size.mjs build/bin

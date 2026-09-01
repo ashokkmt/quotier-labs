@@ -12,18 +12,19 @@ import (
 )
 
 type Paths struct {
-	InstallRoot string
-	DataRoot    string
-	ConfigRoot  string
-	StateRoot   string
-	LogRoot     string
-	CrashRoot   string
-	CacheRoot   string
-	WebViewRoot string
-	RuntimeRoot string
-	TempRoot    string
-	BackupRoot  string
-	ExportRoot  string
+	InstallRoot     string
+	DataRoot        string
+	ConfigRoot      string
+	StateRoot       string
+	LogRoot         string
+	CrashRoot       string
+	CacheRoot       string
+	WebViewRoot     string
+	RuntimeRoot     string
+	TempRoot        string
+	BackupRoot      string
+	ExportRoot      string
+	DiagnosticsRoot string
 }
 
 func (p Paths) DBPath() string       { return filepath.Join(p.DataRoot, "db", "quotierlabs.sqlite3") }
@@ -84,6 +85,7 @@ func Resolve(opts Options) (Paths, error) {
 		p.RuntimeRoot = filepath.Join(root, "runtime")
 		p.BackupRoot = filepath.Join(root, "backups")
 		p.ExportRoot = filepath.Join(root, "exports")
+		p.DiagnosticsRoot = filepath.Join(root, "diagnostics")
 		p.TempRoot = filepath.Join(root, "tmp")
 		if err := createRoots(p, root); err != nil {
 			return Paths{}, err
@@ -117,6 +119,9 @@ func Resolve(opts Options) (Paths, error) {
 		p.CacheRoot = filepath.Join(base, "cache")
 		p.WebViewRoot = filepath.Join(base, "webview")
 		p.RuntimeRoot = filepath.Join(base, "runtime")
+		if opts.Build.Channel == "beta" {
+			p.DiagnosticsRoot = filepath.Join(p.StateRoot, "diagnostics")
+		}
 	case "darwin":
 		id := opts.Build.AppID
 		base := filepath.Join(home, "Library", "Application Support", id)
@@ -128,6 +133,9 @@ func Resolve(opts Options) (Paths, error) {
 		p.CacheRoot = filepath.Join(home, "Library", "Caches", id)
 		p.WebViewRoot = filepath.Join(p.CacheRoot, "webview")
 		p.RuntimeRoot = filepath.Join(p.StateRoot, "runtime")
+		if opts.Build.Channel == "beta" {
+			p.DiagnosticsRoot = filepath.Join(p.StateRoot, "diagnostics")
+		}
 	default:
 		slug := appidentity.Slug
 		if opts.Build.Channel == "beta" {
@@ -149,6 +157,9 @@ func Resolve(opts Options) (Paths, error) {
 			runtimeBase = filepath.Join(p.StateRoot, "runtime")
 		}
 		p.RuntimeRoot = filepath.Join(runtimeBase, slug)
+		if opts.Build.Channel == "beta" {
+			p.DiagnosticsRoot = filepath.Join(p.StateRoot, "diagnostics")
+		}
 	}
 	p.TempRoot = filepath.Join(p.CacheRoot, "tmp")
 	if err := createRoots(p, ""); err != nil {
@@ -165,6 +176,9 @@ func Resolve(opts Options) (Paths, error) {
 
 func createRoots(p Paths, devBase string) error {
 	dirs := []string{p.DataRoot, filepath.Join(p.DataRoot, "db"), p.AssetsRoot(), p.ConfigRoot, p.StateRoot, p.RecoveryRoot(), p.LogRoot, p.CrashRoot, p.CacheRoot, p.WebViewRoot, p.RuntimeRoot, p.TempRoot}
+	if p.DiagnosticsRoot != "" {
+		dirs = append(dirs, p.DiagnosticsRoot)
+	}
 	if devBase != "" {
 		dirs = append(dirs, p.BackupRoot, p.ExportRoot)
 	}

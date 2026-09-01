@@ -17,21 +17,30 @@ func NewSettingsRepository(db *gorm.DB) domain.SettingsRepository {
 
 func (r *SettingsRepository) Get(ctx context.Context, companyID string, key string) (*domain.Settings, error) {
 	var s domain.Settings
-	if err := r.db.WithContext(ctx).Where("company_id = ? AND key = ?", companyID, key).First(&s).Error; err != nil {
-		return nil, err
+	result := GetDB(ctx, r.db).Where("company_id = ? AND key = ?", companyID, key).Limit(1).Find(&s)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		// Optional settings (including automatic-backup preferences) are absent
+		// after a fresh install. That is an expected default, not a database
+		// failure that should be emitted by GORM's SQL logger.
+		return nil, domain.ErrNotFound
 	}
 	return &s, nil
 }
 
 func (r *SettingsRepository) Set(ctx context.Context, setting *domain.Settings) error {
 	var existing domain.Settings
-	err := r.db.WithContext(ctx).Where("company_id = ? AND key = ?", setting.CompanyID, setting.Key).First(&existing).Error
-	if err == gorm.ErrRecordNotFound {
-		return r.db.WithContext(ctx).Create(setting).Error
-	} else if err != nil {
-		return err
+	db := GetDB(ctx, r.db)
+	result := db.Where("company_id = ? AND key = ?", setting.CompanyID, setting.Key).Limit(1).Find(&existing)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return db.Create(setting).Error
 	}
 
 	existing.Value = setting.Value
-	return r.db.WithContext(ctx).Save(&existing).Error
+	return db.Save(&existing).Error
 }

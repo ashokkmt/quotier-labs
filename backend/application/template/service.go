@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
 	domain_template "quotierlabs/backend/domain/template"
@@ -18,13 +19,19 @@ type Service struct {
 	repo      domain.TemplateRepository
 	txManager domain.TxManager
 	idGen     domain.IDGenerator
+	recorder  appdiagnostics.Recorder
 }
 
-func NewService(repo domain.TemplateRepository, txManager domain.TxManager, idGen domain.IDGenerator) *Service {
+func NewService(repo domain.TemplateRepository, txManager domain.TxManager, idGen domain.IDGenerator, recorders ...appdiagnostics.Recorder) *Service {
+	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
+	if len(recorders) > 0 && recorders[0] != nil {
+		recorder = recorders[0]
+	}
 	return &Service{
 		repo:      repo,
 		txManager: txManager,
 		idGen:     idGen,
+		recorder:  recorder,
 	}
 }
 
@@ -44,6 +51,7 @@ func mapToDTO(t *domain.Template) TemplateDTO {
 }
 
 func (s *Service) CreateTemplate(ctx context.Context, companyID string, input TemplateCreateDTO) (*TemplateDTO, error) {
+	started := time.Now()
 	txCtx, err := s.txManager.BeginTx(ctx)
 	if err != nil {
 		return nil, err
@@ -91,10 +99,12 @@ func (s *Service) CreateTemplate(ctx context.Context, companyID string, input Te
 	}
 
 	dto := mapToDTO(t)
+	s.recorder.RecordOperation(ctx, "template.save", time.Since(started), "success", nil)
 	return &dto, nil
 }
 
 func (s *Service) UpdateTemplate(ctx context.Context, companyID string, input TemplateUpdateDTO) (*TemplateDTO, error) {
+	started := time.Now()
 	txCtx, err := s.txManager.BeginTx(ctx)
 	if err != nil {
 		return nil, err
@@ -145,6 +155,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, companyID string, input Te
 	}
 
 	dto := mapToDTO(t)
+	s.recorder.RecordOperation(ctx, "template.save", time.Since(started), "success", nil)
 	return &dto, nil
 }
 
@@ -162,7 +173,15 @@ func (s *Service) DeleteTemplate(ctx context.Context, companyID, id string) erro
 	return s.repo.Delete(ctx, id, companyID)
 }
 
-func (s *Service) GetTemplate(ctx context.Context, companyID, id string) (*TemplateDTO, error) {
+func (s *Service) GetTemplate(ctx context.Context, companyID, id string) (dto *TemplateDTO, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "template.load", time.Since(started), result, nil)
+	}()
 	t, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -170,11 +189,20 @@ func (s *Service) GetTemplate(ctx context.Context, companyID, id string) (*Templ
 	if !t.IsBuiltin && (t.CompanyID == nil || *t.CompanyID != companyID) {
 		return nil, domain.ErrNotFound
 	}
-	dto := mapToDTO(t)
-	return &dto, nil
+	value := mapToDTO(t)
+	dto = &value
+	return dto, nil
 }
 
-func (s *Service) ListTemplates(ctx context.Context, companyID string) ([]TemplateDTO, error) {
+func (s *Service) ListTemplates(ctx context.Context, companyID string) (result []TemplateDTO, err error) {
+	started := time.Now()
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		s.recorder.RecordOperation(ctx, "template.load", time.Since(started), outcome, nil)
+	}()
 	builtins, err := s.repo.ListBuiltins(ctx)
 	if err != nil {
 		return nil, err
@@ -184,7 +212,7 @@ func (s *Service) ListTemplates(ctx context.Context, companyID string) ([]Templa
 		return nil, err
 	}
 
-	result := make([]TemplateDTO, 0, len(builtins)+len(customs))
+	result = make([]TemplateDTO, 0, len(builtins)+len(customs))
 	for _, b := range builtins {
 		result = append(result, mapToDTO(&b))
 	}
