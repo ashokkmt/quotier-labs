@@ -555,6 +555,140 @@ export namespace customer {
 
 }
 
+export namespace diagnostics {
+	
+	export class ProcessStats {
+	    cpu_percent?: number;
+	    rss_bytes?: number;
+	    threads?: number;
+	    open_files?: number;
+	    read_bytes?: number;
+	    write_bytes?: number;
+	    descendant_count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProcessStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cpu_percent = source["cpu_percent"];
+	        this.rss_bytes = source["rss_bytes"];
+	        this.threads = source["threads"];
+	        this.open_files = source["open_files"];
+	        this.read_bytes = source["read_bytes"];
+	        this.write_bytes = source["write_bytes"];
+	        this.descendant_count = source["descendant_count"];
+	    }
+	}
+	export class ResourceSample {
+	    schema_version: number;
+	    type: string;
+	    elapsed_ms: number;
+	    // Go type: time
+	    recorded_at_utc: any;
+	    logical_cpus: number;
+	    host: ProcessStats;
+	    tree: ProcessStats;
+	    go_live_heap_bytes: number;
+	    go_heap_goal_bytes: number;
+	    go_alloc_bytes: number;
+	    go_alloc_rate_bps: number;
+	    gc_cycles: number;
+	    gc_pause_total_ns: number;
+	    goroutines: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ResourceSample(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.schema_version = source["schema_version"];
+	        this.type = source["type"];
+	        this.elapsed_ms = source["elapsed_ms"];
+	        this.recorded_at_utc = this.convertValues(source["recorded_at_utc"], null);
+	        this.logical_cpus = source["logical_cpus"];
+	        this.host = this.convertValues(source["host"], ProcessStats);
+	        this.tree = this.convertValues(source["tree"], ProcessStats);
+	        this.go_live_heap_bytes = source["go_live_heap_bytes"];
+	        this.go_heap_goal_bytes = source["go_heap_goal_bytes"];
+	        this.go_alloc_bytes = source["go_alloc_bytes"];
+	        this.go_alloc_rate_bps = source["go_alloc_rate_bps"];
+	        this.gc_cycles = source["gc_cycles"];
+	        this.gc_pause_total_ns = source["gc_pause_total_ns"];
+	        this.goroutines = source["goroutines"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Status {
+	    available: boolean;
+	    recording: boolean;
+	    finalizing: boolean;
+	    channel: string;
+	    session_id?: string;
+	    elapsed_ms: number;
+	    latest?: ResourceSample;
+	    last_operation?: string;
+	    last_session_id?: string;
+	    diagnostics_root?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.recording = source["recording"];
+	        this.finalizing = source["finalizing"];
+	        this.channel = source["channel"];
+	        this.session_id = source["session_id"];
+	        this.elapsed_ms = source["elapsed_ms"];
+	        this.latest = this.convertValues(source["latest"], ResourceSample);
+	        this.last_operation = source["last_operation"];
+	        this.last_session_id = source["last_session_id"];
+	        this.diagnostics_root = source["diagnostics_root"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace legacydata {
 	
 	export class Candidate {

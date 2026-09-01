@@ -3,10 +3,12 @@ package document
 import (
 	"context"
 	"fmt"
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
 	domain_quotation "quotierlabs/backend/domain/quotation"
+	"time"
 )
 
 type Service struct {
@@ -15,6 +17,7 @@ type Service struct {
 	customerRepo  domain.CustomerRepository
 	pdfGenerator  PDFGenerator
 	metrics       layoutir.Metrics
+	recorder      appdiagnostics.Recorder
 }
 
 // ResolveQuotationLayoutDiagnostics exposes safe, renderer-derived V5 diagnostics for preview UI.
@@ -44,7 +47,15 @@ func (s *Service) ResolveDocumentLayoutDiagnostics(ctx context.Context, companyI
 	return s.resolveDiagnostics(ctx, q, companyID, rawDocument)
 }
 
-func (s *Service) resolveDiagnostics(ctx context.Context, q *domain.Quotation, companyID, rawDocument string) ([]layoutir.Diagnostic, error) {
+func (s *Service) resolveDiagnostics(ctx context.Context, q *domain.Quotation, companyID, rawDocument string) (diagnostics []layoutir.Diagnostic, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "layout.resolve", time.Since(started), result, nil)
+	}()
 	company, err := s.companyRepo.GetByID(ctx, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("get company: %w", err)
@@ -70,9 +81,14 @@ func NewService(
 	customerRepo domain.CustomerRepository,
 	pdfGenerator PDFGenerator,
 	metrics layoutir.Metrics,
+	recorders ...appdiagnostics.Recorder,
 ) *Service {
 	if metrics == nil {
 		metrics = layoutir.DefaultMetrics{}
+	}
+	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
+	if len(recorders) > 0 && recorders[0] != nil {
+		recorder = recorders[0]
 	}
 	return &Service{
 		quotationRepo: quotationRepo,
@@ -80,5 +96,6 @@ func NewService(
 		customerRepo:  customerRepo,
 		pdfGenerator:  pdfGenerator,
 		metrics:       metrics,
+		recorder:      recorder,
 	}
 }

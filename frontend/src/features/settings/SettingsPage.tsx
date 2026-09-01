@@ -14,6 +14,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { wails } from '../../../wailsjs/go/models'
 import { UpdateSettings } from './UpdateSettings'
+import { DiagnosticsSettings } from './DiagnosticsSettings'
 
 export function SettingsPage() {
   const [appInfo, setAppInfo] = useState<wails.AppInfo | null>(null)
@@ -106,6 +107,7 @@ export function SettingsPage() {
 
       <BackupSettings />
       <UpdateSettings appInfo={appInfo} />
+      <DiagnosticsSettings channel={appInfo?.channel} />
     </div>
   )
 }

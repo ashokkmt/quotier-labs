@@ -27,6 +27,7 @@ import { useRecovery } from './hooks/useRecovery'
 import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { UndoRedoControls } from './components/UndoRedoControls'
 import { SaveIndicator } from './components/SaveIndicator'
+import { useFrontendDiagnostics } from '../../shared/diagnostics/useFrontendDiagnostics'
 import {
   FinalizeQuotation,
   UpdateQuotationStatus,
@@ -53,6 +54,7 @@ export function QuotationBuilder({
   const { toast } = useToast()
   const v5EngineRef = useRef<V5EngineHandle | null>(null)
   const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
+  useFrontendDiagnostics(!readOnly && !loading)
 
   const { clearRecovery } = useRecovery(quotationId, document)
   useNavigationGuard(dirty)

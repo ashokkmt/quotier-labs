@@ -9,19 +9,33 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain/documentmodel"
 )
 
 type generator struct {
+	recorder appdiagnostics.Recorder
 }
 
-func NewGenerator() document.PDFGenerator {
-	return &generator{}
+func NewGenerator(recorders ...appdiagnostics.Recorder) document.PDFGenerator {
+	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
+	if len(recorders) > 0 && recorders[0] != nil {
+		recorder = recorders[0]
+	}
+	return &generator{recorder: recorder}
 }
 
-func (g *generator) Generate(ctx context.Context, input document.GeneratorInput) ([]byte, error) {
+func (g *generator) Generate(ctx context.Context, input document.GeneratorInput) (out []byte, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		g.recorder.RecordOperation(ctx, "pdf.generate", time.Since(started), result, nil)
+	}()
 	return g.generateV5(ctx, input)
 }
 

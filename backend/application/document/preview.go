@@ -4,9 +4,18 @@ import (
 	"context"
 	"fmt"
 	"quotierlabs/backend/domain"
+	"time"
 )
 
-func (s *Service) GeneratePreviewPDF(ctx context.Context, companyID, quotationID string) ([]byte, error) {
+func (s *Service) GeneratePreviewPDF(ctx context.Context, companyID, quotationID string) (out []byte, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "preview.generate", time.Since(started), result, nil)
+	}()
 	q, err := s.quotationRepo.GetByID(ctx, quotationID, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("get quotation: %w", err)

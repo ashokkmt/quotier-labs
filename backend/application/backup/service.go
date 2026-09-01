@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/domain"
 	backup_domain "quotierlabs/backend/domain/backup"
 	"quotierlabs/backend/infrastructure/appidentity"
@@ -33,6 +34,7 @@ type Service struct {
 	build         appidentity.BuildInfo
 	paths         apppaths.Paths
 	schemaVersion int64
+	recorder      appdiagnostics.Recorder
 }
 
 func NewService(
@@ -46,7 +48,12 @@ func NewService(
 	build appidentity.BuildInfo,
 	paths apppaths.Paths,
 	schemaVersion int64,
+	recorders ...appdiagnostics.Recorder,
 ) *Service {
+	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
+	if len(recorders) > 0 && recorders[0] != nil {
+		recorder = recorders[0]
+	}
 	return &Service{
 		backupRepo:    backupRepo,
 		companyRepo:   companyRepo,
@@ -58,6 +65,7 @@ func NewService(
 		build:         build,
 		paths:         paths,
 		schemaVersion: schemaVersion,
+		recorder:      recorder,
 	}
 }
 
@@ -108,7 +116,15 @@ func (s *Service) ConfigureAutoBackup(ctx context.Context, companyID, directory 
 	return nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, destDir string) (*backup_domain.BackupInfo, error) {
+func (s *Service) CreateBackup(ctx context.Context, destDir string) (info *backup_domain.BackupInfo, err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "backup.create", time.Since(started), result, nil)
+	}()
 	if strings.TrimSpace(destDir) == "" {
 		if s.build.Channel == "development" && s.paths.BackupRoot != "" {
 			destDir = s.paths.BackupRoot
@@ -158,7 +174,15 @@ func (s *Service) ValidateBackup(ctx context.Context, path string) (*backup_doma
 	return result, err
 }
 
-func (s *Service) RestoreBackup(ctx context.Context, path string) error {
+func (s *Service) RestoreBackup(ctx context.Context, path string) (err error) {
+	started := time.Now()
+	defer func() {
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		s.recorder.RecordOperation(ctx, "backup.restore", time.Since(started), result, nil)
+	}()
 	validation, err := s.ValidateBackup(ctx, path)
 	if err != nil {
 		return err

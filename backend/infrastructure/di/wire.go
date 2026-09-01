@@ -21,6 +21,7 @@ import (
 	"quotierlabs/backend/infrastructure/apppaths"
 	backup_infra "quotierlabs/backend/infrastructure/backup"
 	appconfig "quotierlabs/backend/infrastructure/config"
+	"quotierlabs/backend/infrastructure/diagnostics"
 	"quotierlabs/backend/infrastructure/export"
 	"quotierlabs/backend/infrastructure/id"
 	csvimport "quotierlabs/backend/infrastructure/import"
@@ -53,6 +54,7 @@ func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
 var InfrastructureSet = wire.NewSet(
 	id.NewULIDGenerator,
 	logging.NewLogger,
+	diagnostics.NewManager,
 	ProvidePreferences,
 	ProvideRecovery,
 	ProvideDB,
@@ -93,6 +95,7 @@ var ApplicationSet = wire.NewSet(
 
 var TransportSet = wire.NewSet(
 	wails.NewAppHandler,
+	wails.NewDiagnosticsHandler,
 	wails.NewCompanyHandler,
 	wails.NewCustomerHandler,
 	wails.NewTemplateHandler,
@@ -114,22 +117,24 @@ type App struct {
 	Quotations  domain.QuotationRepository
 	Sequences   domain.NumberSequenceRepository
 
-	CompanyService   *company.Service
-	OnboardService   *onboarding.Service
-	AppHandler       *wails.AppHandler
-	CompanyHandler   *wails.CompanyHandler
-	CustomerHandler  *wails.CustomerHandler
-	TemplateHandler  *wails.TemplateHandler
-	QuotationHandler *wails.QuotationHandler
-	DocumentHandler  *wails.DocumentHandler
-	ExportHandler    *wails.ExportHandler
-	BackupHandler    *wails.BackupHandler
-	AutoBackup       *backup_app.AutoBackupManager
-	UpdateHandler    *wails.UpdateHandler
-	LegacyHandler    *wails.LegacyHandler
-	DB               *gorm.DB
-	Paths            apppaths.Paths
-	Build            appidentity.BuildInfo
+	CompanyService     *company.Service
+	OnboardService     *onboarding.Service
+	AppHandler         *wails.AppHandler
+	Diagnostics        *diagnostics.Manager
+	DiagnosticsHandler *wails.DiagnosticsHandler
+	CompanyHandler     *wails.CompanyHandler
+	CustomerHandler    *wails.CustomerHandler
+	TemplateHandler    *wails.TemplateHandler
+	QuotationHandler   *wails.QuotationHandler
+	DocumentHandler    *wails.DocumentHandler
+	ExportHandler      *wails.ExportHandler
+	BackupHandler      *wails.BackupHandler
+	AutoBackup         *backup_app.AutoBackupManager
+	UpdateHandler      *wails.UpdateHandler
+	LegacyHandler      *wails.LegacyHandler
+	DB                 *gorm.DB
+	Paths              apppaths.Paths
+	Build              appidentity.BuildInfo
 }
 
 func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, error) {
