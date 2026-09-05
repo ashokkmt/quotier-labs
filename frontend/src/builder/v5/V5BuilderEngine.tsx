@@ -7,6 +7,7 @@ import { Inspector } from './Inspector'
 import { WorkspaceRail } from './WorkspaceRail'
 import { V5EditorUIProvider, useV5EditorUI } from './EditorUIState'
 import { pageOf } from './selectors'
+import { historyShortcutForEvent } from './historyShortcuts'
 
 export type V5LayoutDiagnostic = { code: string; nodeId: string; message: string }
 
@@ -49,20 +50,15 @@ function KeyboardShortcuts() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-      const mod = event.metaKey || event.ctrlKey
-      if (!mod) return
-      const key = event.key.toLowerCase()
-      if (key === 'z') {
-        event.preventDefault()
-        if (event.shiftKey) session.redo()
-        else session.undo()
-      } else if (key === 'y') {
-        event.preventDefault()
-        session.redo()
-      }
+      const action = historyShortcutForEvent(event)
+      if (!action) return
+      event.preventDefault()
+      if (action === 'undo') session.undo()
+      else session.redo()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    // Capture makes app history reliable even when a focused canvas control stops bubbling.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [session])
   return null
 }

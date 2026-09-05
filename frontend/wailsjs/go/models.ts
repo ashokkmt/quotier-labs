@@ -774,6 +774,7 @@ export namespace quotation {
 	    sgst_total: number;
 	    igst_total: number;
 	    grand_total: number;
+	    expected_total?: number;
 	    // Go type: time
 	    valid_until?: any;
 	    notes?: string;
@@ -803,6 +804,7 @@ export namespace quotation {
 	        this.sgst_total = source["sgst_total"];
 	        this.igst_total = source["igst_total"];
 	        this.grand_total = source["grand_total"];
+	        this.expected_total = source["expected_total"];
 	        this.valid_until = this.convertValues(source["valid_until"], null);
 	        this.notes = source["notes"];
 	        this.created_at = this.convertValues(source["created_at"], null);
@@ -836,6 +838,8 @@ export namespace quotation {
 	    search?: string;
 	    start_date?: string;
 	    end_date?: string;
+	    min_amount?: number;
+	    max_amount?: number;
 	    sort_by?: string;
 	    sort_desc: boolean;
 	
@@ -853,6 +857,8 @@ export namespace quotation {
 	        this.search = source["search"];
 	        this.start_date = source["start_date"];
 	        this.end_date = source["end_date"];
+	        this.min_amount = source["min_amount"];
+	        this.max_amount = source["max_amount"];
 	        this.sort_by = source["sort_by"];
 	        this.sort_desc = source["sort_desc"];
 	    }
@@ -864,6 +870,7 @@ export namespace quotation {
 	    customer_name: string;
 	    status: string;
 	    grand_total: number;
+	    expected_total?: number;
 	    // Go type: time
 	    created_at: any;
 	    // Go type: time
@@ -881,6 +888,7 @@ export namespace quotation {
 	        this.customer_name = source["customer_name"];
 	        this.status = source["status"];
 	        this.grand_total = source["grand_total"];
+	        this.expected_total = source["expected_total"];
 	        this.created_at = this.convertValues(source["created_at"], null);
 	        this.updated_at = this.convertValues(source["updated_at"], null);
 	    }
@@ -962,6 +970,20 @@ export namespace quotation {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.document = source["document"];
+	    }
+	}
+	export class QuotationUpdateExpectedTotalDTO {
+	    id: string;
+	    expected_total?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationUpdateExpectedTotalDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.expected_total = source["expected_total"];
 	    }
 	}
 	export class SaveAsTemplateDTO {

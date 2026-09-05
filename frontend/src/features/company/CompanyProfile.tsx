@@ -10,6 +10,7 @@ import { StepCompanyInfo } from '../onboarding/steps/StepCompanyInfo'
 import { StepGST } from '../onboarding/steps/StepGST'
 import { StepBank } from '../onboarding/steps/StepBank'
 import { GetActiveCompany, UpdateCompany } from '../../../wailsjs/go/wails/CompanyHandler'
+import { toCompanyPayload } from './companyPayload'
 
 export function CompanyProfile() {
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -56,7 +57,12 @@ export function CompanyProfile() {
     setIsSubmitting(true)
     try {
       const current = await GetActiveCompany()
-      await UpdateCompany({ id: current.id, ...data } as any)
+      const updated = await UpdateCompany(toCompanyPayload(data, current.id) as any)
+      form.reset({
+        ...data,
+        legalName: updated.legal_name || '',
+        bankDetails: updated.bank_details || '',
+      })
       setSaved(true)
       setError('')
     } catch {

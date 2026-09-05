@@ -40,7 +40,7 @@ export function useAutosave(
       } else {
         toast({
           title: 'Autosave failed permanently',
-          description: 'Please check your connection or save manually.',
+          description: 'Please check the app status and press Cmd/Ctrl+S to retry.',
           variant: 'destructive',
         })
         setSaveState('Unsaved changes')

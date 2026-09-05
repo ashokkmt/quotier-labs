@@ -1,17 +1,7 @@
-import {
-  ArrowLeft,
-  Save,
-  Loader2,
-  Eye,
-  Edit2,
-  MoreHorizontal,
-  FilePlus2,
-  Lock,
-  Send,
-  Check,
-  X,
-} from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, Eye, Edit2, MoreHorizontal, FilePlus2, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,25 +15,30 @@ import { CustomerCombobox } from '../../shared/components/CustomerCombobox'
 export function BuilderHeader({
   quotation,
   onBack,
-  onSave,
-  saving,
   readOnly,
   onToggleReadOnly,
   onCustomerChange,
+  onExpectedTotalChange,
   saveIndicator,
   undoRedoControls,
   onFinalize,
-  onStatusChange,
   onSaveAsTemplate,
 }: any) {
   if (!quotation) return null
 
   const customerControl = readOnly ? (
-    <div className="truncate text-sm font-medium" title={quotation.customer_id}>
-      Customer ID: {quotation.customer_id}
+    <div className="truncate text-sm font-medium" title={quotation.customer_id || 'No customer'}>
+      {quotation.customer_id ? `Customer ID: ${quotation.customer_id}` : 'No customer selected'}
     </div>
   ) : (
     <CustomerCombobox value={quotation.customer_id} onChange={onCustomerChange} />
+  )
+  const amountControl = (
+    <ExpectedTotalInput
+      value={quotation.expected_total}
+      readOnly={readOnly}
+      onCommit={onExpectedTotalChange}
+    />
   )
 
   return (
@@ -67,7 +62,10 @@ export function BuilderHeader({
           {quotation.number || 'Draft'}
         </h2>
         <StatusBadge status={quotation.status} />
-        <div className="ml-2 hidden min-w-48 max-w-[300px] flex-1 xl:block">{customerControl}</div>
+        <div className="ml-2 hidden min-w-0 flex-1 items-center gap-2 xl:flex">
+          <div className="min-w-48 max-w-[300px] flex-1">{customerControl}</div>
+          {amountControl}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
@@ -102,21 +100,6 @@ export function BuilderHeader({
               onClick={onSaveAsTemplate}
             >
               Save as Template
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={onSave}
-              disabled={saving}
-              className="px-2 lg:px-3"
-              aria-label="Save draft"
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin lg:mr-2" />
-              ) : (
-                <Save className="h-4 w-4 lg:mr-2" />
-              )}
-              <span className="hidden lg:inline">Save Draft</span>
             </Button>
             <Button
               className="hidden 2xl:inline-flex"
@@ -167,59 +150,72 @@ export function BuilderHeader({
             </div>
           </>
         )}
-        {readOnly && quotation.status === 'FINALIZED' && (
-          <Button
-            className="hidden 2xl:inline-flex"
-            variant="secondary"
-            size="sm"
-            onClick={() => onStatusChange('SENT')}
-          >
-            Mark Sent
-          </Button>
-        )}
-        {readOnly && quotation.status === 'SENT' && (
-          <div className="hidden gap-2 2xl:flex">
-            <Button variant="default" size="sm" onClick={() => onStatusChange('ACCEPTED')}>
-              Mark Accepted
-            </Button>
-            <Button variant="destructive" size="sm" onClick={() => onStatusChange('REJECTED')}>
-              Mark Rejected
-            </Button>
-          </div>
-        )}
-        {readOnly && ['FINALIZED', 'SENT'].includes(quotation.status) && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                className="2xl:hidden"
-                variant="outline"
-                size="icon"
-                aria-label="More status actions"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {quotation.status === 'FINALIZED' && (
-                <DropdownMenuItem onSelect={() => onStatusChange('SENT')}>
-                  <Send className="mr-2 h-4 w-4" /> Mark Sent
-                </DropdownMenuItem>
-              )}
-              {quotation.status === 'SENT' && (
-                <>
-                  <DropdownMenuItem onSelect={() => onStatusChange('ACCEPTED')}>
-                    <Check className="mr-2 h-4 w-4" /> Mark Accepted
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onStatusChange('REJECTED')}>
-                    <X className="mr-2 h-4 w-4" /> Mark Rejected
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
-      <div className="col-span-2 min-w-0 xl:hidden">{customerControl}</div>
+      <div className="col-span-2 flex min-w-0 gap-2 xl:hidden">
+        <div className="min-w-0 flex-1">{customerControl}</div>
+        {amountControl}
+      </div>
     </header>
+  )
+}
+
+function ExpectedTotalInput({
+  value,
+  readOnly,
+  onCommit,
+}: {
+  value?: number | null
+  readOnly: boolean
+  onCommit: (value: number | null) => void | Promise<void>
+}) {
+  const formatted = value == null ? '' : (value / 100).toFixed(2)
+  const [draft, setDraft] = useState(formatted)
+
+  if (readOnly) {
+    return (
+      <div className="min-w-32 rounded-md border bg-muted/30 px-3 py-2 text-sm tabular-nums">
+        {value == null ? 'No estimate' : `₹${formatted}`}
+      </div>
+    )
+  }
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    if (!trimmed) {
+      if (value != null) void onCommit(null)
+      return
+    }
+    const parsed = Number(trimmed)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setDraft(formatted)
+      return
+    }
+    const minorUnits = Math.round(parsed * 100)
+    setDraft((minorUnits / 100).toFixed(2))
+    if (minorUnits !== value) void onCommit(minorUnits)
+  }
+
+  return (
+    <div className="relative w-40 shrink-0">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+        ₹
+      </span>
+      <Input
+        aria-label="Expected quotation total"
+        inputMode="decimal"
+        placeholder="Expected total"
+        className="pl-7 tabular-nums"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+          if (event.key === 'Escape') {
+            setDraft(formatted)
+            event.currentTarget.blur()
+          }
+        }}
+      />
+    </div>
   )
 }

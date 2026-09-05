@@ -87,13 +87,27 @@ func TestCompanyService(t *testing.T) {
 
 	// Update
 	newName := "Test Updated"
+	legalName := "Test Legal Pvt Ltd"
+	bankDetails := "Bank: HDFC\nAccount: 1234"
 	active.Name = newName
 	updated, err := svc.UpdateCompany(ctx, company.CompanyUpdateDTO{
-		ID:    active.ID,
-		Name:  newName,
-		State: active.State,
+		ID:          active.ID,
+		Name:        newName,
+		State:       active.State,
+		LegalName:   &legalName,
+		BankDetails: &bankDetails,
 	})
-	if err != nil || updated.Name != newName {
+	if err != nil || updated.Name != newName || updated.LegalName == nil || *updated.LegalName != legalName || updated.BankDetails == nil || *updated.BankDetails != bankDetails {
 		t.Fatalf("failed to update")
+	}
+	reloaded, err := svc.GetActiveCompany(ctx)
+	if err != nil || reloaded.LegalName == nil || *reloaded.LegalName != legalName || reloaded.BankDetails == nil || *reloaded.BankDetails != bankDetails {
+		t.Fatalf("legal name and bank details were not persisted: %+v, err=%v", reloaded, err)
+	}
+	cleared, err := svc.UpdateCompany(ctx, company.CompanyUpdateDTO{
+		ID: reloaded.ID, Name: reloaded.Name, State: reloaded.State, Currency: reloaded.Currency,
+	})
+	if err != nil || cleared.LegalName != nil || cleared.BankDetails != nil {
+		t.Fatalf("legal name and bank details were not cleared: %+v, err=%v", cleared, err)
 	}
 }

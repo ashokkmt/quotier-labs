@@ -3,14 +3,15 @@ package quotation
 import "time"
 
 type QuotationSummaryDTO struct {
-	ID           string    `json:"id"`
-	Number       string    `json:"number"`
-	CustomerID   string    `json:"customer_id"`
-	CustomerName string    `json:"customer_name"`
-	Status       string    `json:"status"`
-	GrandTotal   int64     `json:"grand_total"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Number        string    `json:"number"`
+	CustomerID    string    `json:"customer_id"`
+	CustomerName  string    `json:"customer_name"`
+	Status        string    `json:"status"`
+	GrandTotal    int64     `json:"grand_total"`
+	ExpectedTotal *int64    `json:"expected_total,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type QuotationListResponse struct {
@@ -27,6 +28,8 @@ type QuotationListFilterDTO struct {
 	Search     *string `json:"search"`
 	StartDate  *string `json:"start_date"`
 	EndDate    *string `json:"end_date"`
+	MinAmount  *int64  `json:"min_amount"`
+	MaxAmount  *int64  `json:"max_amount"`
 	SortBy     *string `json:"sort_by"`
 	SortDesc   bool    `json:"sort_desc"`
 }

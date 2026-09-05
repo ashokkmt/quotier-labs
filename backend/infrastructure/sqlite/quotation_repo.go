@@ -27,6 +27,7 @@ type QuotationModel struct {
 	SGSTTotal        int64
 	IGSTTotal        int64
 	GrandTotal       int64
+	ExpectedTotal    *int64
 	ValidUntil       *time.Time
 	Notes            *string
 	SchemaVersion    int
@@ -82,6 +83,7 @@ func toDomainQuotation(m *QuotationModel) *domain.Quotation {
 		SGSTTotal:        m.SGSTTotal,
 		IGSTTotal:        m.IGSTTotal,
 		GrandTotal:       m.GrandTotal,
+		ExpectedTotal:    m.ExpectedTotal,
 		ValidUntil:       m.ValidUntil,
 		Notes:            m.Notes,
 		SchemaVersion:    m.SchemaVersion,
@@ -118,6 +120,7 @@ func fromDomainQuotation(d *domain.Quotation) *QuotationModel {
 		SGSTTotal:        d.SGSTTotal,
 		IGSTTotal:        d.IGSTTotal,
 		GrandTotal:       d.GrandTotal,
+		ExpectedTotal:    d.ExpectedTotal,
 		ValidUntil:       d.ValidUntil,
 		Notes:            d.Notes,
 		SchemaVersion:    d.SchemaVersion,
@@ -150,7 +153,30 @@ func (r *quotationRepository) Create(ctx context.Context, quotation *domain.Quot
 func (r *quotationRepository) Update(ctx context.Context, quotation *domain.Quotation) error {
 	db := GetDB(ctx, r.db)
 	model := fromDomainQuotation(quotation)
-	res := db.Model(model).Where("id = ? AND company_id = ? AND version = ?", model.ID, model.CompanyID, model.Version).Updates(model)
+	res := db.Model(&QuotationModel{}).Where("id = ? AND company_id = ? AND version = ?", model.ID, model.CompanyID, model.Version).Updates(map[string]interface{}{
+		"template_id":       model.TemplateID,
+		"customer_id":       model.CustomerID,
+		"number":            model.Number,
+		"status":            model.Status,
+		"document":          model.Document,
+		"company_snapshot":  model.CompanySnapshot,
+		"customer_snapshot": model.CustomerSnapshot,
+		"template_snapshot": model.TemplateSnapshot,
+		"subtotal":          model.Subtotal,
+		"discount_total":    model.DiscountTotal,
+		"taxable_total":     model.TaxableTotal,
+		"cgst_total":        model.CGSTTotal,
+		"sgst_total":        model.SGSTTotal,
+		"igst_total":        model.IGSTTotal,
+		"grand_total":       model.GrandTotal,
+		"expected_total":    model.ExpectedTotal,
+		"valid_until":       model.ValidUntil,
+		"notes":             model.Notes,
+		"schema_version":    model.SchemaVersion,
+		"updated_at":        model.UpdatedAt,
+		"updated_by":        model.UpdatedBy,
+		"version":           gorm.Expr("version + 1"),
+	})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -173,7 +199,7 @@ func (r *quotationRepository) GetByID(ctx context.Context, id, companyID string)
 	return toDomainQuotation(&model), nil
 }
 
-func (r *quotationRepository) applyFilter(query *gorm.DB, filter domain.QuotationListFilter) *gorm.DB {
+func (r *quotationRepository) applyFilter(query *gorm.DB, companyID string, filter domain.QuotationListFilter) *gorm.DB {
 	if filter.Status != nil && *filter.Status != "" && *filter.Status != "ALL" {
 		query = query.Where("status = ?", *filter.Status)
 	}
@@ -189,13 +215,19 @@ func (r *quotationRepository) applyFilter(query *gorm.DB, filter domain.Quotatio
 		// Since we join or want customer name, let's just do an IN query or like on number.
 		// We'll use a subquery for customer name or match number.
 		searchTerm := "%" + *filter.Search + "%"
-		query = query.Where("number LIKE ? OR customer_id IN (SELECT id FROM customers WHERE name LIKE ?)", searchTerm, searchTerm)
+		query = query.Where("number LIKE ? OR customer_id IN (SELECT id FROM customers WHERE company_id = ? AND name LIKE ?)", searchTerm, companyID, searchTerm)
 	}
 	if filter.StartDate != nil {
 		query = query.Where("created_at >= ?", *filter.StartDate)
 	}
 	if filter.EndDate != nil {
 		query = query.Where("created_at <= ?", *filter.EndDate)
+	}
+	if filter.MinAmount != nil {
+		query = query.Where("COALESCE(expected_total, grand_total) >= ?", *filter.MinAmount)
+	}
+	if filter.MaxAmount != nil {
+		query = query.Where("COALESCE(expected_total, grand_total) <= ?", *filter.MaxAmount)
 	}
 	return query
 }
@@ -205,7 +237,7 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 	var models []QuotationModel
 	query := db.Where("company_id = ?", companyID)
 
-	query = r.applyFilter(query, filter)
+	query = r.applyFilter(query, companyID, filter)
 
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
@@ -226,7 +258,7 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 		case "number":
 			order = "number " + dir
 		case "amount":
-			order = "grand_total " + dir
+			order = "COALESCE(expected_total, grand_total) " + dir
 		case "status":
 			order = "status " + dir
 		}
@@ -246,7 +278,7 @@ func (r *quotationRepository) List(ctx context.Context, companyID string, filter
 func (r *quotationRepository) Count(ctx context.Context, companyID string, filter domain.QuotationListFilter) (int, error) {
 	db := GetDB(ctx, r.db)
 	query := db.Model(&QuotationModel{}).Where("company_id = ?", companyID)
-	query = r.applyFilter(query, filter)
+	query = r.applyFilter(query, companyID, filter)
 
 	var count int64
 	if err := query.Count(&count).Error; err != nil {

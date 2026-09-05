@@ -8,6 +8,15 @@ import (
 )
 
 func (s *Service) ListQuotations(ctx context.Context, companyID string, filterDTO QuotationListFilterDTO) (*QuotationListResponse, error) {
+	if filterDTO.MinAmount != nil && *filterDTO.MinAmount < 0 {
+		return nil, &domain.ValidationError{Field: "min_amount", Message: "minimum amount cannot be negative"}
+	}
+	if filterDTO.MaxAmount != nil && *filterDTO.MaxAmount < 0 {
+		return nil, &domain.ValidationError{Field: "max_amount", Message: "maximum amount cannot be negative"}
+	}
+	if filterDTO.MinAmount != nil && filterDTO.MaxAmount != nil && *filterDTO.MinAmount > *filterDTO.MaxAmount {
+		return nil, &domain.ValidationError{Field: "amount", Message: "minimum amount cannot exceed maximum amount"}
+	}
 	filter := domain.QuotationListFilter{
 		Limit:      filterDTO.Limit,
 		Offset:     filterDTO.Offset,
@@ -17,6 +26,8 @@ func (s *Service) ListQuotations(ctx context.Context, companyID string, filterDT
 		Search:     filterDTO.Search,
 		SortBy:     filterDTO.SortBy,
 		SortDesc:   filterDTO.SortDesc,
+		MinAmount:  filterDTO.MinAmount,
+		MaxAmount:  filterDTO.MaxAmount,
 	}
 
 	if filterDTO.StartDate != nil {
@@ -45,7 +56,7 @@ func (s *Service) ListQuotations(ctx context.Context, companyID string, filterDT
 	customerMap := make(map[string]string)
 	items := make([]QuotationSummaryDTO, len(quotations))
 	for i, q := range quotations {
-		custName := "Unknown Customer"
+		custName := "No customer"
 		if q.CustomerID != "" {
 			if name, ok := customerMap[q.CustomerID]; ok {
 				custName = name
@@ -59,14 +70,15 @@ func (s *Service) ListQuotations(ctx context.Context, companyID string, filterDT
 		}
 
 		items[i] = QuotationSummaryDTO{
-			ID:           q.ID,
-			Number:       q.Number,
-			CustomerID:   q.CustomerID,
-			CustomerName: custName,
-			Status:       q.Status,
-			GrandTotal:   q.GrandTotal,
-			CreatedAt:    q.CreatedAt,
-			UpdatedAt:    q.UpdatedAt,
+			ID:            q.ID,
+			Number:        q.Number,
+			CustomerID:    q.CustomerID,
+			CustomerName:  custName,
+			Status:        q.Status,
+			GrandTotal:    q.GrandTotal,
+			ExpectedTotal: q.ExpectedTotal,
+			CreatedAt:     q.CreatedAt,
+			UpdatedAt:     q.UpdatedAt,
 		}
 	}
 

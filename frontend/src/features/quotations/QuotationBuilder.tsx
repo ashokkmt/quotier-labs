@@ -15,6 +15,7 @@ import {
   GetQuotation,
   SaveQuotationDocument,
   UpdateQuotationCustomer,
+  UpdateQuotationExpectedTotal,
   SaveAsTemplate,
 } from '../../../wailsjs/go/wails/QuotationHandler'
 import { GetDocumentLayoutDiagnostics } from '../../../wailsjs/go/wails/DocumentHandler'
@@ -28,10 +29,7 @@ import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { UndoRedoControls } from './components/UndoRedoControls'
 import { SaveIndicator } from './components/SaveIndicator'
 import { useFrontendDiagnostics } from '../../shared/diagnostics/useFrontendDiagnostics'
-import {
-  FinalizeQuotation,
-  UpdateQuotationStatus,
-} from '../../../wailsjs/go/wails/QuotationHandler'
+import { FinalizeQuotation } from '../../../wailsjs/go/wails/QuotationHandler'
 
 export function QuotationBuilder({
   quotationId,
@@ -154,21 +152,7 @@ export function QuotationBuilder({
     }
   }
 
-  const handleStatusChange = async (newStatus: string) => {
-    try {
-      const res = await UpdateQuotationStatus(quotationId, newStatus)
-      setQuotation(res)
-      toast({ title: `Status updated to ${newStatus}` })
-    } catch (err: any) {
-      toast({
-        title: 'Failed to update status',
-        description: err.toString(),
-        variant: 'destructive',
-      })
-    }
-  }
-
-  const { saveState, lastSaved, forceSave } = useAutosave(
+  const { saveState, lastSaved } = useAutosave(
     document,
     dirty,
     executeSave,
@@ -187,6 +171,22 @@ export function QuotationBuilder({
     } catch (err: any) {
       toast({
         title: 'Failed to update customer',
+        description: err.toString(),
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleExpectedTotalChange = async (expectedTotal: number | null) => {
+    try {
+      const res = await UpdateQuotationExpectedTotal({
+        id: quotationId,
+        expected_total: expectedTotal,
+      } as any)
+      setQuotation(res)
+    } catch (err: any) {
+      toast({
+        title: 'Failed to save expected total',
         description: err.toString(),
         variant: 'destructive',
       })
@@ -244,11 +244,10 @@ export function QuotationBuilder({
       <BuilderHeader
         quotation={quotation}
         onBack={() => void handleBack()}
-        onSave={forceSave}
-        saving={saveState === 'Saving…'}
         readOnly={readOnly}
         onToggleReadOnly={handlePreviewMode}
         onCustomerChange={handleCustomerChange}
+        onExpectedTotalChange={handleExpectedTotalChange}
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={
           <UndoRedoControls
@@ -259,7 +258,6 @@ export function QuotationBuilder({
           />
         }
         onFinalize={() => setFinalizeDialogOpen(true)}
-        onStatusChange={handleStatusChange}
         onSaveAsTemplate={() => {
           setTemplateName(`${quotation.number || 'Quotation'} template`)
           setTemplateDialogOpen(true)

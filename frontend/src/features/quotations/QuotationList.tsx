@@ -33,6 +33,8 @@ export function QuotationList() {
   const [status, setStatus] = useState('ALL')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
   const [sortBy, setSortBy] = useState('date')
   const [sortDesc, setSortDesc] = useState(true)
 
@@ -43,6 +45,8 @@ export function QuotationList() {
     setLoading(true)
     try {
       const offset = (page - 1) * limit
+      const endOfSelectedDate = endDate ? new Date(endDate) : null
+      endOfSelectedDate?.setHours(23, 59, 59, 999)
       const data = await ListQuotations({
         limit,
         offset,
@@ -53,7 +57,9 @@ export function QuotationList() {
         customer_id: undefined,
         template_id: undefined,
         start_date: startDate ? new Date(startDate).toISOString() : undefined,
-        end_date: endDate ? new Date(endDate).toISOString() : undefined,
+        end_date: endOfSelectedDate?.toISOString(),
+        min_amount: minAmount ? Math.round(Number(minAmount) * 100) : undefined,
+        max_amount: maxAmount ? Math.round(Number(maxAmount) * 100) : undefined,
       })
       setQuotations(data.items || [])
       setTotal(data.total || 0)
@@ -75,7 +81,7 @@ export function QuotationList() {
     }, 300)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, search, status, sortBy, sortDesc, startDate, endDate])
+  }, [page, limit, search, status, sortBy, sortDesc, startDate, endDate, minAmount, maxAmount])
 
   const handleDuplicate = async (id: string) => {
     try {
@@ -131,17 +137,26 @@ export function QuotationList() {
         </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-4">
+      <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_minmax(18rem,auto)]">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by number or customer..."
             className="pl-8"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
           />
         </div>
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={status}
+          onValueChange={(value) => {
+            setStatus(value)
+            setPage(1)
+          }}
+        >
           <SelectTrigger className="w-full md:w-[180px]">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
@@ -150,8 +165,6 @@ export function QuotationList() {
             <SelectItem value="DRAFT">Draft</SelectItem>
             <SelectItem value="FINALIZED">Finalized</SelectItem>
             <SelectItem value="SENT">Sent</SelectItem>
-            <SelectItem value="ACCEPTED">Accepted</SelectItem>
-            <SelectItem value="REJECTED">Rejected</SelectItem>
             <SelectItem value="EXPIRED">Expired</SelectItem>
           </SelectContent>
         </Select>
@@ -160,14 +173,58 @@ export function QuotationList() {
             type="date"
             className="w-full md:w-[140px]"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            aria-label="Quotation date from"
+            onChange={(e) => {
+              setStartDate(e.target.value)
+              setPage(1)
+            }}
           />
           <span className="text-muted-foreground">-</span>
           <Input
             type="date"
             className="w-full md:w-[140px]"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            aria-label="Quotation date to"
+            onChange={(e) => {
+              setEndDate(e.target.value)
+              setPage(1)
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[auto_1fr_1fr] sm:items-center">
+        <span className="text-sm font-medium">Amount</span>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            ₹
+          </span>
+          <Input
+            aria-label="Minimum quotation amount"
+            inputMode="decimal"
+            placeholder="Minimum"
+            className="pl-7"
+            value={minAmount}
+            onChange={(event) => {
+              setMinAmount(event.target.value.replace(/[^0-9.]/g, ''))
+              setPage(1)
+            }}
+          />
+        </div>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            ₹
+          </span>
+          <Input
+            aria-label="Maximum quotation amount"
+            inputMode="decimal"
+            placeholder="Maximum"
+            className="pl-7"
+            value={maxAmount}
+            onChange={(event) => {
+              setMaxAmount(event.target.value.replace(/[^0-9.]/g, ''))
+              setPage(1)
+            }}
           />
         </div>
       </div>
@@ -181,11 +238,11 @@ export function QuotationList() {
           <div className="rounded-lg border-2 border-dashed p-6 text-center sm:p-12">
             <h3 className="text-lg font-semibold mb-2">No quotations found</h3>
             <p className="text-muted-foreground mb-4">
-              {search || status !== 'ALL'
+              {search || status !== 'ALL' || startDate || endDate || minAmount || maxAmount
                 ? 'Try adjusting your filters.'
                 : 'Create your first quotation from scratch or a template.'}
             </p>
-            {!(search || status !== 'ALL') && (
+            {!(search || status !== 'ALL' || startDate || endDate || minAmount || maxAmount) && (
               <Button onClick={() => navigate('/quotations/new')}>New Quotation</Button>
             )}
           </div>
@@ -249,7 +306,7 @@ export function QuotationList() {
                       <StatusBadge status={q.status} />
                     </td>
                     <td className="px-4 py-3 font-medium">
-                      {(q.grand_total / 100).toLocaleString('en-IN', {
+                      {((q.expected_total ?? q.grand_total) / 100).toLocaleString('en-IN', {
                         style: 'currency',
                         currency: 'INR',
                       })}

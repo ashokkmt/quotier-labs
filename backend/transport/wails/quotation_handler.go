@@ -61,6 +61,14 @@ func (h *QuotationHandler) UpdateQuotationCustomer(input quotation.QuotationUpda
 	return h.quotationSvc.UpdateQuotationCustomer(h.ctx, compID, input)
 }
 
+func (h *QuotationHandler) UpdateQuotationExpectedTotal(input quotation.QuotationUpdateExpectedTotalDTO) (*quotation.QuotationDTO, error) {
+	compID, err := h.getCompanyID()
+	if err != nil {
+		return nil, err
+	}
+	return h.quotationSvc.UpdateQuotationExpectedTotal(h.ctx, compID, input)
+}
+
 func (h *QuotationHandler) GetQuotation(id string) (*quotation.QuotationDTO, error) {
 	compID, err := h.getCompanyID()
 	if err != nil {

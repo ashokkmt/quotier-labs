@@ -26,4 +26,6 @@ export function Startup(arg1:context.Context):Promise<void>;
 
 export function UpdateQuotationCustomer(arg1:quotation.QuotationUpdateCustomerDTO):Promise<quotation.QuotationDTO>;
 
+export function UpdateQuotationExpectedTotal(arg1:quotation.QuotationUpdateExpectedTotalDTO):Promise<quotation.QuotationDTO>;
+
 export function UpdateQuotationStatus(arg1:string,arg2:string):Promise<quotation.QuotationDTO>;

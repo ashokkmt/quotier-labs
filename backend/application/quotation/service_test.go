@@ -107,6 +107,40 @@ func TestQuotationService(t *testing.T) {
 	if updatedCust.CustomerID != "cust-2" {
 		t.Fatalf("expected customer updated to cust-2")
 	}
+
+	// 4. Optional expected total is independent of the document and customer.
+	expectedTotal := int64(125050)
+	updatedAmount, err := svc.UpdateQuotationExpectedTotal(ctx, "comp-1", quotation.QuotationUpdateExpectedTotalDTO{
+		ID: q.ID, ExpectedTotal: &expectedTotal,
+	})
+	if err != nil || updatedAmount.ExpectedTotal == nil || *updatedAmount.ExpectedTotal != expectedTotal {
+		t.Fatalf("failed to update expected total: %+v err=%v", updatedAmount, err)
+	}
+	reloaded, err := svc.GetQuotation(ctx, "comp-1", q.ID)
+	if err != nil || reloaded.ExpectedTotal == nil || *reloaded.ExpectedTotal != expectedTotal {
+		t.Fatalf("expected total was not persisted: %+v err=%v", reloaded, err)
+	}
+	minAmount, maxAmount := int64(125000), int64(126000)
+	listed, err := svc.ListQuotations(ctx, "comp-1", quotation.QuotationListFilterDTO{MinAmount: &minAmount, MaxAmount: &maxAmount})
+	if err != nil || listed.Total != 1 || listed.Items[0].ExpectedTotal == nil || *listed.Items[0].ExpectedTotal != expectedTotal {
+		t.Fatalf("amount range did not return expected quotation: %+v err=%v", listed, err)
+	}
+	tooHigh := int64(126001)
+	listed, err = svc.ListQuotations(ctx, "comp-1", quotation.QuotationListFilterDTO{MinAmount: &tooHigh})
+	if err != nil || listed.Total != 0 {
+		t.Fatalf("amount range included out-of-range quotation: %+v err=%v", listed, err)
+	}
+	if _, err := svc.UpdateQuotationExpectedTotal(ctx, "comp-1", quotation.QuotationUpdateExpectedTotalDTO{ID: q.ID, ExpectedTotal: func() *int64 { value := int64(-1); return &value }()}); err == nil {
+		t.Fatal("negative expected total should be rejected")
+	}
+	cleared, err := svc.UpdateQuotationExpectedTotal(ctx, "comp-1", quotation.QuotationUpdateExpectedTotalDTO{ID: q.ID})
+	if err != nil || cleared.ExpectedTotal != nil {
+		t.Fatalf("expected total was not cleared: %+v err=%v", cleared, err)
+	}
+	reloaded, err = svc.GetQuotation(ctx, "comp-1", q.ID)
+	if err != nil || reloaded.ExpectedTotal != nil {
+		t.Fatalf("cleared expected total remained in persistence: %+v err=%v", reloaded, err)
+	}
 }
 
 func TestCreateQuotationDraftFromScratch(t *testing.T) {

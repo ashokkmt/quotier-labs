@@ -13,24 +13,31 @@ func NewPrintService() *PrintService {
 }
 
 func (s *PrintService) PrintPDF(filePath string) error {
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "windows":
-		// The script is fixed; the untrusted path is a separate argument.
-		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "Start-Process -LiteralPath $args[0] -Verb Print", filePath)
-	case "darwin":
-		// macOS: open with Preview or use lpr if silent printing is acceptable.
-		// "open -a Preview document.pdf" opens it. We'll use "lpr" for now or just "open".
-		// Actually, to show print dialog on Mac from CLI is tricky,
-		// but `open` followed by instructing the user, or `lpr` to default printer.
-		// A common workaround is opening the file, but let's try `lp`.
-		cmd = exec.Command("open", filePath)
-	case "linux":
-		cmd = exec.Command("xdg-open", filePath)
-	default:
-		return fmt.Errorf("unsupported platform")
+	cmd, err := printCommand(runtime.GOOS, filePath)
+	if err != nil {
+		return err
 	}
-
 	return cmd.Start() // non-blocking
+}
+
+func printCommand(goos, filePath string) (*exec.Cmd, error) {
+	switch goos {
+	case "windows":
+		return exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "Start-Process -LiteralPath $args[0] -Verb Print", filePath), nil
+	case "darwin":
+		// The PDF path is passed as argv, never interpolated into AppleScript source.
+		const script = `on run argv
+set pdfFile to POSIX file (item 1 of argv)
+tell application "Preview"
+  activate
+  open pdfFile
+  print document 1 with print dialog
+end tell
+end run`
+		return exec.Command("osascript", "-e", script, filePath), nil
+	case "linux":
+		return exec.Command("xdg-open", filePath), nil
+	default:
+		return nil, fmt.Errorf("unsupported platform")
+	}
 }

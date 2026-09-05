@@ -130,7 +130,27 @@ func (r *companyRepository) Create(ctx context.Context, company *domain.Company)
 func (r *companyRepository) Update(ctx context.Context, company *domain.Company) error {
 	db := GetDB(ctx, r.db)
 	model := fromDomainCompany(company)
-	res := db.Model(model).Where("id = ? AND version = ?", model.ID, model.Version).Updates(model)
+	res := db.Model(&CompanyModel{}).Where("id = ? AND version = ?", model.ID, model.Version).Updates(map[string]interface{}{
+		"name":          model.Name,
+		"legal_name":    model.LegalName,
+		"tax_id":        model.TaxID,
+		"address":       model.Address,
+		"phone":         model.Phone,
+		"email":         model.Email,
+		"website":       model.Website,
+		"logo_url":      model.LogoURL,
+		"state":         model.State,
+		"gstin":         model.GSTIN,
+		"pan":           model.PAN,
+		"bank_details":  model.BankDetails,
+		"signature_url": model.SignatureURL,
+		"stamp_url":     model.StampURL,
+		"currency":      model.Currency,
+		"is_active":     model.IsActive,
+		"updated_at":    model.UpdatedAt,
+		"updated_by":    model.UpdatedBy,
+		"version":       gorm.Expr("version + 1"),
+	})
 	if res.Error != nil {
 		return res.Error
 	}

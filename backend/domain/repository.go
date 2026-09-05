@@ -51,6 +51,8 @@ type QuotationListFilter struct {
 	Search     *string
 	StartDate  *time.Time
 	EndDate    *time.Time
+	MinAmount  *int64
+	MaxAmount  *int64
 	SortBy     *string
 	SortDesc   bool
 }

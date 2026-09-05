@@ -1117,38 +1117,27 @@ function ShapeFormattingStrip({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <label className="flex h-7 shrink-0 items-center gap-1 rounded border px-1 text-[11px] text-muted-foreground">
-        Stroke{' '}
-        <input
-          aria-label="Stroke width in points"
-          className="w-10 bg-transparent text-center text-xs text-foreground outline-none"
-          type="number"
-          min={0.25}
-          max={12}
-          step={0.25}
-          value={Number(props.strokeWidth ?? 1)}
-          onChange={(event) =>
-            onUpdate({ strokeWidth: Math.min(12, Math.max(0.25, Number(event.target.value) || 1)) })
-          }
-        />
-      </label>
+      <ToolbarNumberStepper
+        key={`stroke-${props.strokeWidth ?? 1}`}
+        label="Stroke"
+        ariaLabel="Stroke width in points"
+        value={Number(props.strokeWidth ?? 1)}
+        min={0.25}
+        max={12}
+        step={0.25}
+        onCommit={(strokeWidth) => onUpdate({ strokeWidth })}
+      />
       {props.variant === 'rect' && (
-        <label className="flex h-7 shrink-0 items-center gap-1 rounded border px-1 text-[11px] text-muted-foreground">
-          Radius{' '}
-          <input
-            aria-label="Corner radius in points"
-            className="w-10 bg-transparent text-center text-xs text-foreground outline-none"
-            type="number"
-            min={0}
-            max={200}
-            value={Number(props.cornerRadius ?? 0)}
-            onChange={(event) =>
-              onUpdate({
-                cornerRadius: Math.min(200, Math.max(0, Number(event.target.value) || 0)),
-              })
-            }
-          />
-        </label>
+        <ToolbarNumberStepper
+          key={`radius-${props.cornerRadius ?? 0}`}
+          label="Radius"
+          ariaLabel="Corner radius in points"
+          value={Number(props.cornerRadius ?? 0)}
+          min={0}
+          max={200}
+          step={1}
+          onCommit={(cornerRadius) => onUpdate({ cornerRadius })}
+        />
       )}
       <button
         type="button"
@@ -1172,6 +1161,74 @@ function ShapeFormattingStrip({
           <MenuItems items={more} />
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+  )
+}
+
+function ToolbarNumberStepper({
+  label,
+  ariaLabel,
+  value,
+  min,
+  max,
+  step,
+  onCommit,
+}: {
+  label: string
+  ariaLabel: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onCommit: (value: number) => void
+}) {
+  const formatted = Number(value.toFixed(2)).toString()
+  const [draft, setDraft] = useState(formatted)
+  const commitValue = (candidate: number) => {
+    const next = Math.min(max, Math.max(min, Number.isFinite(candidate) ? candidate : value))
+    const rounded = Number(next.toFixed(2))
+    setDraft(String(rounded))
+    if (rounded !== value) onCommit(rounded)
+  }
+  return (
+    <div
+      className="flex h-7 shrink-0 items-center rounded-md border bg-background"
+      aria-label={label}
+    >
+      <span className="px-1.5 text-[11px] text-muted-foreground">{label}</span>
+      <button
+        type="button"
+        aria-label={`Decrease ${label.toLowerCase()}`}
+        className="grid h-full w-7 place-items-center border-l hover:bg-accent"
+        onClick={() => commitValue(value - step)}
+      >
+        −
+      </button>
+      <input
+        aria-label={ariaLabel}
+        inputMode="decimal"
+        type="text"
+        className="h-full w-10 border-l bg-transparent text-center text-xs tabular-nums text-foreground outline-none"
+        value={draft}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => commitValue(Number(draft))}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+          if (event.key === 'Escape') {
+            setDraft(formatted)
+            event.currentTarget.blur()
+          }
+        }}
+      />
+      <button
+        type="button"
+        aria-label={`Increase ${label.toLowerCase()}`}
+        className="grid h-full w-7 place-items-center rounded-r-md border-l hover:bg-accent"
+        onClick={() => commitValue(value + step)}
+      >
+        +
+      </button>
     </div>
   )
 }

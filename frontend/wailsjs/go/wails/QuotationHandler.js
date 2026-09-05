@@ -46,6 +46,10 @@ export function UpdateQuotationCustomer(arg1) {
   return window['go']['wails']['QuotationHandler']['UpdateQuotationCustomer'](arg1);
 }
 
+export function UpdateQuotationExpectedTotal(arg1) {
+  return window['go']['wails']['QuotationHandler']['UpdateQuotationExpectedTotal'](arg1);
+}
+
 export function UpdateQuotationStatus(arg1, arg2) {
   return window['go']['wails']['QuotationHandler']['UpdateQuotationStatus'](arg1, arg2);
 }

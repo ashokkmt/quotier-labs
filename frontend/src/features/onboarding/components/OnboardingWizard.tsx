@@ -24,6 +24,7 @@ import { StepDocumentSettings } from '../steps/StepDocumentSettings'
 import { StepBackup } from '../steps/StepBackup'
 
 import { CompleteOnboarding } from '../../../../wailsjs/go/wails/CompanyHandler'
+import { toCompanyPayload } from '../../company/companyPayload'
 
 const steps = [
   { id: 'welcome', title: 'Welcome to Quotier Labs', component: StepWelcome },
@@ -90,9 +91,7 @@ export function OnboardingWizard() {
   const onSubmit = async (data: OnboardingData) => {
     setIsSubmitting(true)
     try {
-      await CompleteOnboarding({
-        ...data,
-      } as any)
+      await CompleteOnboarding(toCompanyPayload(data) as any)
       navigate('/')
     } catch (error) {
       console.error(error)

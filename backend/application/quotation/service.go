@@ -79,6 +79,7 @@ func mapToDTO(q *domain.Quotation) QuotationDTO {
 		SGSTTotal:     q.SGSTTotal,
 		IGSTTotal:     q.IGSTTotal,
 		GrandTotal:    q.GrandTotal,
+		ExpectedTotal: q.ExpectedTotal,
 		ValidUntil:    q.ValidUntil,
 		Notes:         q.Notes,
 		CreatedAt:     q.CreatedAt,
@@ -336,6 +337,36 @@ func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string,
 		return nil, err
 	}
 
+	dto := mapToDTO(q)
+	return &dto, nil
+}
+
+func (s *Service) UpdateQuotationExpectedTotal(ctx context.Context, companyID string, input QuotationUpdateExpectedTotalDTO) (*QuotationDTO, error) {
+	txCtx, err := s.txManager.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = s.txManager.Rollback(txCtx) }()
+
+	q, err := s.repo.GetByID(txCtx, input.ID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if q.Status != string(domain_quotation.StatusDraft) {
+		return nil, ErrQuotationNotDraft
+	}
+	if input.ExpectedTotal != nil && *input.ExpectedTotal < 0 {
+		return nil, &domain.ValidationError{Field: "expected_total", Message: "expected total cannot be negative"}
+	}
+
+	q.ExpectedTotal = input.ExpectedTotal
+	q.UpdatedAt = time.Now().UTC()
+	if err := s.repo.Update(txCtx, q); err != nil {
+		return nil, err
+	}
+	if err := s.txManager.Commit(txCtx); err != nil {
+		return nil, err
+	}
 	dto := mapToDTO(q)
 	return &dto, nil
 }

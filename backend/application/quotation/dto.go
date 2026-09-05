@@ -18,6 +18,7 @@ type QuotationDTO struct {
 	SGSTTotal     int64      `json:"sgst_total"`
 	IGSTTotal     int64      `json:"igst_total"`
 	GrandTotal    int64      `json:"grand_total"`
+	ExpectedTotal *int64     `json:"expected_total,omitempty"`
 	ValidUntil    *time.Time `json:"valid_until,omitempty"`
 	Notes         *string    `json:"notes,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -42,4 +43,9 @@ type QuotationUpdateDocumentDTO struct {
 type QuotationUpdateCustomerDTO struct {
 	ID         string `json:"id"`
 	CustomerID string `json:"customer_id"`
+}
+
+type QuotationUpdateExpectedTotalDTO struct {
+	ID            string `json:"id"`
+	ExpectedTotal *int64 `json:"expected_total"`
 }

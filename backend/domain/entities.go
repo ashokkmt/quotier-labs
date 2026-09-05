@@ -95,6 +95,7 @@ type Quotation struct {
 	SGSTTotal        int64
 	IGSTTotal        int64
 	GrandTotal       int64
+	ExpectedTotal    *int64
 	ValidUntil       *time.Time
 	Notes            *string
 	SchemaVersion    int

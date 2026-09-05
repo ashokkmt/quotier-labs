@@ -44,6 +44,7 @@ func (s *Service) DuplicateQuotation(ctx context.Context, companyID, quotationID
 		SGSTTotal:     q.SGSTTotal,
 		IGSTTotal:     q.IGSTTotal,
 		GrandTotal:    q.GrandTotal,
+		ExpectedTotal: q.ExpectedTotal,
 		AuditMetadata: domain.AuditMetadata{
 			CreatedAt: time.Now().UTC(),
 			UpdatedAt: time.Now().UTC(),
