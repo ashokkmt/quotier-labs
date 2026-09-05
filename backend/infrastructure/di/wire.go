@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	backup_app "quotierlabs/backend/application/backup"
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
 	"quotierlabs/backend/application/document"
@@ -51,8 +52,15 @@ func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
 	return recovery.NewStore(paths.RecoveryRoot())
 }
 
+// ProvideRecorder adapts the infrastructure diagnostics manager to the
+// application-facing Recorder boundary consumed by the application services.
+func ProvideRecorder(manager *diagnostics.Manager) []appdiagnostics.Recorder {
+	return []appdiagnostics.Recorder{manager}
+}
+
 var InfrastructureSet = wire.NewSet(
 	id.NewULIDGenerator,
+	logging.NewSink,
 	logging.NewLogger,
 	diagnostics.NewManager,
 	ProvidePreferences,
@@ -74,6 +82,7 @@ var InfrastructureSet = wire.NewSet(
 	os_infra.NewShareService,
 	backup_infra.NewSQLiteBackupService,
 	wire.Bind(new(backup_app.BackupRepo), new(*backup_infra.SQLiteBackupService)),
+	ProvideRecorder,
 	export.NewCSVExportService,
 	csvimport.NewCSVImportService,
 	wire.Bind(new(document.PrintService), new(*os_infra.PrintService)),
@@ -109,6 +118,7 @@ var TransportSet = wire.NewSet(
 
 type App struct {
 	Logger      *zap.Logger
+	LogSink     *logging.Sink
 	IDGenerator domain.IDGenerator
 	TxManager   domain.TxManager
 	Companies   domain.CompanyRepository

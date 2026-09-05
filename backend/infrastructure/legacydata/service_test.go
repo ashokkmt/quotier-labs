@@ -34,6 +34,9 @@ func TestDiscoverImportAndSkipLegacyDevelopmentDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Release the underlying SQLite handle before TempDir cleanup; Windows
+	// cannot remove a database file while a connection is open.
+	defer func() { sqlDB, _ := targetDB.DB(); _ = sqlDB.Close() }()
 	service := NewService(targetDB, paths, appidentity.BuildInfo{Channel: "development"})
 	candidates, err := service.Discover(context.Background())
 	if err != nil {
@@ -50,6 +53,7 @@ func TestDiscoverImportAndSkipLegacyDevelopmentDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { sqlDB, _ := imported.DB(); _ = sqlDB.Close() }()
 	var count int64
 	if err := imported.Table("companies").Where("id = ?", "legacy-company").Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("imported company count=%d err=%v", count, err)

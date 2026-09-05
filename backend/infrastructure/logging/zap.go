@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,18 +18,43 @@ const (
 	maxLogFiles = 5
 )
 
-type rotatingSink struct {
+// Sink is the bounded, private, self-rotating log file writer backing the
+// production logger. It implements io.Writer and zapcore.WriteSyncer; Close
+// releases the file handle and must be called once at application shutdown.
+type Sink struct {
 	mu   sync.Mutex
 	path string
 	file *os.File
 	size int64
 }
 
-func openRotatingSink(path string) (*rotatingSink, error) {
+var errSinkClosed = errors.New("log sink is closed")
+
+// openPrivateLogFile opens (or reopens) a log file enforcing private access:
+// POSIX mode 0600 at creation, plus an explicit owner-only ACL on Windows,
+// where mode bits are not honored. Pre-existing files are tightened too, so
+// files created by older versions with looser modes are restricted on open.
+func openPrivateLogFile(path string, flags int) (*os.File, error) {
+	f, err := os.OpenFile(path, flags, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.Chmod(0600); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := protectPrivateFile(path); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+func openSink(path string) (*Sink, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := openPrivateLogFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY)
 	if err != nil {
 		return nil, err
 	}
@@ -37,12 +63,15 @@ func openRotatingSink(path string) (*rotatingSink, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	return &rotatingSink{path: path, file: f, size: info.Size()}, nil
+	return &Sink{path: path, file: f, size: info.Size()}, nil
 }
 
-func (s *rotatingSink) Write(p []byte) (int, error) {
+func (s *Sink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.file == nil {
+		return 0, errSinkClosed
+	}
 	if s.size+int64(len(p)) > maxLogBytes {
 		if err := s.rotate(); err != nil {
 			return 0, err
@@ -53,13 +82,30 @@ func (s *rotatingSink) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (s *rotatingSink) Sync() error {
+func (s *Sink) Sync() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.file == nil {
+		return nil
+	}
 	return s.file.Sync()
 }
 
-func (s *rotatingSink) rotate() error {
+// Close releases the log file handle. It is safe to call more than once and
+// after Close, Sync keeps succeeding (a no-op) so deferred shutdown paths do
+// not report spurious errors.
+func (s *Sink) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file == nil {
+		return nil
+	}
+	err := s.file.Close()
+	s.file = nil
+	return err
+}
+
+func (s *Sink) rotate() error {
 	if err := s.file.Close(); err != nil {
 		return err
 	}
@@ -68,26 +114,30 @@ func (s *rotatingSink) rotate() error {
 		_ = os.Rename(fmt.Sprintf("%s.%d", s.path, i), fmt.Sprintf("%s.%d", s.path, i+1))
 	}
 	_ = os.Rename(s.path, s.path+".1")
-	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	f, err := openPrivateLogFile(s.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY)
 	if err != nil {
+		s.file = nil
 		return err
 	}
 	s.file, s.size = f, 0
 	return nil
 }
 
-// NewLogger writes bounded production JSON logs to the resolved log root.
+// NewSink opens the bounded, private, rotating log file at the resolved log
+// root. The returned Sink owns the log file handle; call Close on it once at
+// application shutdown after the final Sync.
+func NewSink(paths apppaths.Paths) (*Sink, error) {
+	return openSink(paths.LogPath())
+}
+
+// NewLogger writes bounded production JSON logs to the given sink.
 // Development builds additionally emit readable DEBUG output to the terminal.
-func NewLogger(paths apppaths.Paths, build appidentity.BuildInfo) (*zap.Logger, error) {
+func NewLogger(sink *Sink, build appidentity.BuildInfo) (*zap.Logger, error) {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey: "timestamp", LevelKey: "level", NameKey: "logger", CallerKey: "caller",
 		MessageKey: "msg", StacktraceKey: "stacktrace", LineEnding: zapcore.DefaultLineEnding,
 		EncodeLevel: zapcore.LowercaseLevelEncoder, EncodeTime: zapcore.ISO8601TimeEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder, EncodeCaller: zapcore.ShortCallerEncoder,
-	}
-	sink, err := openRotatingSink(paths.LogPath())
-	if err != nil {
-		return nil, err
 	}
 	cores := []zapcore.Core{
 		zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), zapcore.AddSync(sink), zap.InfoLevel),

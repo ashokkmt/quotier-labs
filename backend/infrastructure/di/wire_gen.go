@@ -13,9 +13,10 @@ import (
 	backup2 "quotierlabs/backend/application/backup"
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
+	diagnostics2 "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/onboarding"
-	quotation2 "quotierlabs/backend/application/quotation"
+	"quotierlabs/backend/application/quotation"
 	"quotierlabs/backend/application/template"
 	"quotierlabs/backend/application/update"
 	"quotierlabs/backend/domain"
@@ -39,7 +40,11 @@ import (
 // Injectors from wire.go:
 
 func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, error) {
-	logger, err := logging.NewLogger(paths, build)
+	sink, err := logging.NewSink(paths)
+	if err != nil {
+		return nil, err
+	}
+	logger, err := logging.NewLogger(sink, build)
 	if err != nil {
 		return nil, err
 	}
@@ -64,15 +69,16 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	companyHandler := wails.NewCompanyHandler(service, onboardingService, paths)
 	customerService := customer.NewService(customerRepository, idGenerator)
 	customerHandler := wails.NewCustomerHandler(service, customerService)
-	templateService := template.NewService(templateRepository, txManager, idGenerator, manager)
+	v := ProvideRecorder(manager)
+	templateService := template.NewService(templateRepository, txManager, idGenerator, v...)
 	templateHandler := wails.NewTemplateHandler(service, templateService)
 	metrics := pdf.NewLayoutMetrics()
-	quotationService := quotation2.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, txManager, idGenerator, metrics, manager)
+	quotationService := quotation.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, txManager, idGenerator, metrics, v...)
 	quotationHandler := wails.NewQuotationHandler(service, quotationService)
-	pdfGenerator := pdf.NewGenerator(manager)
-	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics, manager)
+	pdfGenerator := pdf.NewGenerator(v...)
+	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics, v...)
 	documentHandler := wails.NewDocumentHandler(documentService)
-	exportService := document.NewExportService(documentService, quotationRepository, customerRepository, manager)
+	exportService := document.NewExportService(documentService, quotationRepository, customerRepository, v...)
 	printService := os.NewPrintService()
 	shareService := os.NewShareService()
 	exportHandler := wails.NewExportHandler(exportService, printService, shareService, paths)
@@ -83,7 +89,7 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	if err != nil {
 		return nil, err
 	}
-	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, settingsRepository, idGenerator, string2, build, paths, int64_2, manager)
+	backupService := backup2.NewService(sqLiteBackupService, companyRepository, quotationRepository, customerRepository, settingsRepository, idGenerator, string2, build, paths, int64_2, v...)
 	csvExportService := export.NewCSVExportService(quotationRepository, customerRepository)
 	csvImportService := csvimport.NewCSVImportService(customerRepository)
 	autoBackupManager := backup2.NewAutoBackupManager(logger, backupService, settingsRepository, companyRepository)
@@ -94,6 +100,7 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	legacyHandler := wails.NewLegacyHandler(legacydataService)
 	app := &App{
 		Logger:             logger,
+		LogSink:            sink,
 		IDGenerator:        idGenerator,
 		TxManager:          txManager,
 		Companies:          companyRepository,
@@ -143,19 +150,26 @@ func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
 	return recovery.NewStore(paths.RecoveryRoot())
 }
 
-var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewLogger, diagnostics.NewManager, ProvidePreferences,
+// ProvideRecorder adapts the infrastructure diagnostics manager to the
+// application-facing Recorder boundary consumed by the application services.
+func ProvideRecorder(manager *diagnostics.Manager) []diagnostics2.Recorder {
+	return []diagnostics2.Recorder{manager}
+}
+
+var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewSink, logging.NewLogger, diagnostics.NewManager, ProvidePreferences,
 	ProvideRecovery,
 	ProvideDB,
 	ProvideCurrentDBPath,
-	ProvideSchemaVersion, legacydata.NewService, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
+	ProvideSchemaVersion, legacydata.NewService, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), ProvideRecorder, export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
 )
 
-var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, template.NewService, quotation2.NewService, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager, update.NewService)
+var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, template.NewService, quotation.NewService, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager, update.NewService)
 
 var TransportSet = wire.NewSet(wails.NewAppHandler, wails.NewDiagnosticsHandler, wails.NewCompanyHandler, wails.NewCustomerHandler, wails.NewTemplateHandler, wails.NewQuotationHandler, wails.NewDocumentHandler, wails.NewExportHandler, wails.NewBackupHandler, wails.NewUpdateHandler, wails.NewLegacyHandler)
 
 type App struct {
 	Logger      *zap.Logger
+	LogSink     *logging.Sink
 	IDGenerator domain.IDGenerator
 	TxManager   domain.TxManager
 	Companies   domain.CompanyRepository

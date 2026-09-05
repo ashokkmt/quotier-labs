@@ -62,6 +62,9 @@ func (a *DesktopApp) shutdown(ctx context.Context) {
 			_ = sqlDB.Close()
 		}
 	}
+	if a.diApp.LogSink != nil {
+		_ = a.diApp.LogSink.Close()
+	}
 	_ = os.RemoveAll(a.diApp.Paths.TempRoot)
 }
 
