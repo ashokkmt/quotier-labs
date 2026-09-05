@@ -3,6 +3,7 @@ module quotierlabs
 go 1.25.7
 
 require (
+	github.com/go-fonts/liberation v0.3.3
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/google/wire v0.7.0
 	github.com/mattn/go-sqlite3 v1.14.50

@@ -49,7 +49,9 @@ import {
   setNodesVisibility,
   ungroupNode,
   updateNodeGeometry,
+  updateNodeGeometryAndProps,
   updateNodeProps,
+  updateTextContentAndGeometry,
   updateTableContent,
   alignNodes,
   alignToPage,
@@ -61,10 +63,14 @@ import {
 import {
   apply,
   bounds as boundsForPoints,
+  corners,
   geometryMatrix,
   geometryPositionFromMatrix,
   identity,
   multiply,
+  polygonsOverlap,
+  rectPolygon,
+  resizeKeepingTopLeft,
   type Bounds,
   type Point,
 } from './geometry'
@@ -76,15 +82,17 @@ import {
   colorValueToCSS,
   defaultShapeProps,
   defaultTextProps,
-  growIntrinsicTextHeight,
+  fitIntrinsicTextHeight,
   V5_TOOL_PRESETS,
-  V5_TEXT_PADDING_PT,
+  V5_TEXT_PADDING_X_PT,
+  V5_TEXT_PADDING_Y_PT,
+  V5_TEXT_INLINE_SAFETY_PT,
   type V5ToolPreset,
   type V5ShapeProps,
   type V5TextProps,
 } from './tokens'
 import { ColorPicker } from './ColorPicker'
-import { readValidatedImage } from './imageAssets'
+import { fitImageSize, readValidatedImage } from './imageAssets'
 import { RecordDiagnosticsOperation } from '../../../wailsjs/go/wails/DiagnosticsHandler'
 import { createStory } from './stories'
 import {
@@ -96,18 +104,41 @@ import {
   pageDeltaToParent,
 } from './selectors'
 import type { V5Tool } from './store'
-import { snapRect, snapResize, type SnapGuide, type SnapRect } from './snapping'
+import {
+  guidesAtExactPosition,
+  snapRect,
+  snapResize,
+  type SnapGuide,
+  type SnapRect,
+} from './snapping'
 import { du, type V5Geometry, type V5Node, type V5Story } from './model'
 import { ContextToolbar, MenuItems, type ToolbarAction } from './ContextToolbar'
+import { useAnchoredToolbar } from './toolbarPosition'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { getV5Widget } from './registry'
 import { useV5EditorUI } from './EditorUIState'
 import { anchorAt, contentPointForAnchor, layoutPageStack } from './pageStack'
+import { findPlacement } from './placement'
+import { measureIntrinsicTextGeometry } from './textMeasure'
 import {
   createBlankTable,
   DU_PER_MM,
+  insertTableColumn,
+  insertTableRow,
   normalizeTableData,
+  removeTableColumn,
+  removeTableRow,
+  resolvedTableColumnWidths,
+  TABLE_BODY_FILL,
+  TABLE_BORDER_COLOR,
+  TABLE_BORDER_WIDTH_PT,
+  TABLE_CELL_PADDING_X_PT,
+  TABLE_CELL_PADDING_Y_PT,
+  TABLE_FONT_SIZE_PT,
+  TABLE_HEADER_FILL,
   TABLE_MIN_COLUMN_WIDTH_MM,
+  TABLE_TEXT_COLOR,
+  tableCellAtPoint,
   tableHeightDU,
 } from './table'
 import {
@@ -212,13 +243,16 @@ function renderText(node: V5Node, zoom: number) {
         fontFamily: V5_FONT_FAMILY_CSS[props.fontFamily ?? 'sans'],
         fontWeight,
         fontStyle: props.italic ? 'italic' : 'normal',
+        fontKerning: 'none',
+        fontVariantLigatures: 'none',
+        fontFeatureSettings: '"kern" 0, "liga" 0',
         textDecoration: props.underline ? 'underline' : 'none',
         lineHeight: 1.2,
         overflow: 'hidden',
         width: '100%',
         height: '100%',
         boxSizing: 'border-box',
-        padding: ptToPx(V5_TEXT_PADDING_PT, zoom),
+        padding: `${ptToPx(V5_TEXT_PADDING_Y_PT, zoom)}px ${ptToPx(V5_TEXT_PADDING_X_PT, zoom)}px`,
         pointerEvents: 'none',
       }}
     >
@@ -251,7 +285,7 @@ function NodeView({
 }: {
   node: V5Node
   zoom: number
-  preview?: { x: number; y: number; rotation?: number }
+  preview?: { x: number; y: number; rotation?: number; width?: number; height?: number }
   previews: Record<
     string,
     { x: number; y: number; rotation?: number; width?: number; height?: number }
@@ -266,6 +300,8 @@ function NodeView({
   const g = node.geometry
   const x = preview?.x ?? g.x
   const y = preview?.y ?? g.y
+  const width = preview?.width ?? g.width
+  const height = preview?.height ?? g.height
   const rotation = preview?.rotation ?? g.rotation
   const locked = node.locked
   const interactive = interactiveIds.has(node.id)
@@ -282,8 +318,8 @@ function NodeView({
         position: 'absolute',
         left: x * zoom,
         top: y * zoom,
-        width: g.width * zoom,
-        height: g.height * zoom,
+        width: width * zoom,
+        height: height * zoom,
         transform: `rotate(${rotation / 100}deg)`,
         cursor: interactive ? (locked ? 'not-allowed' : 'move') : 'default',
         userSelect: 'none',
@@ -295,10 +331,19 @@ function NodeView({
       ) : node.kind === 'shape' ? (
         <div
           aria-hidden="true"
-          style={{ width: '100%', height: '100%', ...shapeStyle(node, zoom) }}
+          style={{
+            width: '100%',
+            height: '100%',
+            boxSizing: 'border-box',
+            ...shapeStyle(node, zoom),
+          }}
         />
       ) : node.kind === 'table' || node.role === 'flow-frame' ? (
-        <FlowFrameContent story={stories.find((story) => story.id === node.story_id)} zoom={zoom} />
+        <FlowFrameContent
+          story={stories.find((story) => story.id === node.story_id)}
+          zoom={zoom}
+          widthDU={width}
+        />
       ) : node.kind === 'image' ? (
         node.props?.source ? (
           <img
@@ -309,7 +354,8 @@ function NodeView({
               width: '100%',
               height: '100%',
               display: 'block',
-              objectFit: 'cover',
+              objectFit: 'contain',
+              objectPosition: 'center',
               pointerEvents: 'none',
             }}
           />
@@ -347,7 +393,15 @@ function NodeView({
   )
 }
 
-function FlowFrameContent({ story, zoom }: { story?: V5Story; zoom: number }) {
+function FlowFrameContent({
+  story,
+  zoom,
+  widthDU,
+}: {
+  story?: V5Story
+  zoom: number
+  widthDU: number
+}) {
   if (!story) return null
   if (story.kind === 'rich-text') {
     const value =
@@ -369,49 +423,143 @@ function FlowFrameContent({ story, zoom }: { story?: V5Story; zoom: number }) {
       </span>
     )
   }
-  const table = normalizeTableData(story.content)
-  const headers = table.headers
-  const rows = table.rows
-  const columns = table.column_count
-  const cellBorder = `${Math.max(0.5, zoom * 50)}px solid #d1d5db`
-  const cells = [...(table.header_enabled ? [headers] : []), ...rows]
-  const rowHeight = table.row_height_mm * DU_PER_MM * zoom
-  const hasWidths = table.column_widths.every((width) => width > 0)
+  return <TableSurface table={normalizeTableData(story.content)} zoom={zoom} widthDU={widthDU} />
+}
+
+type TableCellPosition = { row: number; column: number }
+type TableCellSelection = { axis: 'row' | 'column'; index: number }
+
+function TableSurface({
+  table,
+  zoom,
+  widthDU,
+  editing = false,
+  activeCell,
+  cellSelection,
+  onActiveCellChange,
+  onUpdate,
+  onExit,
+  onCellContextMenu,
+}: {
+  table: ReturnType<typeof normalizeTableData>
+  zoom: number
+  widthDU: number
+  editing?: boolean
+  activeCell?: TableCellPosition | null
+  cellSelection?: TableCellSelection | null
+  onActiveCellChange?: (cell: TableCellPosition) => void
+  onUpdate?: (table: ReturnType<typeof normalizeTableData>) => void
+  onExit?: () => void
+  onCellContextMenu?: (event: ReactMouseEvent<HTMLInputElement>, cell: TableCellPosition) => void
+}) {
+  const rows = [
+    ...(table.header_enabled ? [{ row: -1, header: true, values: table.headers }] : []),
+    ...table.rows.map((values, row) => ({ row, header: false, values })),
+  ]
+  const border = `${Math.max(0.5, ptToPx(TABLE_BORDER_WIDTH_PT, zoom))}px solid ${TABLE_BORDER_COLOR}`
+  const columnWidths = resolvedTableColumnWidths(table, widthDU)
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: hasWidths
-          ? table.column_widths.map((width) => `${width * zoom}px`).join(' ')
-          : `repeat(${columns}, minmax(0, 1fr))`,
-        gridAutoRows: `${rowHeight}px`,
+        gridTemplateColumns: columnWidths.map((width) => `${width * zoom}px`).join(' '),
+        gridAutoRows: `${table.row_height_mm * DU_PER_MM * zoom}px`,
         width: '100%',
-        fontSize: ptToPx(8, zoom),
-        pointerEvents: 'none',
+        height: '100%',
+        color: TABLE_TEXT_COLOR,
+        fontFamily: V5_FONT_FAMILY_CSS.sans,
+        fontSize: ptToPx(TABLE_FONT_SIZE_PT, zoom),
+        lineHeight: 1.2,
+        pointerEvents: editing ? 'auto' : 'none',
         overflow: 'hidden',
       }}
     >
-      {cells.flatMap((row, rowIndex) =>
-        Array.from({ length: columns }, (_, columnIndex) => (
-          <span
-            key={`${rowIndex}-${columnIndex}`}
-            style={{
-              minWidth: 0,
-              padding: `${ptToPx(2, zoom)}px ${ptToPx(3, zoom)}px`,
-              borderRight: cellBorder,
-              borderBottom: cellBorder,
-              borderTop: rowIndex === 0 ? cellBorder : undefined,
-              borderLeft: columnIndex === 0 ? cellBorder : undefined,
-              background: table.header_enabled && rowIndex === 0 ? '#f3f4f6' : 'transparent',
-              fontWeight: table.header_enabled && rowIndex === 0 ? 600 : 400,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {row[columnIndex] ?? ''}
-          </span>
-        )),
+      {rows.flatMap((row, visualRow) =>
+        Array.from({ length: table.column_count }, (_, column) => {
+          const cell = { row: row.row, column }
+          const selectedByScope =
+            cellSelection?.axis === 'column'
+              ? cellSelection.index === column
+              : cellSelection?.axis === 'row' && cellSelection.index === row.row
+          const style: CSSProperties = {
+            minWidth: 0,
+            width: '100%',
+            height: '100%',
+            boxSizing: 'border-box',
+            padding: `${ptToPx(TABLE_CELL_PADDING_Y_PT, zoom)}px ${ptToPx(TABLE_CELL_PADDING_X_PT, zoom)}px`,
+            borderRight: border,
+            borderBottom: border,
+            borderTop: visualRow === 0 ? border : undefined,
+            borderLeft: column === 0 ? border : undefined,
+            borderRadius: 0,
+            background: row.header ? TABLE_HEADER_FILL : TABLE_BODY_FILL,
+            color: TABLE_TEXT_COLOR,
+            font: 'inherit',
+            fontWeight: row.header ? 600 : 400,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'pre-wrap',
+          }
+          if (!editing)
+            return (
+              <span key={`${row.row}-${column}`} style={style}>
+                {row.values[column] ?? ''}
+              </span>
+            )
+          return (
+            <input
+              key={`${row.row}-${column}`}
+              data-v5-table-cell
+              aria-label={`${row.header ? 'Header' : `Row ${row.row + 1}`}, column ${column + 1}`}
+              autoFocus={
+                activeCell
+                  ? activeCell.row === row.row && activeCell.column === column
+                  : visualRow === 0 && column === 0
+              }
+              value={row.values[column] ?? ''}
+              style={{
+                ...style,
+                outline:
+                  activeCell?.row === row.row && activeCell.column === column
+                    ? '2px solid #2563eb'
+                    : 'none',
+                outlineOffset: -2,
+                boxShadow: selectedByScope ? 'inset 0 0 0 2px rgb(37 99 235 / .35)' : undefined,
+              }}
+              aria-selected={selectedByScope || undefined}
+              onFocus={() => onActiveCellChange?.(cell)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onContextMenu={(event) => onCellContextMenu?.(event, cell)}
+              onChange={(event) => {
+                const next = normalizeTableData(table)
+                if (row.header) next.headers[column] = event.target.value
+                else next.rows[row.row][column] = event.target.value
+                onUpdate?.(next)
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation()
+                if (event.key === 'Tab') {
+                  event.preventDefault()
+                  const cells = Array.from(
+                    event.currentTarget.parentElement?.querySelectorAll<HTMLInputElement>(
+                      '[data-v5-table-cell]',
+                    ) ?? [],
+                  )
+                  const current = cells.indexOf(event.currentTarget)
+                  const delta = event.shiftKey ? -1 : 1
+                  const next = cells[(current + delta + cells.length) % cells.length]
+                  next?.focus()
+                  next?.select()
+                  return
+                }
+                if (event.key === 'Escape' || event.key === 'Enter') {
+                  event.preventDefault()
+                  onExit?.()
+                }
+              }}
+            />
+          )
+        }),
       )}
     </div>
   )
@@ -423,19 +571,62 @@ function TableEditor({
   zoom,
   onUpdate,
   onExit,
+  activeCell,
+  cellSelection,
+  onActiveCellChange,
+  onCellContextMenu,
 }: {
   node: V5Node
   story: V5Story
   zoom: number
   onUpdate: (table: ReturnType<typeof normalizeTableData>) => void
   onExit: () => void
+  activeCell: TableCellPosition | null
+  cellSelection: TableCellSelection | null
+  onActiveCellChange: (cell: TableCellPosition) => void
+  onCellContextMenu: (event: ReactMouseEvent<HTMLInputElement>, cell: TableCellPosition) => void
 }) {
   const table = normalizeTableData(story.content)
-  const cells = [
-    ...(table.header_enabled ? [{ header: true, values: table.headers }] : []),
-    ...table.rows.map((values) => ({ header: false, values })),
-  ]
-  const rowHeight = table.row_height_mm * DU_PER_MM * zoom
+  const [dividerDrag, setDividerDrag] = useState<{
+    index: number
+    startX: number
+    left: number
+    right: number
+    widths: number[]
+  } | null>(null)
+  const [dividerLabel, setDividerLabel] = useState<string | null>(null)
+  useEffect(() => {
+    if (!dividerDrag) return
+    const owner = document.defaultView
+    if (!owner) return
+    const move = (event: globalThis.PointerEvent) => {
+      const minimum = TABLE_MIN_COLUMN_WIDTH_MM * DU_PER_MM
+      const total = dividerDrag.left + dividerDrag.right
+      const nextLeft = Math.max(
+        minimum,
+        Math.min(total - minimum, dividerDrag.left + (event.clientX - dividerDrag.startX) / zoom),
+      )
+      const next = normalizeTableData(table)
+      next.column_widths = [...dividerDrag.widths]
+      next.column_widths[dividerDrag.index] = du(nextLeft)
+      next.column_widths[dividerDrag.index + 1] = du(total - nextLeft)
+      setDividerLabel(`${Math.round((nextLeft / DU_PER_MM) * 10) / 10} mm`)
+      onUpdate(next)
+    }
+    const finish = () => {
+      setDividerDrag(null)
+      window.setTimeout(() => setDividerLabel(null), 350)
+    }
+    owner.addEventListener('pointermove', move)
+    owner.addEventListener('pointerup', finish, { once: true })
+    owner.addEventListener('pointercancel', finish, { once: true })
+    return () => {
+      owner.removeEventListener('pointermove', move)
+      owner.removeEventListener('pointerup', finish)
+      owner.removeEventListener('pointercancel', finish)
+    }
+  }, [dividerDrag, onUpdate, table, zoom])
+  const displayWidths = resolvedTableColumnWidths(table, node.geometry.width)
   return (
     <div
       data-v5-table-editor
@@ -445,9 +636,6 @@ function TableEditor({
         top: node.geometry.y * zoom,
         width: node.geometry.width * zoom,
         height: node.geometry.height * zoom,
-        display: 'grid',
-        gridTemplateColumns: table.column_widths.map((width) => `${width * zoom}px`).join(' '),
-        gridAutoRows: rowHeight,
         transform: node.geometry.rotation
           ? `rotate(${node.geometry.rotation / 100}deg)`
           : undefined,
@@ -455,30 +643,49 @@ function TableEditor({
         zIndex: 8,
       }}
       onPointerDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          onExit()
-        }
-      }}
     >
-      {cells.flatMap((row, rowIndex) =>
-        Array.from({ length: table.column_count }, (_, columnIndex) => (
-          <input
-            key={`${rowIndex}-${columnIndex}`}
-            aria-label={`${row.header ? 'Header' : `Row ${rowIndex - (table.header_enabled ? 1 : 0) + 1}`}, column ${columnIndex + 1}`}
-            autoFocus={rowIndex === 0 && columnIndex === 0}
-            value={row.values[columnIndex] ?? ''}
-            className={`min-w-0 border-b border-r border-gray-300 bg-white px-1 text-gray-900 placeholder:text-gray-400 outline-none focus:z-10 focus:ring-2 focus:ring-primary ${row.header ? 'font-semibold bg-gray-50' : ''}`}
-            style={{ fontSize: ptToPx(8, zoom) }}
-            onChange={(event) => {
-              const value = event.target.value
-              if (row.header) table.headers[columnIndex] = value
-              else table.rows[rowIndex - (table.header_enabled ? 1 : 0)][columnIndex] = value
-              onUpdate(table)
+      <TableSurface
+        table={table}
+        zoom={zoom}
+        widthDU={node.geometry.width}
+        editing
+        activeCell={activeCell}
+        cellSelection={cellSelection}
+        onActiveCellChange={onActiveCellChange}
+        onUpdate={onUpdate}
+        onExit={onExit}
+        onCellContextMenu={onCellContextMenu}
+      />
+      {displayWidths.slice(0, -1).map((_, index) => {
+        const left = displayWidths.slice(0, index + 1).reduce((sum, width) => sum + width, 0)
+        return (
+          <button
+            key={`divider-${index}`}
+            type="button"
+            aria-label={`Resize columns ${index + 1} and ${index + 2}`}
+            className="group absolute top-0 z-20 h-full w-3 -translate-x-1/2 cursor-col-resize bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            style={{ left: left * zoom }}
+            onPointerDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              event.currentTarget.setPointerCapture(event.pointerId)
+              setDividerDrag({
+                index,
+                startX: event.clientX,
+                left: displayWidths[index],
+                right: displayWidths[index + 1],
+                widths: displayWidths,
+              })
             }}
-          />
-        )),
+          >
+            <span className="mx-auto block h-full w-px bg-transparent group-hover:bg-primary group-focus-visible:bg-primary" />
+          </button>
+        )
+      })}
+      {dividerLabel && (
+        <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded bg-foreground px-1.5 py-0.5 text-[11px] text-background shadow-sm">
+          {dividerLabel}
+        </span>
       )}
     </div>
   )
@@ -492,7 +699,7 @@ function TextEditor({
   onChange,
   onCommit,
   onCancel,
-  onAutoHeight,
+  onAutoFrame,
 }: {
   node: V5Node
   geometry: V5Geometry
@@ -501,32 +708,36 @@ function TextEditor({
   onChange: (value: string) => void
   onCommit: () => void
   onCancel: () => void
-  onAutoHeight: (heightPx: number) => void
+  onAutoFrame: (frame: { widthPx: number; heightPx: number }) => void
 }) {
   const props = node.props as unknown as V5TextProps
   const color = colorValueToCSS(props.color ?? 'black')
   const ref = useRef<HTMLTextAreaElement>(null)
   const [composing, setComposing] = useState(false)
-  const measureContentHeight = () => {
+  const measureContentFrame = () => {
     const element = ref.current
     if (!element) return null
+    const sizingMode = props.sizingMode ?? 'fixed-width'
     const renderedHeight = element.style.height
+    const renderedWidth = element.style.width
     // Measure the glyph content, not the authored box. Measuring scrollHeight while the
     // textarea is set to the current intrinsic height makes every pass grow by its padding.
     element.style.height = '1px'
-    const measured = element.scrollHeight
+    if (sizingMode === 'auto-width') element.style.width = '1px'
+    const measured = { widthPx: element.scrollWidth, heightPx: element.scrollHeight }
     element.style.height = renderedHeight
+    element.style.width = renderedWidth
     return measured
   }
   // Canva-style intrinsic growth: the box follows the typed content every keystroke.
   useLayoutEffect(() => {
     if (composing) return
-    const height = measureContentHeight()
-    if (height !== null) onAutoHeight(height)
-    // measureContentHeight is intentionally local to the mounted textarea; only text/style
+    const frame = measureContentFrame()
+    if (frame !== null) onAutoFrame(frame)
+    // measureContentFrame is intentionally local to the mounted textarea; only text/style
     // changes should trigger a fresh document measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, composing, onAutoHeight])
+  }, [value, composing, onAutoFrame])
   return (
     <textarea
       ref={ref}
@@ -534,13 +745,14 @@ function TextEditor({
       data-v5-text-editor
       autoFocus
       value={value}
+      wrap={(props.sizingMode ?? 'fixed-width') === 'auto-width' ? 'off' : 'soft'}
       onFocus={(event) => event.currentTarget.select()}
       onChange={(event) => onChange(event.target.value)}
       onCompositionStart={() => setComposing(true)}
       onCompositionEnd={() => {
         setComposing(false)
-        const height = measureContentHeight()
-        if (height !== null) onAutoHeight(height)
+        const frame = measureContentFrame()
+        if (frame !== null) onAutoFrame(frame)
       }}
       onBlur={(event) => {
         const next = event.relatedTarget as HTMLElement | null
@@ -573,12 +785,16 @@ function TextEditor({
         background: 'transparent',
         border: 'none',
         boxSizing: 'border-box',
-        padding: ptToPx(V5_TEXT_PADDING_PT, zoom),
+        padding: `${ptToPx(V5_TEXT_PADDING_Y_PT, zoom)}px ${ptToPx(V5_TEXT_PADDING_X_PT, zoom)}px`,
         margin: 0,
         resize: 'none',
+        overflow: 'hidden',
         outline: 'none',
         fontFamily: V5_FONT_FAMILY_CSS[props.fontFamily ?? 'sans'],
         fontStyle: props.italic ? 'italic' : 'normal',
+        fontKerning: 'none',
+        fontVariantLigatures: 'none',
+        fontFeatureSettings: '"kern" 0, "liga" 0',
         textDecoration: props.underline ? 'underline' : 'none',
         lineHeight: 1.2,
         transform: geometry.rotation ? `rotate(${geometry.rotation / 100}deg)` : undefined,
@@ -590,6 +806,7 @@ function TextEditor({
 
 function TextFormattingStrip({
   node,
+  bounds,
   viewport,
   onUpdate,
   onOpenInspector,
@@ -600,6 +817,7 @@ function TextFormattingStrip({
   onColorPickerDismissIntent,
 }: {
   node: V5Node
+  bounds: Bounds
   viewport?: DOMRect | null
   onUpdate: (patch: Partial<V5TextProps>) => void
   onOpenInspector: () => void
@@ -609,6 +827,7 @@ function TextFormattingStrip({
   onColorPickerDragStart: () => void
   onColorPickerDismissIntent: () => void
 }) {
+  const { ref, position } = useAnchoredToolbar(bounds, viewport, 40)
   const props = node.props as unknown as V5TextProps
   const weight = Number(props.fontWeight ?? (props.bold ? 700 : 400))
   const fontSize = Number(props.fontSize ?? 11)
@@ -632,6 +851,7 @@ function TextFormattingStrip({
   ]
   return (
     <div
+      ref={ref}
       data-v5-text-formatting
       data-v5-editor-chrome
       role="toolbar"
@@ -639,9 +859,9 @@ function TextFormattingStrip({
       className="pointer-events-auto z-30 flex h-10 items-center gap-1 overflow-x-auto rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur"
       style={{
         position: 'fixed',
-        left: viewport ? viewport.left + viewport.width / 2 : -9999,
-        top: viewport ? viewport.top + 12 : -9999,
-        transform: 'translateX(-50%)',
+        left: position?.left ?? -9999,
+        top: position?.top ?? -9999,
+        visibility: position ? 'visible' : 'hidden',
         maxWidth: viewport ? Math.max(160, viewport.width - 16) : undefined,
       }}
       onPointerDown={(event) => event.stopPropagation()}
@@ -805,6 +1025,7 @@ function TextFormattingStrip({
 
 function ShapeFormattingStrip({
   node,
+  bounds,
   viewport,
   onUpdate,
   onOpenInspector,
@@ -815,6 +1036,7 @@ function ShapeFormattingStrip({
   onColorPickerDismissIntent,
 }: {
   node: V5Node
+  bounds: Bounds
   viewport?: DOMRect | null
   onUpdate: (patch: Partial<V5ShapeProps>) => void
   onOpenInspector: () => void
@@ -824,19 +1046,21 @@ function ShapeFormattingStrip({
   onColorPickerDragStart: () => void
   onColorPickerDismissIntent: () => void
 }) {
+  const { ref, position } = useAnchoredToolbar(bounds, viewport, 40)
   const props = node.props as unknown as V5ShapeProps
   const isLine = props.variant === 'line'
   return (
     <div
+      ref={ref}
       data-v5-editor-chrome
       role="toolbar"
       aria-label="Shape formatting"
       className="pointer-events-auto z-30 flex h-10 items-center gap-1 overflow-x-auto rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur"
       style={{
         position: 'fixed',
-        left: viewport ? viewport.left + viewport.width / 2 : -9999,
-        top: viewport ? viewport.top + 12 : -9999,
-        transform: 'translateX(-50%)',
+        left: position?.left ?? -9999,
+        top: position?.top ?? -9999,
+        visibility: position ? 'visible' : 'hidden',
         maxWidth: viewport ? Math.max(160, viewport.width - 16) : undefined,
       }}
       onPointerDown={(event) => event.stopPropagation()}
@@ -952,16 +1176,6 @@ function ShapeFormattingStrip({
   )
 }
 
-function containsPoint(rect: Bounds, corners_: Point[]): boolean {
-  return corners_.every(
-    (point) =>
-      point.x >= rect.x &&
-      point.x <= rect.x + rect.width &&
-      point.y >= rect.y &&
-      point.y <= rect.y + rect.height,
-  )
-}
-
 export function V5Canvas() {
   const session = useV5Session()
   const { libraryDrag, presetInsertRequest, clearPresetInsertRequest, setInspectorOpen } =
@@ -974,23 +1188,52 @@ export function V5Canvas() {
   } | null>(null)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const snapActiveRef = useRef(false)
+  const keyboardGuideTimerRef = useRef<number | null>(null)
+  const keyboardGuideRemovalTimerRef = useRef<number | null>(null)
   const [gesture, setGesture] = useState<Gesture | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const [preview, setPreview] = useState<
     Record<string, { x: number; y: number; rotation?: number; width?: number; height?: number }>
   >({})
   const [guides, setGuides] = useState<SnapGuide[]>([])
+  const [guidesFading, setGuidesFading] = useState(false)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [editingText, setEditingText] = useState<{
     id: string
     value: string
     initial: string
+    initialGeometry: V5Geometry
+    frame: V5Geometry
   } | null>(null)
   const [editingTableId, setEditingTableId] = useState<string | null>(null)
+  const [activeTableCell, setActiveTableCell] = useState<TableCellPosition | null>(null)
+  const [tableCellSelection, setTableCellSelection] = useState<TableCellSelection | null>(null)
+  const [confirmTableAction, setConfirmTableAction] = useState<{
+    message: string
+    run: () => void
+  } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
   const [badge, setBadge] = useState<string | null>(null)
   const [panMode, setPanMode] = useState(false)
+  const selectionKey = session.selectedNodeIds.join('\u0000')
+  useEffect(() => {
+    if (keyboardGuideTimerRef.current !== null) window.clearTimeout(keyboardGuideTimerRef.current)
+    if (keyboardGuideRemovalTimerRef.current !== null)
+      window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+    keyboardGuideTimerRef.current = null
+    keyboardGuideRemovalTimerRef.current = null
+    setGuidesFading(false)
+    setGuides([])
+  }, [selectionKey, session.activePageId])
+  useEffect(
+    () => () => {
+      if (keyboardGuideTimerRef.current !== null) window.clearTimeout(keyboardGuideTimerRef.current)
+      if (keyboardGuideRemovalTimerRef.current !== null)
+        window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+    },
+    [],
+  )
   const [openToolbarPalette, setOpenToolbarPalette] = useState<'text' | 'fill' | 'stroke' | null>(
     null,
   )
@@ -1013,6 +1256,24 @@ export function V5Canvas() {
     const timer = window.setTimeout(() => setFeedback(null), 2600)
     return () => window.clearTimeout(timer)
   }, [feedback])
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const preventCanvasSelection = (event: Event) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[data-v5-text-editor], [data-v5-table-editor], [data-v5-content-edit]'))
+        return
+      event.preventDefault()
+    }
+    host.addEventListener('selectstart', preventCanvasSelection)
+    return () => host.removeEventListener('selectstart', preventCanvasSelection)
+  }, [])
+  const clearNativeSelection = () => {
+    const active = hostRef.current?.ownerDocument.activeElement as HTMLElement | null
+    if (active?.closest('[data-v5-text-editor], [data-v5-table-editor], [data-v5-content-edit]'))
+      return
+    hostRef.current?.ownerDocument.defaultView?.getSelection()?.removeAllRanges()
+  }
   const reportError = (error: unknown, fallback: string) =>
     setFeedback({
       message: error instanceof Error ? error.message : fallback,
@@ -1111,7 +1372,7 @@ export function V5Canvas() {
           (node) =>
             !isEffectivelyHidden(document, node.id) &&
             !isEffectivelyLocked(document, node.id) &&
-            containsPoint(marqueeRect, nodeProjection(node).points),
+            polygonsOverlap(rectPolygon(marqueeRect), nodeProjection(node).points),
         )
       : []
 
@@ -1250,44 +1511,93 @@ export function V5Canvas() {
     return rects
   }
 
-  const handleTextAutoHeight = (nodeId: string, heightPx: number) => {
+  const handleTextAutoFrame = (nodeId: string, measured: { widthPx: number; heightPx: number }) => {
     const node = allScopeNodes.find((candidate) => candidate.id === nodeId)
-    if (!node || node.layout_mode !== 'intrinsic') return
-    // Entering edit mode must never collapse the authored selection box to the textarea's
-    // measured line height. Intrinsic text may grow while typing, but shrinking remains an
-    // explicit resize action so selection and edit geometry do not jump on double-click.
-    const next = growIntrinsicTextHeight(node.geometry.height, du(heightPx / zoom))
-    if (Math.abs(next - node.geometry.height) <= 1) return
-    // Coalesced by the command key, so a typing burst is one history entry.
-    try {
-      session.execute(updateNodeGeometry(nodeId, { ...node.geometry, height: next }))
-    } catch (error) {
-      reportError(error, 'Text could not be resized.')
-    }
+    if (!node || node.layout_mode !== 'intrinsic' || editingText?.id !== nodeId) return
+    const props = node.props as unknown as V5TextProps
+    const height = fitIntrinsicTextHeight(measured.heightPx / zoom, Number(props.fontSize ?? 11))
+    const width =
+      (props.sizingMode ?? 'fixed-width') === 'auto-width'
+        ? Math.max(200, du(measured.widthPx / zoom + V5_TEXT_INLINE_SAFETY_PT * 100))
+        : editingText.frame.width
+    if (
+      Math.abs(height - editingText.frame.height) <= 1 &&
+      Math.abs(width - editingText.frame.width) <= 1
+    )
+      return
+    const next = resizeKeepingTopLeft(editingText.frame, width, height)
+    setEditingText((current) => (current?.id === nodeId ? { ...current, frame: next } : current))
+    setPreview((current) => ({ ...current, [nodeId]: next }))
   }
 
   const startTextEditing = (node: V5Node) => {
     if (node.kind !== 'text' || isEffectivelyLocked(document, node.id)) return
+    setEditingTableId(null)
+    setActiveTableCell(null)
+    setTableCellSelection(null)
     setGesture(null)
     setPreview({})
+    setGuidesFading(false)
     setGuides([])
     setEditingText({
       id: node.id,
       value: String(node.props?.text ?? ''),
       initial: String(node.props?.text ?? ''),
+      initialGeometry: node.geometry,
+      frame: node.geometry,
     })
     setHoverId(null)
   }
 
   const commitTextEditing = (revert = false) => {
     if (!editingText) return
-    const { id, value, initial } = editingText
+    const { id, value, initial, initialGeometry, frame } = editingText
     setEditingText(null)
-    if (revert || value === initial) return
+    setPreview((current) => {
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+    if (
+      revert ||
+      (value === initial &&
+        frame.x === initialGeometry.x &&
+        frame.y === initialGeometry.y &&
+        frame.width === initialGeometry.width &&
+        frame.height === initialGeometry.height)
+    )
+      return
     try {
-      session.execute(updateNodeProps(id, { text: value }))
+      session.execute(updateTextContentAndGeometry(id, value, frame))
     } catch (error) {
       reportError(error, 'Text could not be updated.')
+    }
+  }
+
+  const updateTextFormatting = (node: V5Node, patch: Partial<V5TextProps>) => {
+    const props = {
+      ...(node.props as unknown as V5TextProps),
+      ...(editingText?.id === node.id ? { text: editingText.value } : {}),
+      ...patch,
+    }
+    try {
+      if (node.layout_mode === 'intrinsic' && hostRef.current) {
+        const geometry = measureIntrinsicTextGeometry(
+          node,
+          props,
+          editingText?.id === node.id ? editingText.frame : node.geometry,
+          hostRef.current.ownerDocument,
+        )
+        session.execute(updateNodeGeometryAndProps(node.id, geometry, patch))
+        if (editingText?.id === node.id) {
+          setEditingText((current) =>
+            current?.id === node.id ? { ...current, frame: geometry } : current,
+          )
+          setPreview((current) => ({ ...current, [node.id]: geometry }))
+        }
+      } else session.execute(updateNodeProps(node.id, patch))
+    } catch (error) {
+      reportError(error, 'Text formatting could not be updated.')
     }
   }
 
@@ -1387,7 +1697,7 @@ export function V5Canvas() {
     const threshold = MOVE_THRESHOLD_PX / zoom
     const isDrag =
       dragged.width * zoom > MOVE_THRESHOLD_PX || dragged.height * zoom > MOVE_THRESHOLD_PX
-    const rect: Bounds = isDrag
+    let rect: Bounds = isDrag
       ? variant === 'square'
         ? {
             x:
@@ -1403,6 +1713,22 @@ export function V5Canvas() {
           }
         : { ...dragged, width: Math.max(dragged.width, 400), height: Math.max(dragged.height, 400) }
       : defaultToolRect(tool, gesture.startDoc)
+    if (!isDrag) {
+      const placed = findPlacement(
+        page,
+        { width: rect.width, height: rect.height },
+        { x: rect.x, y: rect.y },
+        page.children
+          .filter((node) => !isEffectivelyHidden(document, node.id))
+          .map((node) => boundsForPoints(corners(node.geometry))),
+      )
+      if (!placed) {
+        setFeedback({ message: 'There is no printable space for this item.', tone: 'error' })
+        return
+      }
+      rect = { ...rect, x: placed.x, y: placed.y }
+      if (placed.fallback) setBadge('Placed in the nearest printable space')
+    }
     const geometry = {
       x: du(Math.max(0, Math.min(rect.x, page.width - rect.width))),
       y: du(Math.max(0, Math.min(rect.y, page.height - rect.height))),
@@ -1423,12 +1749,23 @@ export function V5Canvas() {
           locked: false,
           visibility: 'shown',
           optional: false,
-          props: { ...defaultTextProps(), text: 'Text' },
+          props: {
+            ...defaultTextProps(),
+            text: 'Text',
+            sizingMode: isDrag ? 'fixed-width' : 'auto-width',
+          },
         }),
       )
       session.selectNode(nodeId)
       session.setTool('select')
-      setEditingText({ id: nodeId, value: 'Text', initial: 'Text' })
+      setPreview({})
+      setEditingText({
+        id: nodeId,
+        value: 'Text',
+        initial: 'Text',
+        initialGeometry: geometry,
+        frame: geometry,
+      })
       return
     }
     if (tool === 'shape') {
@@ -1505,14 +1842,39 @@ export function V5Canvas() {
     at: Point,
     propsOverride?: Record<string, unknown>,
     tableSize?: { rows: number; columns: number },
+    avoidOverlap = false,
   ): string | null => {
     const page = pages.find((candidate) => candidate.id === pageId)
     if (!page) return null
+    const sourceWidth = Number(propsOverride?.intrinsicWidth)
+    const sourceHeight = Number(propsOverride?.intrinsicHeight)
+    const insertSize =
+      preset.kind === 'image' && sourceWidth > 0 && sourceHeight > 0
+        ? fitImageSize(sourceWidth, sourceHeight, preset.size.width, preset.size.height)
+        : preset.size
+    const preferred = {
+      x: at.x - insertSize.width / 2,
+      y: at.y - insertSize.height / 2,
+    }
+    const placement = avoidOverlap
+      ? findPlacement(
+          page,
+          insertSize,
+          preferred,
+          page.children
+            .filter((node) => !isEffectivelyHidden(document, node.id))
+            .map((node) => boundsForPoints(corners(node.geometry))),
+        )
+      : null
+    if (avoidOverlap && !placement) {
+      setFeedback({ message: 'There is no printable space for this item.', tone: 'error' })
+      return null
+    }
     const geometry = {
-      x: du(Math.max(0, Math.min(at.x - preset.size.width / 2, page.width - preset.size.width))),
-      y: du(Math.max(0, Math.min(at.y - preset.size.height / 2, page.height - preset.size.height))),
-      width: preset.size.width,
-      height: preset.size.height,
+      x: du(placement?.x ?? Math.max(0, Math.min(preferred.x, page.width - insertSize.width))),
+      y: du(placement?.y ?? Math.max(0, Math.min(preferred.y, page.height - insertSize.height))),
+      width: insertSize.width,
+      height: insertSize.height,
       rotation: 0,
     }
     const nodeId = session.nextID('node')
@@ -1565,8 +1927,16 @@ export function V5Canvas() {
       session.selectNode(nodeId)
       if (preset.kind === 'text') {
         const value = String(propsOverride?.text ?? preset.props?.text ?? '')
-        setEditingText({ id: nodeId, value, initial: value })
+        setPreview({})
+        setEditingText({
+          id: nodeId,
+          value,
+          initial: value,
+          initialGeometry: geometry,
+          frame: geometry,
+        })
       }
+      if (placement?.fallback) setBadge('Placed in the nearest printable space')
       return nodeId
     } catch (error) {
       setFeedback({
@@ -1640,10 +2010,17 @@ export function V5Canvas() {
     }
     if (pageId !== session.activePageId) session.setActivePage(pageId)
     if (
-      insertPresetAt(preset, pageId, point, undefined, {
-        rows: presetInsertRequest.tableRows ?? 2,
-        columns: presetInsertRequest.tableColumns ?? 2,
-      })
+      insertPresetAt(
+        preset,
+        pageId,
+        point,
+        undefined,
+        {
+          rows: presetInsertRequest.tableRows ?? 2,
+          columns: presetInsertRequest.tableColumns ?? 2,
+        },
+        presetInsertRequest.mode !== 'drop',
+      )
     )
       session.setTool('select')
     clearPresetInsertRequest()
@@ -1656,7 +2033,7 @@ export function V5Canvas() {
     const defaults: Record<V5Tool, { width: number; height: number }> = {
       select: { width: 4000, height: 3000 },
       hand: { width: 4000, height: 3000 },
-      text: { width: 22000, height: 3000 },
+      text: { width: 22000, height: 1600 },
       shape: { width: 12000, height: 9000 },
       image: { width: 12000, height: 12000 },
       table: { width: 32000, height: 16000 },
@@ -1679,8 +2056,19 @@ export function V5Canvas() {
 
   const beginMove = (node: V5Node, event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
+    event.preventDefault()
     event.stopPropagation()
-    if (editingTableId && editingTableId !== node.id) setEditingTableId(null)
+    if (keyboardGuideTimerRef.current !== null) window.clearTimeout(keyboardGuideTimerRef.current)
+    if (keyboardGuideRemovalTimerRef.current !== null)
+      window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+    setGuidesFading(false)
+    setGuides([])
+    if (editingText && editingText.id !== node.id) commitTextEditing(false)
+    if (editingTableId && editingTableId !== node.id) {
+      setEditingTableId(null)
+      setActiveTableCell(null)
+      setTableCellSelection(null)
+    }
     const additive = event.shiftKey
     const cycling = event.metaKey || event.ctrlKey
     if (isEffectivelyLocked(document, node.id)) {
@@ -1765,7 +2153,13 @@ export function V5Canvas() {
   }
 
   const beginResize = (handle: ResizeHandle, event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
     event.stopPropagation()
+    if (keyboardGuideTimerRef.current !== null) window.clearTimeout(keyboardGuideTimerRef.current)
+    if (keyboardGuideRemovalTimerRef.current !== null)
+      window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+    setGuidesFading(false)
+    setGuides([])
     const node = primary
     if (!node || !resizeHandlesFor(node).includes(handle)) return
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -1779,7 +2173,13 @@ export function V5Canvas() {
     })
   }
   const beginRotate = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
     event.stopPropagation()
+    if (keyboardGuideTimerRef.current !== null) window.clearTimeout(keyboardGuideTimerRef.current)
+    if (keyboardGuideRemovalTimerRef.current !== null)
+      window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+    setGuidesFading(false)
+    setGuides([])
     const node = primary
     if (!node) return
     if (isEffectivelyLocked(document, node.id)) return
@@ -1846,6 +2246,7 @@ export function V5Canvas() {
         Math.abs(currentDoc.y - marquee.startDoc.y) * zoom > MOVE_THRESHOLD_PX
       const activated = marquee.activated || crossedThreshold
       if (activated && !marquee.activated) {
+        clearNativeSelection()
         try {
           hostRef.current?.setPointerCapture(event.pointerId)
         } catch {
@@ -1890,6 +2291,7 @@ export function V5Canvas() {
       if (!gesture.activated && !crossedThreshold) return
       const moveGesture = gesture.activated ? gesture : { ...gesture, activated: true }
       if (!gesture.activated) {
+        clearNativeSelection()
         // Keep direct manipulation quiet until the user actually drags. This prevents a
         // click from flashing a drag state or hiding the contextual toolbar.
         setGesture(moveGesture)
@@ -1916,6 +2318,7 @@ export function V5Canvas() {
       const snap = event.ctrlKey
         ? { dx: 0, dy: 0, guides: [] }
         : snapRect(movingRect, snapCandidates(moveGesture.pageId, moveGesture.ids), threshold)
+      setGuidesFading(false)
       setGuides(snap.guides)
       snapActiveRef.current = snap.guides.length > 0
       setPreview(
@@ -1979,7 +2382,20 @@ export function V5Canvas() {
               snapCandidates(session.activePageId, [node.id]),
               threshold,
             )
-      const finalGeometry = snap ? snap.rect : nextGeometry
+      let finalGeometry = snap ? snap.rect : nextGeometry
+      if (
+        node.kind === 'text' &&
+        node.layout_mode === 'intrinsic' &&
+        (gesture.handle === 'w' || gesture.handle === 'e') &&
+        hostRef.current
+      )
+        finalGeometry = measureIntrinsicTextGeometry(
+          node,
+          { ...(node.props as unknown as V5TextProps), sizingMode: 'fixed-width' },
+          finalGeometry as V5Geometry,
+          hostRef.current.ownerDocument,
+        )
+      setGuidesFading(false)
       setGuides(snap?.guides ?? [])
       snapActiveRef.current = Boolean(snap?.guides.length)
       setPreview({
@@ -2042,7 +2458,7 @@ export function V5Canvas() {
         // Sub-threshold drag is an empty click: clear selection.
         session.selectNode(null)
       } else {
-        // Full containment of every transformed corner (tools.md §8).
+        // Commit exactly the positive-overlap candidates shown by the live marquee preview.
         const ids = marqueeCandidates.map((node) => node.id)
         session.selectNodes(marquee.additive ? [...new Set([...marquee.base, ...ids])] : ids)
       }
@@ -2138,7 +2554,19 @@ export function V5Canvas() {
                 snapCandidates(session.activePageId, [node.id]),
                 (snapActiveRef.current ? SNAP_SCREEN_PX + 2 : SNAP_SCREEN_PX) / zoom,
               )
-        const finalGeometry = snap ? snap.rect : nextGeometry
+        let finalGeometry = snap ? snap.rect : nextGeometry
+        if (
+          node.kind === 'text' &&
+          node.layout_mode === 'intrinsic' &&
+          (gesture.handle === 'w' || gesture.handle === 'e') &&
+          hostRef.current
+        )
+          finalGeometry = measureIntrinsicTextGeometry(
+            node,
+            { ...(node.props as unknown as V5TextProps), sizingMode: 'fixed-width' },
+            finalGeometry as V5Geometry,
+            hostRef.current.ownerDocument,
+          )
         // Persist the exact preview rectangle. Replaying edge deltas here loses equal-size
         // snap corrections and can make the object jump on pointer-up.
         const story = node.story_id
@@ -2164,15 +2592,24 @@ export function V5Canvas() {
             }),
           )
         } else {
-          session.execute(
-            updateNodeGeometry(gesture.id, {
-              x: finalGeometry.x,
-              y: finalGeometry.y,
-              width: finalGeometry.width,
-              height: finalGeometry.height,
-              rotation: gesture.geometry.rotation,
-            }),
+          const committedGeometry = {
+            x: finalGeometry.x,
+            y: finalGeometry.y,
+            width: finalGeometry.width,
+            height: finalGeometry.height,
+            rotation: gesture.geometry.rotation,
+          }
+          if (
+            node.kind === 'text' &&
+            (gesture.handle === 'w' || gesture.handle === 'e') &&
+            node.layout_mode === 'intrinsic'
           )
+            session.execute(
+              updateNodeGeometryAndProps(gesture.id, committedGeometry, {
+                sizingMode: 'fixed-width',
+              }),
+            )
+          else session.execute(updateNodeGeometry(gesture.id, committedGeometry))
         }
       } else if (gesture.kind === 'rotate') {
         const node = allScopeNodes.find((candidate) => candidate.id === gesture.id)
@@ -2186,6 +2623,7 @@ export function V5Canvas() {
     }
     setGesture(null)
     setPreview({})
+    setGuidesFading(false)
     setGuides([])
     setBadge(null)
     snapActiveRef.current = false
@@ -2194,6 +2632,7 @@ export function V5Canvas() {
   const cancelGesture = () => {
     setGesture(null)
     setPreview({})
+    setGuidesFading(false)
     setGuides([])
     setBadge(null)
     setMarquee(null)
@@ -2334,7 +2773,34 @@ export function V5Canvas() {
       const movableIds = session.selectedNodeIds.filter((id) => !isEffectivelyLocked(document, id))
       if (movableIds.length === 0) return
       try {
-        session.execute(nudgeNodes(movableIds, dx, dy))
+        const movableNodes = selectedNodes.filter((node) => movableIds.includes(node.id))
+        const union = unionSelectionBounds(movableNodes)
+        if (!union) return
+        const page = pages.find((candidate) => candidate.id === session.activePageId) ?? activePage
+        const clampedDx = Math.min(Math.max(dx, -union.x), page.width - union.x - union.width)
+        const clampedDy = Math.min(Math.max(dy, -union.y), page.height - union.y - union.height)
+        if (clampedDx === 0 && clampedDy === 0) return
+        const moved = { ...union, id: '__moving__', x: union.x + clampedDx, y: union.y + clampedDy }
+        const exactGuides = guidesAtExactPosition(
+          moved,
+          snapCandidates(session.activePageId, movableIds),
+        )
+        session.execute(nudgeNodes(movableIds, clampedDx, clampedDy))
+        setGuidesFading(false)
+        setGuides(exactGuides)
+        if (keyboardGuideTimerRef.current !== null)
+          window.clearTimeout(keyboardGuideTimerRef.current)
+        if (keyboardGuideRemovalTimerRef.current !== null)
+          window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+        keyboardGuideTimerRef.current = window.setTimeout(() => {
+          setGuidesFading(true)
+          keyboardGuideTimerRef.current = null
+          keyboardGuideRemovalTimerRef.current = window.setTimeout(() => {
+            setGuides([])
+            setGuidesFading(false)
+            keyboardGuideRemovalTimerRef.current = null
+          }, 75)
+        }, 525)
       } catch (error) {
         reportError(error, 'The selection cannot be moved.')
       }
@@ -2354,6 +2820,15 @@ export function V5Canvas() {
       }
       if (primary?.role === 'group') session.enterGroup(primary.id)
       else if (primary?.kind === 'text') startTextEditing(primary)
+      else if (
+        primary?.role === 'flow-frame' &&
+        primary.story_id &&
+        document.stories?.some((story) => story.id === primary.story_id && story.kind === 'table')
+      ) {
+        setEditingTableId(primary.id)
+        setActiveTableCell(null)
+        setTableCellSelection(null)
+      }
       return
     }
     if ((key === ',' || key === '.') && primary && canRotate(primary)) {
@@ -2530,7 +3005,11 @@ export function V5Canvas() {
           id: 'edit',
           label: 'Edit table',
           icon: Table2,
-          run: () => setEditingTableId(primary.id),
+          run: () => {
+            setEditingTableId(primary.id)
+            setActiveTableCell(null)
+            setTableCellSelection(null)
+          },
         })
         const story = primary.story_id
           ? document.stories?.find((candidate) => candidate.id === primary.story_id)
@@ -2538,27 +3017,24 @@ export function V5Canvas() {
         if (story?.kind === 'table') {
           actions.push({
             id: 'add-row',
-            label: 'Add row',
+            label: activeTableCell ? 'Add row below' : 'Add row at end',
             run: () => {
               const table = normalizeTableData(story.content)
-              table.rows.push(Array.from({ length: table.column_count }, () => ''))
-              session.execute(updateTableContent(primary.id, table))
+              const index = activeTableCell
+                ? Math.max(0, Math.min(table.rows.length, activeTableCell.row + 1))
+                : table.rows.length
+              session.execute(updateTableContent(primary.id, insertTableRow(table, index)))
             },
           })
           actions.push({
             id: 'add-column',
-            label: 'Add column',
+            label: activeTableCell ? 'Add column right' : 'Add column at end',
             run: () => {
               const table = normalizeTableData(story.content)
-              if (table.column_count >= 12) return
-              const averageWidth = Math.round(
-                table.column_widths.reduce((sum, width) => sum + width, 0) / table.column_count,
-              )
-              table.column_count += 1
-              table.headers.push('')
-              table.rows = table.rows.map((row) => [...row, ''])
-              table.column_widths.push(averageWidth)
-              session.execute(updateTableContent(primary.id, table))
+              const index = activeTableCell
+                ? Math.min(table.column_count, activeTableCell.column + 1)
+                : table.column_count
+              session.execute(updateTableContent(primary.id, insertTableColumn(table, index)))
             },
           })
         }
@@ -2638,7 +3114,7 @@ export function V5Canvas() {
     })
     return actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primary, selectedNodes.length, selectionLocked])
+  }, [primary, selectedNodes.length, selectionLocked, activeTableCell])
 
   const shiftOrder = (delta: number) => {
     const id = primary?.id
@@ -2680,36 +3156,58 @@ export function V5Canvas() {
                 )
                 if (story?.kind !== 'table') return []
                 const table = normalizeTableData(story.content)
+                const rowIndex =
+                  activeTableCell && activeTableCell.row >= 0
+                    ? Math.min(activeTableCell.row, table.rows.length - 1)
+                    : table.rows.length - 1
+                const columnIndex = activeTableCell
+                  ? Math.min(activeTableCell.column, table.column_count - 1)
+                  : table.column_count - 1
+                const removeRow = () => {
+                  const run = () =>
+                    session.execute(updateTableContent(primary.id, removeTableRow(table, rowIndex)))
+                  if (table.rows[rowIndex]?.some(Boolean))
+                    setConfirmTableAction({
+                      message: 'This row contains content. Delete it?',
+                      run,
+                    })
+                  else run()
+                }
+                const removeColumn = () => {
+                  const populated = [
+                    table.headers[columnIndex],
+                    ...table.rows.map((row) => row[columnIndex]),
+                  ].some(Boolean)
+                  const run = () =>
+                    session.execute(
+                      updateTableContent(primary.id, removeTableColumn(table, columnIndex)),
+                    )
+                  if (populated)
+                    setConfirmTableAction({
+                      message: 'This column contains content. Delete it?',
+                      run,
+                    })
+                  else run()
+                }
                 return [
                   ...(table.rows.length > 1
                     ? [
                         {
-                          label: 'Remove last row',
-                          destructive: table.rows.at(-1)?.some(Boolean),
-                          run: () => {
-                            const next = normalizeTableData(story.content)
-                            next.rows = next.rows.slice(0, -1)
-                            session.execute(updateTableContent(primary.id, next))
-                          },
+                          label: activeTableCell ? 'Delete active row' : 'Remove last row',
+                          destructive: table.rows[rowIndex]?.some(Boolean),
+                          run: removeRow,
                         },
                       ]
                     : []),
                   ...(table.column_count > 1
                     ? [
                         {
-                          label: 'Remove last column',
+                          label: activeTableCell ? 'Delete active column' : 'Remove last column',
                           destructive: [
-                            ...table.headers,
-                            ...table.rows.map((row) => row.at(-1)),
+                            table.headers[columnIndex],
+                            ...table.rows.map((row) => row[columnIndex]),
                           ].some(Boolean),
-                          run: () => {
-                            const next = normalizeTableData(story.content)
-                            next.column_count -= 1
-                            next.headers = next.headers.slice(0, -1)
-                            next.rows = next.rows.map((row) => row.slice(0, -1))
-                            next.column_widths = next.column_widths.slice(0, -1)
-                            session.execute(updateTableContent(primary.id, next))
-                          },
+                          run: removeColumn,
                         },
                       ]
                     : []),
@@ -2937,10 +3435,9 @@ export function V5Canvas() {
           setBadge('Pasted text must be 20,000 characters or fewer')
           return
         }
-        const preset = V5_TOOL_PRESETS.find((candidate) => candidate.id === 'text')
+        const preset = V5_TOOL_PRESETS.find((candidate) => candidate.id === 'body-text')
         if (!preset) return
-        const id = insertPresetAt(preset, activePage.id, point, { text: plainText })
-        if (id) setEditingText({ id, value: plainText, initial: plainText })
+        insertPresetAt(preset, activePage.id, point, { text: plainText }, undefined, true)
       }}
       onPointerDownCapture={(event) => {
         const target = event.target as HTMLElement
@@ -3028,8 +3525,9 @@ export function V5Canvas() {
           return (
             <TextFormattingStrip
               node={target}
+              bounds={primaryViewportRect(target.id)}
               viewport={hostRef.current?.getBoundingClientRect()}
-              onUpdate={(patch) => session.execute(updateNodeProps(target.id, patch))}
+              onUpdate={(patch) => updateTextFormatting(target, patch)}
               onOpenInspector={() => setInspectorOpen(true)}
               more={moreItems}
               colorPickerOpen={openToolbarPalette === 'text'}
@@ -3046,6 +3544,7 @@ export function V5Canvas() {
           return (
             <ShapeFormattingStrip
               node={target}
+              bounds={primaryViewportRect(target.id)}
               viewport={hostRef.current?.getBoundingClientRect()}
               onUpdate={(patch) => session.execute(updateNodeProps(target.id, patch))}
               onOpenInspector={() => setInspectorOpen(true)}
@@ -3080,7 +3579,19 @@ export function V5Canvas() {
               aria-label={`Page ${pageIndex + 1}`}
               onPointerDown={(event) => {
                 if (event.target !== event.currentTarget) return
-                if (editingTableId) setEditingTableId(null)
+                event.preventDefault()
+                if (keyboardGuideTimerRef.current !== null)
+                  window.clearTimeout(keyboardGuideTimerRef.current)
+                if (keyboardGuideRemovalTimerRef.current !== null)
+                  window.clearTimeout(keyboardGuideRemovalTimerRef.current)
+                setGuidesFading(false)
+                setGuides([])
+                if (editingText) commitTextEditing(false)
+                if (editingTableId) {
+                  setEditingTableId(null)
+                  setActiveTableCell(null)
+                  setTableCellSelection(null)
+                }
                 // A page is a document container, not a selectable canvas object. Clicking it
                 // merely establishes the active insertion/selection context.
                 if (page.id !== session.activePageId) session.setActivePage(page.id)
@@ -3168,17 +3679,33 @@ export function V5Canvas() {
                     interactiveIds={isActive ? interactiveIds : new Set<string>()}
                     hiddenIds={hiddenIds}
                     stories={document.stories ?? []}
-                    editing={editingText?.id === node.id || editingTableId === node.id}
+                    editing={editingText?.id === node.id}
                     onPointerDown={beginMove}
-                    onDoubleClick={(target) => {
+                    onDoubleClick={(target, event) => {
                       if (target.role === 'group') session.enterGroup(target.id)
                       else if (target.kind === 'text') startTextEditing(target)
                       else if (
                         target.story_id &&
                         document.stories?.find((story) => story.id === target.story_id)?.kind ===
                           'table'
-                      )
+                      ) {
+                        const story = document.stories?.find(
+                          (candidate) => candidate.id === target.story_id,
+                        )
+                        const rect = event.currentTarget.getBoundingClientRect()
                         setEditingTableId(target.id)
+                        setActiveTableCell(
+                          story
+                            ? tableCellAtPoint(
+                                normalizeTableData(story.content),
+                                (event.clientX - rect.left) / zoom,
+                                (event.clientY - rect.top) / zoom,
+                                target.geometry.width,
+                              )
+                            : null,
+                        )
+                        setTableCellSelection(null)
+                      }
                     }}
                   />
                 ))}
@@ -3189,15 +3716,125 @@ export function V5Canvas() {
                   const tableStory = tableNode?.story_id
                     ? document.stories?.find((story) => story.id === tableNode.story_id)
                     : null
-                  return tableNode && tableStory?.kind === 'table' ? (
-                    <TableEditor
-                      node={tableNode}
-                      story={tableStory}
-                      zoom={zoom}
-                      onUpdate={(table) => session.execute(updateTableContent(tableNode.id, table))}
-                      onExit={() => setEditingTableId(null)}
-                    />
-                  ) : null
+                  if (!tableNode || tableStory?.kind !== 'table') return null
+                  const tableProjection = nodeProjection(tableNode)
+                  return (
+                    <>
+                      <TableEditor
+                        node={{
+                          ...tableNode,
+                          geometry: {
+                            x: tableProjection.origin.x,
+                            y: tableProjection.origin.y,
+                            width: tableProjection.width,
+                            height: tableProjection.height,
+                            rotation: tableProjection.rotation,
+                          },
+                        }}
+                        story={tableStory}
+                        zoom={zoom}
+                        onUpdate={(table) =>
+                          session.execute(updateTableContent(tableNode.id, table))
+                        }
+                        activeCell={activeTableCell}
+                        cellSelection={tableCellSelection}
+                        onActiveCellChange={(cell) => {
+                          setActiveTableCell(cell)
+                          setTableCellSelection(null)
+                        }}
+                        onExit={() => {
+                          setEditingTableId(null)
+                          setActiveTableCell(null)
+                          setTableCellSelection(null)
+                        }}
+                        onCellContextMenu={(event, cell) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setActiveTableCell(cell)
+                          const source = normalizeTableData(tableStory.content)
+                          const commit = (next: ReturnType<typeof normalizeTableData>) =>
+                            session.execute(updateTableContent(tableNode.id, next))
+                          const guarded = (message: string, populated: boolean, run: () => void) =>
+                            populated ? () => setConfirmTableAction({ message, run }) : run
+                          const row = Math.max(0, cell.row)
+                          const column = cell.column
+                          const items: MenuItem[] = [
+                            {
+                              label: 'Insert row above',
+                              run: () => commit(insertTableRow(source, row)),
+                            },
+                            {
+                              label: 'Insert row below',
+                              run: () =>
+                                commit(
+                                  insertTableRow(source, Math.min(source.rows.length, row + 1)),
+                                ),
+                            },
+                            {
+                              label: 'Insert column left',
+                              run: () => commit(insertTableColumn(source, column)),
+                            },
+                            {
+                              label: 'Insert column right',
+                              run: () => commit(insertTableColumn(source, column + 1)),
+                            },
+                            { separator: true, label: '' },
+                            {
+                              label: cell.row < 0 ? 'Select header row' : `Select row ${row + 1}`,
+                              run: () => {
+                                setTableCellSelection({ axis: 'row', index: cell.row })
+                                setBadge(
+                                  cell.row < 0 ? 'Header row selected' : `Row ${row + 1} selected`,
+                                )
+                              },
+                            },
+                            {
+                              label: `Select column ${column + 1}`,
+                              run: () => {
+                                setTableCellSelection({ axis: 'column', index: column })
+                                setBadge(`Column ${column + 1} selected`)
+                              },
+                            },
+                          ]
+                          if (cell.row >= 0 && source.rows.length > 1)
+                            items.push({
+                              label: 'Delete row',
+                              destructive: source.rows[cell.row]?.some(Boolean),
+                              run: guarded(
+                                'This row contains content. Delete it?',
+                                source.rows[cell.row]?.some(Boolean) ?? false,
+                                () => commit(removeTableRow(source, cell.row)),
+                              ),
+                            })
+                          if (source.column_count > 1) {
+                            const populated = [
+                              source.headers[column],
+                              ...source.rows.map((rowValue) => rowValue[column]),
+                            ].some(Boolean)
+                            items.push({
+                              label: 'Delete column',
+                              destructive: populated,
+                              run: guarded(
+                                'This column contains content. Delete it?',
+                                populated,
+                                () => commit(removeTableColumn(source, column)),
+                              ),
+                            })
+                          }
+                          setMenu({ x: event.clientX, y: event.clientY, items })
+                        }}
+                      />
+                      <SelectionOverlay
+                        bounds={{
+                          x: tableProjection.origin.x * zoom,
+                          y: tableProjection.origin.y * zoom,
+                          width: tableProjection.width * zoom,
+                          height: tableProjection.height * zoom,
+                        }}
+                        rotation={tableProjection.rotation}
+                      />
+                    </>
+                  )
                 })()}
               {editingText &&
                 isActive &&
@@ -3221,7 +3858,7 @@ export function V5Canvas() {
                         onChange={(value) => setEditingText({ ...editingText, value })}
                         onCommit={() => commitTextEditing(false)}
                         onCancel={() => commitTextEditing(true)}
-                        onAutoHeight={(heightPx) => handleTextAutoHeight(editingText.id, heightPx)}
+                        onAutoFrame={(frame) => handleTextAutoFrame(editingText.id, frame)}
                       />
                       <SelectionOverlay
                         bounds={{
@@ -3255,6 +3892,64 @@ export function V5Canvas() {
                   measurement={badge ? { label: badge, placement: 'bottom' } : null}
                 />
               )}
+              {isActive &&
+                showSelection &&
+                primary?.role === 'flow-frame' &&
+                primary.story_id &&
+                (() => {
+                  const story = document.stories?.find(
+                    (candidate) => candidate.id === primary.story_id && candidate.kind === 'table',
+                  )
+                  if (!story || selectionLocked) return null
+                  const table = normalizeTableData(story.content)
+                  const projection = nodeProjection(primary)
+                  const addRow = () => {
+                    if (table.rows.length >= 500) return
+                    session.execute(
+                      updateTableContent(primary.id, insertTableRow(table, table.rows.length)),
+                    )
+                  }
+                  const addColumn = () => {
+                    if (table.column_count >= 12) return
+                    session.execute(
+                      updateTableContent(primary.id, insertTableColumn(table, table.column_count)),
+                    )
+                  }
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        data-v5-editor-chrome
+                        aria-label="Add row at end"
+                        disabled={table.rows.length >= 500}
+                        className="absolute z-20 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border border-primary bg-background text-primary shadow-sm hover:bg-primary hover:text-primary-foreground disabled:opacity-40"
+                        style={{
+                          left: (projection.origin.x + projection.width / 2) * zoom,
+                          top: (projection.origin.y + projection.height) * zoom + 8,
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={addRow}
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        data-v5-editor-chrome
+                        aria-label="Add column at end"
+                        disabled={table.column_count >= 12}
+                        className="absolute z-20 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full border border-primary bg-background text-primary shadow-sm hover:bg-primary hover:text-primary-foreground disabled:opacity-40"
+                        style={{
+                          left: (projection.origin.x + projection.width) * zoom + 8,
+                          top: (projection.origin.y + projection.height / 2) * zoom,
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={addColumn}
+                      >
+                        +
+                      </button>
+                    </>
+                  )
+                })()}
               {isActive && selectedNodes.length > 1 && (
                 <>
                   {selectedNodes.map((node) => {
@@ -3397,7 +4092,8 @@ export function V5Canvas() {
                           }),
                       background: '#db2777',
                       pointerEvents: 'none',
-                      opacity: 0.95,
+                      opacity: guidesFading ? 0 : 0.95,
+                      transition: 'opacity 75ms ease-out',
                     }}
                   >
                     {guide.label && (
@@ -3546,6 +4242,37 @@ export function V5Canvas() {
                   })
                 }
                 setConfirmDelete(null)
+              }}
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(confirmTableAction)}
+        onOpenChange={(open) => !open && setConfirmTableAction(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete populated table content?</DialogTitle>
+            <DialogDescription>{confirmTableAction?.message}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              className="h-9 rounded-md border px-3 text-sm hover:bg-accent"
+              onClick={() => setConfirmTableAction(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              autoFocus
+              className="h-9 rounded-md bg-destructive px-3 text-sm text-destructive-foreground"
+              onClick={() => {
+                confirmTableAction?.run()
+                setConfirmTableAction(null)
               }}
             >
               Delete

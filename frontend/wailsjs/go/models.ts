@@ -1209,6 +1209,24 @@ export namespace wails {
 	        this.manual_updates_enabled = source["manual_updates_enabled"];
 	    }
 	}
+	export class DocumentFontDTO {
+	    family: string;
+	    weight: number;
+	    style: string;
+	    data: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DocumentFontDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.family = source["family"];
+	        this.weight = source["weight"];
+	        this.style = source["style"];
+	        this.data = source["data"];
+	    }
+	}
 
 }
 

@@ -6,6 +6,10 @@ export function GeneratePDF(arg1, arg2) {
   return window['go']['wails']['DocumentHandler']['GeneratePDF'](arg1, arg2);
 }
 
+export function GetDocumentFonts() {
+  return window['go']['wails']['DocumentHandler']['GetDocumentFonts']();
+}
+
 export function GetDocumentLayoutDiagnostics(arg1, arg2, arg3) {
   return window['go']['wails']['DocumentHandler']['GetDocumentLayoutDiagnostics'](arg1, arg2, arg3);
 }

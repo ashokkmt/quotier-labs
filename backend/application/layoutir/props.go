@@ -47,6 +47,7 @@ type controlledProps struct {
 	Align         string   `json:"align"`
 	VerticalAlign string   `json:"verticalAlign"`
 	Color         string   `json:"color"`
+	SizingMode    string   `json:"sizingMode"`
 	Variant       string   `json:"variant"`
 	Fill          string   `json:"fill"`
 	Stroke        string   `json:"stroke"`
@@ -114,6 +115,12 @@ func applyControlledProps(node documentmodel.Node, box *Box) error {
 			return fmt.Errorf("invalid text color value %q", props.Color)
 		}
 		box.TextColor = props.Color
+	}
+	if props.SizingMode != "" {
+		if props.SizingMode != "auto-width" && props.SizingMode != "fixed-width" {
+			return fmt.Errorf("invalid text sizing mode %q", props.SizingMode)
+		}
+		box.TextSizingMode = props.SizingMode
 	}
 	if node.Kind == "shape" {
 		variant := props.Variant

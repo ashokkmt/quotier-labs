@@ -1,5 +1,4 @@
 import { MoreHorizontal, type LucideIcon } from 'lucide-react'
-import { useLayoutEffect, useRef, useState } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,8 +11,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import type { Bounds } from './geometry'
 import type { MenuItem } from './ContextMenu'
+import { useAnchoredToolbar } from './toolbarPosition'
+import type { Bounds } from './geometry'
 
 export type ToolbarAction = {
   id: string
@@ -23,8 +23,6 @@ export type ToolbarAction = {
   run?: () => void
   menu?: MenuItem[]
 }
-
-export const CONTEXT_GAP_PX = 8
 
 export function ContextToolbar({
   bounds,
@@ -39,23 +37,17 @@ export function ContextToolbar({
   more: MenuItem[]
   topClearance?: number
 }) {
-  void bounds
-  void topClearance
-  const ref = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
-  useLayoutEffect(() => {
-    if (!viewport) return
-    const width = ref.current?.offsetWidth ?? 180
-    let left = viewport.left + viewport.width / 2 - width / 2
-    left = Math.max(
-      viewport.left + CONTEXT_GAP_PX,
-      Math.min(left, viewport.right - width - CONTEXT_GAP_PX),
-    )
-    setPosition({ left, top: viewport.top + 12 })
-    // The primitive viewport edges are the intentional dependency surface; DOMRect identity
-    // changes on every render and would create a measure/set-state loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewport?.left, viewport?.top, viewport?.right, viewport?.bottom])
+  const { ref, position } = useAnchoredToolbar(bounds, viewport, topClearance)
+  const overflow: MenuItem[] = actions.slice(5).map((action) => ({
+    label: action.label,
+    shortcut: action.shortcut,
+    run: action.run,
+    menu: action.menu,
+  }))
+  const menuItems =
+    overflow.length && more.length
+      ? [...overflow, { separator: true, label: '' }, ...more]
+      : [...overflow, ...more]
 
   return (
     <TooltipProvider delayDuration={450}>
@@ -83,7 +75,7 @@ export function ContextToolbar({
               <ActionButton key={action.id} action={action} />
             ),
           )}
-        {more.length > 0 && (
+        {menuItems.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -95,7 +87,7 @@ export function ContextToolbar({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <MenuItems items={more} />
+              <MenuItems items={menuItems} />
             </DropdownMenuContent>
           </DropdownMenu>
         )}

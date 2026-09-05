@@ -25,7 +25,7 @@ import { cloneNode, findPlacement } from './placement'
 import { getV5Widget } from './registry'
 import { distribute } from './snapping'
 import { normalizeTableData, tableHeightDU, type V5TableData } from './table'
-import { V5_TEXT_PADDING_PT } from './tokens'
+import { V5_TEXT_PADDING_Y_PT } from './tokens'
 
 type NodeLocation = { node: V5Node; siblings: V5Node[]; parent: V5Node | null; pageId: string }
 const clone = (document: V5Document) => parseV5(serializeV5(document))
@@ -143,6 +143,35 @@ export const updateNodeGeometry = (id: string, geometry: V5Geometry) =>
       }),
     `geometry:${id}`,
   )
+
+/** Commits an in-place text edit and its content-derived frame as one undoable change. */
+export const updateTextContentAndGeometry = (id: string, text: string, geometry: V5Geometry) =>
+  snapshotCommand(
+    'Edit text',
+    (d) =>
+      updateNode(d, id, (node) => {
+        if (node.kind !== 'text') throw new Error('node is not text')
+        node.props = { ...node.props, text }
+        node.geometry = quantizeGeometry(geometry)
+      }),
+    `text-edit:${id}`,
+  )
+
+/** Keeps a direct resize and its persistent sizing policy in the same history transaction. */
+export const updateNodeGeometryAndProps = (
+  id: string,
+  geometry: V5Geometry,
+  props: Record<string, unknown>,
+) =>
+  snapshotCommand(
+    'Resize object',
+    (d) =>
+      updateNode(d, id, (node) => {
+        node.geometry = quantizeGeometry(geometry)
+        node.props = { ...node.props, ...props }
+      }),
+    `geometry:${id}`,
+  )
 export const moveNodes = (ids: string[], dx: number, dy: number) =>
   snapshotCommand('Move selection', (d) => {
     // Atomic selection move: one locked member rejects the whole gesture (tools.md §9).
@@ -210,7 +239,7 @@ export const updateNodeProps = (id: string, props: Record<string, unknown>) =>
           const fontSize = Number(node.props.fontSize ?? 11)
           // A selection frame must enclose at least one painted line plus the equal document
           // inset. Multi-line intrinsic content is expanded from measured editor height.
-          const minimumHeight = du((fontSize * 1.2 + V5_TEXT_PADDING_PT * 2) * 100)
+          const minimumHeight = du((fontSize * 1.2 + V5_TEXT_PADDING_Y_PT * 2) * 100)
           if (node.geometry.height < minimumHeight) node.geometry.height = minimumHeight
         }
       }),
@@ -463,38 +492,42 @@ export function resizeGeometry(
   options: { fromCenter?: boolean; preserveAspect?: boolean; minSize?: number } = {},
 ): V5Geometry {
   const min = options.minSize ?? 100
-  let { x, y, width, height } = geometry
   const horizontal = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0
   const vertical = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0
-  if (options.fromCenter) {
-    dx *= 2
-    dy *= 2
-    if (horizontal < 0) x -= dx
-    if (vertical < 0) y -= dy
+  const factor = options.fromCenter ? 2 : 1
+  let width = geometry.width + horizontal * dx * factor
+  let height = geometry.height + vertical * dy * factor
+
+  if (options.preserveAspect) {
+    const widthScale = horizontal ? width / geometry.width : 1
+    const heightScale = vertical ? height / geometry.height : 1
+    let scale = horizontal
+      ? vertical && Math.abs(heightScale - 1) > Math.abs(widthScale - 1)
+        ? heightScale
+        : widthScale
+      : heightScale
+    scale = Math.max(scale, min / geometry.width, min / geometry.height)
+    width = geometry.width * scale
+    height = geometry.height * scale
+  } else {
+    width = Math.max(min, width)
+    height = Math.max(min, height)
   }
-  if (horizontal > 0) width += dx
-  if (horizontal < 0) {
-    x += dx
-    width -= dx
-  }
-  if (vertical > 0) height += dy
-  if (vertical < 0) {
-    y += dy
-    height -= dy
-  }
-  if (options.preserveAspect && horizontal && vertical) {
-    const ratio = geometry.width / geometry.height
-    if (Math.abs(dx) > Math.abs(dy)) height = width / ratio
-    else width = height * ratio
-  }
-  if (width < min) {
-    if (horizontal < 0) x -= min - width
-    width = min
-  }
-  if (height < min) {
-    if (vertical < 0) y -= min - height
-    height = min
-  }
+
+  const centerX = geometry.x + geometry.width / 2
+  const centerY = geometry.y + geometry.height / 2
+  const x =
+    options.fromCenter || (options.preserveAspect && horizontal === 0)
+      ? centerX - width / 2
+      : horizontal < 0
+        ? geometry.x + geometry.width - width
+        : geometry.x
+  const y =
+    options.fromCenter || (options.preserveAspect && vertical === 0)
+      ? centerY - height / 2
+      : vertical < 0
+        ? geometry.y + geometry.height - height
+        : geometry.y
   return quantizeGeometry({ ...geometry, x, y, width, height })
 }
 export const resizeNode = (

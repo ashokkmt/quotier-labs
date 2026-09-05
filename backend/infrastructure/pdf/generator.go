@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/document"
+	"quotierlabs/backend/application/documentfonts"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain/documentmodel"
 )
@@ -55,12 +57,17 @@ func (g *generator) generateV5(ctx context.Context, input document.GeneratorInpu
 		return nil, fmt.Errorf("resolve V5 layout: %w", err)
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")
+	registerDocumentFonts(pdf)
+	// CellFormat defaults to a 1 mm implicit horizontal margin. LayoutIR already resolves
+	// every authored padding value, so retaining that library default shifts PDF glyphs
+	// relative to shapes and makes editor/preview overlap geometry disagree.
+	pdf.SetCellMargin(0)
 	// Fixed metadata and sorted resource catalogs keep identical inputs byte-identical, making
 	// finalized exports reproducible and enabling PDF regression fixtures.
 	pdf.SetCatalogSort(true)
 	pdf.SetCreationDate(time.Unix(0, 0).UTC())
 	pdf.SetModificationDate(time.Unix(0, 0).UTC())
-	pdf.SetFont("Arial", "", layoutir.DefaultFontSizePt)
+	pdf.SetFont(documentfonts.SansPDF, "", layoutir.DefaultFontSizePt)
 	for _, page := range ir.Pages {
 		pdf.AddPageFormat("P", fpdf.SizeType{Wd: page.Width, Ht: page.Height})
 		for _, box := range page.Boxes {
@@ -89,8 +96,9 @@ func (g *generator) generateV5(ctx context.Context, input document.GeneratorInpu
 				if pdf.Error() != nil {
 					return nil, fmt.Errorf("render image %s: %w", box.ID, pdf.Error())
 				}
+				x, y, width, height := containImageRect(box)
 				pdf.ClipRect(box.X, box.Y, box.Width, box.Height, false)
-				pdf.ImageOptions(name, box.X, box.Y, box.Width, box.Height, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
+				pdf.ImageOptions(name, x, y, width, height, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
 				pdf.ClipEnd()
 			}
 			pdf.TransformEnd()
@@ -101,6 +109,20 @@ func (g *generator) generateV5(ctx context.Context, input document.GeneratorInpu
 		return nil, fmt.Errorf("output V5 pdf: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// containImageRect mirrors CSS object-fit: contain with a centered object position. The complete
+// source remains visible, preserves its aspect ratio, and never paints outside its authored frame.
+func containImageRect(box layoutir.Box) (x, y, width, height float64) {
+	if box.Image == nil || box.Image.PixelWidth <= 0 || box.Image.PixelHeight <= 0 {
+		return box.X, box.Y, box.Width, box.Height
+	}
+	scale := math.Min(box.Width/float64(box.Image.PixelWidth), box.Height/float64(box.Image.PixelHeight))
+	width = float64(box.Image.PixelWidth) * scale
+	height = float64(box.Image.PixelHeight) * scale
+	x = box.X + (box.Width-width)/2
+	y = box.Y + (box.Height-height)/2
+	return x, y, width, height
 }
 
 // colorRGB maps the closed token palette shared with the resolver and the TypeScript editor.
@@ -156,8 +178,8 @@ func setDashPattern(pdf *fpdf.Fpdf, style string) {
 	}
 }
 
-// drawText paints a text box with its controlled size/weight/alignment/color tokens, clipped to
-// the authored rectangle so overset content can never paint over another layer.
+// drawText paints only the lines resolved by LayoutIR and clips to the exact persisted document
+// frame used by the canvas. LayoutIR never substitutes a renderer-specific text geometry.
 func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
 	if _, visible := resolveColor(box.TextColor); !visible {
 		return
@@ -176,41 +198,46 @@ func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
 	if fontSize <= 0 {
 		fontSize = layoutir.DefaultFontSizePt
 	}
-	font := map[string]string{"sans": "Arial", "serif": "Times", "mono": "Courier"}[box.FontFamily]
-	if font == "" {
-		font = "Arial"
-	}
+	font, _ := pdfFont(layoutir.TextStyle{Family: box.FontFamily})
 	pdf.SetFont(font, style, fontSize)
 	applyTextColor(pdf, box.TextColor)
 	align := map[string]string{"left": "L", "center": "C", "right": "R"}[box.Align]
 	if align == "" {
 		align = "L"
 	}
-	padding := layoutir.TextPaddingMM
-	contentWidth := box.Width - 2*padding
-	contentHeight := box.Height - 2*padding
+	paddingX := layoutir.TextPaddingXMM
+	paddingY := layoutir.TextPaddingYMM
+	contentWidth := box.Width - 2*paddingX
+	contentHeight := box.Height - 2*paddingY
 	if contentWidth < 0.1 {
 		contentWidth = 0.1
 	}
 	if contentHeight < 0 {
 		contentHeight = 0
 	}
-	textHeight := layoutir.MeasuredTextHeightMM(box.Text, contentWidth, fontSize, metrics)
-	y := box.Y + padding
+	lines := box.TextLines
+	if len(lines) == 0 && box.Text != "" {
+		lines = []string{box.Text}
+	}
+	textHeight := float64(len(lines)) * metrics.LineHeightMM(fontSize)
+	y := box.Y + paddingY
 	switch box.VerticalAlign {
 	case "middle":
 		y += (contentHeight - textHeight) / 2
 	case "bottom":
 		y += contentHeight - textHeight
 	}
-	if y < box.Y+padding {
-		y = box.Y + padding
+	if y < box.Y+paddingY {
+		y = box.Y + paddingY
 	}
 	// The frame is document geometry, not printable decoration. Clip text to it, but never draw
 	// selection/editor outlines into Preview or exported PDFs.
 	pdf.ClipRect(box.X, box.Y, box.Width, box.Height, false)
-	pdf.SetXY(box.X+padding, y)
-	pdf.MultiCell(contentWidth, metrics.LineHeightMM(fontSize), box.Text, "", align, false)
+	for _, line := range lines {
+		pdf.SetXY(box.X+paddingX, y)
+		pdf.CellFormat(contentWidth, metrics.LineHeightMM(fontSize), line, "", 0, align, false, 0, "")
+		y += metrics.LineHeightMM(fontSize)
+	}
 	pdf.ClipEnd()
 }
 
@@ -229,25 +256,32 @@ func drawShape(pdf *fpdf.Fpdf, box layoutir.Box) {
 		pdf.SetLineWidth(shape.Stroke.WidthPt * 25.4 / 72)
 		fillStyle += "D"
 	}
+	strokeInset := lineWidthFor(shape) / 2
+	if shape.Stroke == nil {
+		strokeInset = 0
+	}
+	x, y := box.X+strokeInset, box.Y+strokeInset
+	width := math.Max(0.01, box.Width-2*strokeInset)
+	height := math.Max(0.01, box.Height-2*strokeInset)
 	switch shape.Variant {
 	case "ellipse":
-		pdf.Ellipse(box.X+box.Width/2, box.Y+box.Height/2, box.Width/2, box.Height/2, 0, fillStyle)
+		pdf.Ellipse(x+width/2, y+height/2, width/2, height/2, 0, fillStyle)
 	case "line":
 		pdf.SetLineWidth(lineWidthFor(shape))
 		pdf.Line(box.X, box.Y+box.Height/2, box.X+box.Width, box.Y+box.Height/2)
 	default:
 		if fillStyle != "" {
 			radius := shape.CornerRadiusPt * 25.4 / 72
-			if radius > box.Width/2 {
-				radius = box.Width / 2
+			if radius > width/2 {
+				radius = width / 2
 			}
-			if radius > box.Height/2 {
-				radius = box.Height / 2
+			if radius > height/2 {
+				radius = height / 2
 			}
 			if radius > 0 {
-				pdf.RoundedRect(box.X, box.Y, box.Width, box.Height, radius, "1234", fillStyle)
+				pdf.RoundedRect(x, y, width, height, radius, "1234", fillStyle)
 			} else {
-				pdf.Rect(box.X, box.Y, box.Width, box.Height, fillStyle)
+				pdf.Rect(x, y, width, height, fillStyle)
 			}
 		}
 	}
@@ -279,22 +313,31 @@ func drawTable(pdf *fpdf.Fpdf, box layoutir.Box) {
 		rowHeight = layoutir.TableRowHeightMM
 	}
 	y := box.Y
+	paddingX := layoutir.TableCellPaddingXPt * 25.4 / 72
+	paddingY := layoutir.TableCellPaddingYPt * 25.4 / 72
+	pdf.SetLineWidth(layoutir.TableBorderWidthPt * 25.4 / 72)
+	pdf.SetDrawColor(75, 85, 99)
+	pdf.SetTextColor(17, 24, 39)
 	if table.HeaderEnabled {
-		pdf.SetFont("Arial", "B", 8)
+		pdf.SetFont(documentfonts.SansPDF, "B", layoutir.TableFontSizePt)
+		pdf.SetFillColor(243, 244, 246)
 		x := box.X
 		for i := 0; i < table.ColumnCount; i++ {
 			header := ""
 			if i < len(table.Headers) {
 				header = table.Headers[i]
 			}
-			pdf.Rect(x, y, widths[i], rowHeight, "D")
-			pdf.SetXY(x, y)
-			pdf.CellFormat(widths[i], rowHeight, header, "", 0, "L", false, 0, "")
+			pdf.Rect(x, y, widths[i], rowHeight, "DF")
+			pdf.ClipRect(x, y, widths[i], rowHeight, false)
+			pdf.SetXY(x+paddingX, y+paddingY)
+			pdf.CellFormat(maxFloat(0.1, widths[i]-2*paddingX), maxFloat(0.1, rowHeight-2*paddingY), header, "", 0, "L", false, 0, "")
+			pdf.ClipEnd()
 			x += widths[i]
 		}
 		y += rowHeight
 	}
-	pdf.SetFont("Arial", "", 8)
+	pdf.SetFont(documentfonts.SansPDF, "", layoutir.TableFontSizePt)
+	pdf.SetFillColor(255, 255, 255)
 	for _, row := range table.Rows {
 		x := box.X
 		for i := 0; i < table.ColumnCount; i++ {
@@ -302,11 +345,20 @@ func drawTable(pdf *fpdf.Fpdf, box layoutir.Box) {
 			if i < len(row) {
 				value = row[i]
 			}
-			pdf.Rect(x, y, widths[i], rowHeight, "D")
-			pdf.SetXY(x, y)
-			pdf.CellFormat(widths[i], rowHeight, value, "", 0, "L", false, 0, "")
+			pdf.Rect(x, y, widths[i], rowHeight, "DF")
+			pdf.ClipRect(x, y, widths[i], rowHeight, false)
+			pdf.SetXY(x+paddingX, y+paddingY)
+			pdf.CellFormat(maxFloat(0.1, widths[i]-2*paddingX), maxFloat(0.1, rowHeight-2*paddingY), value, "", 0, "L", false, 0, "")
+			pdf.ClipEnd()
 			x += widths[i]
 		}
 		y += rowHeight
 	}
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }

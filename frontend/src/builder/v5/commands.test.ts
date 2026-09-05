@@ -24,7 +24,9 @@ import {
   setNodeLocked,
   ungroupNode,
   updateNodeGeometry,
+  updateNodeGeometryAndProps,
   updateNodeProps,
+  updateTextContentAndGeometry,
   updateTableContent,
 } from './commands'
 import { V5Session } from './store'
@@ -68,6 +70,34 @@ describe('V5 document commands', () => {
     expect(text.props?.verticalAlign).toBe('bottom')
     session.undo()
     expect(session.getSnapshot().document.root.pages[0].children[0].geometry.height).toBe(200)
+  })
+
+  it('commits text and its derived frame atomically and persists explicit width mode', () => {
+    const session = new V5Session(emptyV5Fixture())
+    session.execute(
+      insertNode('page-1', {
+        ...node('text'),
+        layout_mode: 'intrinsic',
+        props: { text: 'Heading', sizingMode: 'auto-width' },
+      }),
+    )
+    const before = session.getSnapshot().document.root.pages[0].children[0]
+    const frame = { ...before.geometry, width: du(75), height: du(40) }
+    session.execute(updateTextContentAndGeometry('text', 'Heading\nagain', frame))
+    expect(session.getSnapshot().document.root.pages[0].children[0]).toMatchObject({
+      geometry: frame,
+      props: { text: 'Heading\nagain' },
+    })
+    session.undo()
+    expect(session.getSnapshot().document.root.pages[0].children[0]).toMatchObject({
+      geometry: before.geometry,
+      props: { text: 'Heading' },
+    })
+
+    session.execute(updateNodeGeometryAndProps('text', frame, { sizingMode: 'fixed-width' }))
+    expect(session.getSnapshot().document.root.pages[0].children[0].props?.sizingMode).toBe(
+      'fixed-width',
+    )
   })
 
   it('updates blank table structure and derived height atomically', () => {
@@ -172,6 +202,31 @@ describe('V5 document commands', () => {
     ])
     session.undo()
     expect(session.getSnapshot().document.root.pages[0].children[0].id).toBe('group-1')
+  })
+
+  it('preserves image aspect ratio from all eight resize handles', () => {
+    const original = { x: 1000, y: 2000, width: 12000, height: 6000, rotation: 0 }
+    const deltas = {
+      nw: [-1200, -600],
+      n: [0, -600],
+      ne: [1200, -600],
+      e: [1200, 0],
+      se: [1200, 600],
+      s: [0, 600],
+      sw: [-1200, 600],
+      w: [-1200, 0],
+    } as const
+
+    for (const [handle, [dx, dy]] of Object.entries(deltas)) {
+      const resized = resizeGeometry(original, handle as keyof typeof deltas, dx, dy, {
+        preserveAspect: true,
+      })
+      expect(resized.width / resized.height, handle).toBe(2)
+      if (handle === 'n' || handle === 's')
+        expect(resized.x + resized.width / 2, handle).toBe(original.x + original.width / 2)
+      if (handle === 'e' || handle === 'w')
+        expect(resized.y + resized.height / 2, handle).toBe(original.y + original.height / 2)
+    }
   })
 })
 

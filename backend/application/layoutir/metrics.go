@@ -2,6 +2,7 @@ package layoutir
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -10,21 +11,30 @@ import (
 // never imports fpdf; the infrastructure adapter injects its own implementation.
 type Metrics interface {
 	// AverageCharWidthMM reports the average glyph advance width in millimetres at sizePt.
-	AverageCharWidthMM(sizePt float64) float64
+	AverageCharWidthMM(sizePt float64, style TextStyle) float64
 	// LineHeightMM reports the baseline-to-baseline distance in millimetres at sizePt.
 	LineHeightMM(sizePt float64) float64
 	// TextWidthMM reports the rendered width of text in millimetres at sizePt.
-	TextWidthMM(text string, sizePt float64) float64
+	TextWidthMM(text string, sizePt float64, style TextStyle) float64
+}
+
+type TextStyle struct {
+	Family string
+	Weight int
+	Bold   bool
+	Italic bool
 }
 
 // DefaultFontSizePt is the single font size used by both the resolver and the V5 PDF adapter.
 const DefaultFontSizePt = 10
 
-const TextPaddingPt = 1.0
-const TextPaddingMM = TextPaddingPt * 25.4 / 72
+const TextPaddingXPt = 0.0
+const TextPaddingYPt = 1.0
+const TextPaddingXMM = TextPaddingXPt * 25.4 / 72
+const TextPaddingYMM = TextPaddingYPt * 25.4 / 72
 
 func contentWidthMM(width float64) float64 {
-	width -= 2 * TextPaddingMM
+	width -= 2 * TextPaddingXMM
 	if width < 0.1 {
 		return 0.1
 	}
@@ -32,36 +42,45 @@ func contentWidthMM(width float64) float64 {
 }
 
 func contentHeightMM(height float64) float64 {
-	height -= 2 * TextPaddingMM
+	height -= 2 * TextPaddingYMM
 	if height < 0.1 {
 		return 0.1
 	}
 	return height
 }
 
-// DefaultMetrics is the deterministic fallback used when no adapter is injected. Its values match
-// the 10pt core-font defaults used by the PDF generator so diagnostics and output agree.
+// DefaultMetrics is a deterministic approximation used only when no renderer adapter is injected.
+// Production preview/export injects the exact canonical embedded-font metrics.
 type DefaultMetrics struct{}
 
-func (DefaultMetrics) AverageCharWidthMM(sizePt float64) float64 {
-	return sizePt * 25.4 / 72 * 0.55
+func (DefaultMetrics) AverageCharWidthMM(sizePt float64, style TextStyle) float64 {
+	factor := 0.55
+	if style.Bold || style.Weight >= 600 {
+		factor = 0.58
+	}
+	return sizePt * 25.4 / 72 * factor
 }
 
 func (DefaultMetrics) LineHeightMM(sizePt float64) float64 {
 	return sizePt * 25.4 / 72 * 1.2
 }
 
-func (DefaultMetrics) TextWidthMM(text string, sizePt float64) float64 {
-	return float64(utf8.RuneCountInString(text)) * DefaultMetrics{}.AverageCharWidthMM(sizePt)
+func (DefaultMetrics) TextWidthMM(text string, sizePt float64, style TextStyle) float64 {
+	return float64(utf8.RuneCountInString(text)) * DefaultMetrics{}.AverageCharWidthMM(sizePt, style)
 }
 
-// TableRowHeightMM is the fixed table row height shared by the resolver and the PDF adapter so
-// fragment capacities and drawn rows stay in agreement.
-const TableRowHeightMM = 5.0
+// Table defaults mirror frontend/table.ts. The minimum is a validation/clamping boundary, not the
+// fallback row height for legacy stories.
+const TableRowHeightMM = 8.0
+const TableMinRowHeightMM = 5.0
+const TableFontSizePt = 8.0
+const TableCellPaddingXPt = 3.0
+const TableCellPaddingYPt = 2.0
+const TableBorderWidthPt = 0.5
 
 // capacityFor reports how many average characters and how many lines fit in a box at sizePt.
-func capacityFor(widthMM, heightMM, sizePt float64, m Metrics) (charsPerLine, lines int) {
-	charsPerLine = int(widthMM / m.AverageCharWidthMM(sizePt))
+func capacityFor(widthMM, heightMM, sizePt float64, style TextStyle, m Metrics) (charsPerLine, lines int) {
+	charsPerLine = int(widthMM / m.AverageCharWidthMM(sizePt, style))
 	lines = int((heightMM + 0.001) / m.LineHeightMM(sizePt))
 	if charsPerLine < 1 {
 		charsPerLine = 1
@@ -74,29 +93,46 @@ func capacityFor(widthMM, heightMM, sizePt float64, m Metrics) (charsPerLine, li
 
 // wrapText greedily wraps text into lines that fit maxWidthMM at sizePt. Newlines are honored;
 // a single word wider than the line occupies its own line. The result is deterministic.
-func wrapText(text string, maxWidthMM, sizePt float64, m Metrics) []string {
+func wrapText(text string, maxWidthMM, sizePt float64, style TextStyle, m Metrics) []string {
 	if text == "" {
 		return nil
 	}
 	var lines []string
 	for _, paragraph := range strings.Split(text, "\n") {
-		words := strings.Fields(paragraph)
-		if len(words) == 0 {
+		tokens := splitWrapTokens(paragraph)
+		if len(tokens) == 0 {
 			lines = append(lines, "")
 			continue
 		}
 		current := ""
-		for _, word := range words {
-			candidate := word
-			if current != "" {
-				candidate = current + " " + word
-			}
-			if m.TextWidthMM(candidate, sizePt) <= maxWidthMM || current == "" {
+		for _, token := range tokens {
+			candidate := current + token
+			if m.TextWidthMM(candidate, sizePt, style) <= maxWidthMM {
 				current = candidate
 				continue
 			}
-			lines = append(lines, current)
-			current = word
+			if current != "" {
+				lines = append(lines, current)
+			}
+			if strings.TrimSpace(token) == "" {
+				current = token
+				continue
+			}
+			if m.TextWidthMM(token, sizePt, style) <= maxWidthMM {
+				current = token
+				continue
+			}
+			chunk := ""
+			for _, r := range token {
+				next := chunk + string(r)
+				if chunk != "" && m.TextWidthMM(next, sizePt, style) > maxWidthMM {
+					lines = append(lines, chunk)
+					chunk = string(r)
+				} else {
+					chunk = next
+				}
+			}
+			current = chunk
 		}
 		if current != "" {
 			lines = append(lines, current)
@@ -105,7 +141,26 @@ func wrapText(text string, maxWidthMM, sizePt float64, m Metrics) []string {
 	return lines
 }
 
+func splitWrapTokens(paragraph string) []string {
+	var tokens []string
+	var current []rune
+	space := false
+	for _, r := range paragraph {
+		isSpace := unicode.IsSpace(r)
+		if len(current) > 0 && isSpace != space {
+			tokens = append(tokens, string(current))
+			current = current[:0]
+		}
+		space = isSpace
+		current = append(current, r)
+	}
+	if len(current) > 0 {
+		tokens = append(tokens, string(current))
+	}
+	return tokens
+}
+
 // MeasuredTextHeightMM reports the height of wrapped text in millimetres at sizePt.
-func MeasuredTextHeightMM(text string, maxWidthMM, sizePt float64, m Metrics) float64 {
-	return float64(len(wrapText(text, maxWidthMM, sizePt, m))) * m.LineHeightMM(sizePt)
+func MeasuredTextHeightMM(text string, maxWidthMM, sizePt float64, style TextStyle, m Metrics) float64 {
+	return float64(len(wrapText(text, maxWidthMM, sizePt, style, m))) * m.LineHeightMM(sizePt)
 }

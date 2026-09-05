@@ -105,7 +105,7 @@ export function Preview({ companyId, quotationId, version }: PreviewProps) {
       <div className="min-h-0 flex-1 p-2 sm:p-3">
         {pdfUrl && (
           <iframe
-            src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+            src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=Fit`}
             title="Printable quotation preview"
             className="h-full min-h-0 w-full border-0 bg-white shadow-sm"
           />

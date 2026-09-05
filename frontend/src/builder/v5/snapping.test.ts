@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { distribute, snapRect, snapResize } from './snapping'
+import { distribute, guidesAtExactPosition, snapRect, snapResize } from './snapping'
 describe('V5 snapping', () => {
   it('selects the minimum visible correction and excludes hidden candidates', () => {
     expect(
@@ -55,5 +55,16 @@ describe('V5 snapping', () => {
     const vertical = result.guides.find((guide) => guide.axis === 'x')
     expect(result.dx).toBe(-1)
     expect(vertical).toMatchObject({ position: 100, from: 20, to: 280 })
+  })
+
+  it('reports keyboard alignment without applying a snap displacement', () => {
+    const active = { id: 'moving', x: 100, y: 200, width: 50, height: 80 }
+    const guides = guidesAtExactPosition(active, [
+      { id: 'anchor', x: 100, y: 20, width: 140, height: 60 },
+    ])
+    expect(guides).toContainEqual(
+      expect.objectContaining({ axis: 'x', position: 100, kind: 'edge' }),
+    )
+    expect(active.x).toBe(100)
   })
 })

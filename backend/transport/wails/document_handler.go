@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 
 	"quotierlabs/backend/application/document"
+	"quotierlabs/backend/application/documentfonts"
 )
 
 type DocumentHandler struct {
@@ -20,6 +21,33 @@ func NewDocumentHandler(docService *document.Service) *DocumentHandler {
 
 func (h *DocumentHandler) Startup(ctx context.Context) {
 	h.ctx = ctx
+}
+
+type DocumentFontDTO struct {
+	Family string `json:"family"`
+	Weight int    `json:"weight"`
+	Style  string `json:"style"`
+	Data   string `json:"data"`
+}
+
+// GetDocumentFonts gives the WebView the exact immutable TTF resources embedded into PDFs. It is
+// intentionally independent of the host OS font registry, current directory, and app theme.
+func (h *DocumentHandler) GetDocumentFonts() []DocumentFontDTO {
+	assets := documentfonts.Assets()
+	result := make([]DocumentFontDTO, 0, len(assets))
+	for _, asset := range assets {
+		style := "normal"
+		if asset.Italic {
+			style = "italic"
+		}
+		result = append(result, DocumentFontDTO{
+			Family: asset.CSSFamily,
+			Weight: asset.Weight,
+			Style:  style,
+			Data:   base64.StdEncoding.EncodeToString(asset.TTF),
+		})
+	}
+	return result
 }
 
 // GetQuotationPreviewPDF generates the PDF and returns it as a base64 encoded string

@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { createBlankTable, normalizeTableData, tableHeightDU } from './table'
+import {
+  createBlankTable,
+  insertTableColumn,
+  insertTableRow,
+  normalizeTableData,
+  removeTableColumn,
+  removeTableRow,
+  resolvedTableColumnWidths,
+  tableCellAtPoint,
+  tableHeightDU,
+  DU_PER_MM,
+} from './table'
 
 describe('generic table model', () => {
   it('creates blank configurable tables without prefixed headers', () => {
@@ -26,5 +37,44 @@ describe('generic table model', () => {
     expect(
       normalizeTableData({ headers: [''], rows: [['']], row_height_mm: 1 }).row_height_mm,
     ).toBe(5)
+  })
+})
+
+describe('indexed table structure', () => {
+  it('inserts and removes at the active row and column', () => {
+    const table = normalizeTableData({
+      headers: ['A', 'B'],
+      rows: [
+        ['one', 'two'],
+        ['three', 'four'],
+      ],
+      column_count: 2,
+      column_widths: [5000, 6000],
+    })
+    expect(insertTableRow(table, 1).rows).toEqual([
+      ['one', 'two'],
+      ['', ''],
+      ['three', 'four'],
+    ])
+    expect(removeTableRow(table, 0).rows).toEqual([['three', 'four']])
+    expect(insertTableColumn(table, 1).rows[0]).toEqual(['one', '', 'two'])
+    expect(removeTableColumn(table, 0).rows[0]).toEqual(['two'])
+  })
+
+  it('maps an object-mode pointer to the exact header or body cell', () => {
+    const table = createBlankTable(2, 2, 32000)
+    table.header_enabled = true
+    expect(tableCellAtPoint(table, 100, 100)).toEqual({ row: -1, column: 0 })
+    expect(tableCellAtPoint(table, 20000, table.row_height_mm * DU_PER_MM + 100)).toEqual({
+      row: 0,
+      column: 1,
+    })
+  })
+
+  it('projects all columns into the current frame without changing their ratios', () => {
+    const table = createBlankTable(2, 3, 30000)
+    table.column_widths = [10000, 20000, 30000]
+    expect(resolvedTableColumnWidths(table, 30000)).toEqual([5000, 10000, 15000])
+    expect(tableCellAtPoint(table, 16000, 100, 30000).column).toBe(2)
   })
 })

@@ -2,10 +2,13 @@
 package layoutir
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image/jpeg"
+	"image/png"
 	"math"
 	"strconv"
 	"strings"
@@ -92,6 +95,8 @@ type Box struct {
 	Align                string
 	VerticalAlign        string
 	TextColor            string
+	TextSizingMode       string
+	TextLines            []string
 }
 
 // Shape carries the controlled fill/stroke tokens resolved from node props.
@@ -117,8 +122,10 @@ type TableFragment struct {
 	RowHeightMM    float64
 }
 type Image struct {
-	MIME string
-	Data []byte
+	MIME        string
+	Data        []byte
+	PixelWidth  int
+	PixelHeight int
 }
 type Page struct {
 	Width, Height float64
@@ -219,6 +226,16 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 		if err := applyControlledProps(node, &box); err != nil {
 			return fmt.Errorf("node %s props: %w", node.ID, err)
 		}
+		textStyle := TextStyle{Family: box.FontFamily, Weight: box.FontWeight, Bold: box.Bold, Italic: box.Italic}
+		if text != "" {
+			if node.Kind == "text" && node.LayoutMode == "intrinsic" && box.TextSizingMode == "auto-width" {
+				// The editor has already measured and persisted the intrinsic frame. LayoutIR owns
+				// printable line resolution, but must not create a second geometry for Preview/PDF.
+				box.TextLines = strings.Split(text, "\n")
+			} else {
+				box.TextLines = wrapText(text, contentWidthMM(box.Width), box.FontSizePt, textStyle, m)
+			}
+		}
 		if node.Kind == "image" {
 			image, err := resolveImage(node.Props)
 			if err != nil {
@@ -227,19 +244,15 @@ func addNodes(ctx context.Context, page *Page, diagnostics *[]Diagnostic, nodes 
 			box.Image = image
 		}
 		switch {
-		case node.Role != "flow-frame" && node.LayoutMode == "intrinsic" && text != "":
-			// Intrinsic text has authored width and measured height; it may grow only inside
-			// the page bounds. The resolved box reports the measured height.
-			height := MeasuredTextHeightMM(text, contentWidthMM(box.Width), box.FontSizePt, m) + 2*TextPaddingMM
-			if height > box.Height {
-				box.Height = height
-			}
+		case node.Role != "flow-frame" && node.Kind == "text" && node.LayoutMode == "intrinsic":
+			// Intrinsic dimensions are document state committed atomically with text edits. Preserve
+			// them exactly; silently resizing here made Preview a different document from the canvas.
 			if box.Y+box.Height > page.Height {
 				*diagnostics = append(*diagnostics, Diagnostic{Code: "intrinsic_overflow", NodeID: node.ID, Message: "intrinsic text grows beyond the page bounds"})
 			}
 		case node.Role != "flow-frame" && text != "":
 			// Fixed text is never silently clipped: overset is reported.
-			if needed := MeasuredTextHeightMM(text, contentWidthMM(box.Width), box.FontSizePt, m) + 2*TextPaddingMM; needed > box.Height+0.001 {
+			if needed := MeasuredTextHeightMM(text, contentWidthMM(box.Width), box.FontSizePt, textStyle, m) + 2*TextPaddingYMM; needed > box.Height+0.001 {
 				*diagnostics = append(*diagnostics, Diagnostic{Code: "overset_text", NodeID: node.ID, Message: "Text does not fit inside its frame. Enlarge the frame or shorten the text."})
 			}
 		}
@@ -277,7 +290,24 @@ func resolveImage(raw json.RawMessage) (*Image, error) {
 	if err != nil || len(data) == 0 || len(data) > 5<<20 {
 		return nil, fmt.Errorf("invalid or oversized image data")
 	}
-	return &Image{MIME: mime, Data: data}, nil
+	var width, height int
+	if mime == "image/png" {
+		config, configErr := png.DecodeConfig(bytes.NewReader(data))
+		if configErr != nil {
+			return nil, fmt.Errorf("invalid PNG image")
+		}
+		width, height = config.Width, config.Height
+	} else {
+		config, configErr := jpeg.DecodeConfig(bytes.NewReader(data))
+		if configErr != nil {
+			return nil, fmt.Errorf("invalid JPEG image")
+		}
+		width, height = config.Width, config.Height
+	}
+	if width < 1 || height < 1 || width > 10000 || height > 10000 {
+		return nil, fmt.Errorf("invalid image dimensions")
+	}
+	return &Image{MIME: mime, Data: data, PixelWidth: width, PixelHeight: height}, nil
 }
 
 func resolveNodeText(node documentmodel.Node, input ResolveInput, pageNumber int) (string, error) {
@@ -437,14 +467,17 @@ func fillTextBox(box *Box, text string, m Metrics) string {
 	if text == "" {
 		return ""
 	}
-	_, fitsLines := capacityFor(contentWidthMM(box.Width), contentHeightMM(box.Height), box.FontSizePt, m)
-	wrapped := wrapText(text, contentWidthMM(box.Width), box.FontSizePt, m)
+	style := TextStyle{Family: box.FontFamily, Weight: box.FontWeight, Bold: box.Bold, Italic: box.Italic}
+	_, fitsLines := capacityFor(contentWidthMM(box.Width), contentHeightMM(box.Height), box.FontSizePt, style, m)
+	wrapped := wrapText(text, contentWidthMM(box.Width), box.FontSizePt, style, m)
 	if len(wrapped) <= fitsLines {
 		box.Text = text
+		box.TextLines = wrapped
 		return ""
 	}
-	box.Text = strings.Join(wrapped[:fitsLines], " ")
-	return strings.Join(wrapped[fitsLines:], " ")
+	box.TextLines = append([]string(nil), wrapped[:fitsLines]...)
+	box.Text = strings.Join(box.TextLines, "\n")
+	return strings.Join(wrapped[fitsLines:], "\n")
 }
 
 type tableStory struct {
@@ -508,8 +541,10 @@ func firstFrameID(layout *Layout, storyID string) string {
 // unconsumed row index. Headers repeat on every fragment after the first.
 func tableFragment(box *Box, table tableStory, row int) (*TableFragment, int) {
 	rowHeight := table.RowHeightMM
-	if rowHeight < TableRowHeightMM {
+	if rowHeight <= 0 {
 		rowHeight = TableRowHeightMM
+	} else if rowHeight < TableMinRowHeightMM {
+		rowHeight = TableMinRowHeightMM
 	}
 	headerEnabled := len(table.Headers) > 0
 	if table.HeaderEnabled != nil {

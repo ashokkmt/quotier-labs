@@ -6,14 +6,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/domain"
@@ -181,10 +184,27 @@ func extractPDFText(t *testing.T, data []byte) string {
 			continue
 		}
 		for _, sm := range pdfStringRe.FindAllSubmatch(decompressed, -1) {
-			sb.Write(bytes.ReplaceAll(sm[1], []byte(`\(`), []byte("(")))
+			sb.WriteString(decodePDFTestString(sm[1]))
 		}
 	}
 	return sb.String()
+}
+
+// Embedded UTF-8 fonts are emitted as two-byte character identifiers. The fixture parser is
+// deliberately small, but it must understand those identifiers instead of treating their zero
+// high bytes as printable text.
+func decodePDFTestString(encoded []byte) string {
+	raw := bytes.ReplaceAll(encoded, []byte(`\(`), []byte("("))
+	raw = bytes.ReplaceAll(raw, []byte(`\)`), []byte(")"))
+	raw = bytes.ReplaceAll(raw, []byte(`\\`), []byte(`\`))
+	if len(raw) < 2 || len(raw)%2 != 0 {
+		return string(raw)
+	}
+	units := make([]uint16, 0, len(raw)/2)
+	for index := 0; index < len(raw); index += 2 {
+		units = append(units, uint16(raw[index])<<8|uint16(raw[index+1]))
+	}
+	return string(utf16.Decode(units))
 }
 
 func decodedContentStreams(t *testing.T, data []byte) []byte {
@@ -203,6 +223,20 @@ func decodedContentStreams(t *testing.T, data []byte) []byte {
 		}
 	}
 	return decoded
+}
+
+func findTextDrawX(t *testing.T, data []byte, value string) float64 {
+	t.Helper()
+	encoded := make([]byte, 0, len(value)*2)
+	for _, unit := range utf16.Encode([]rune(value)) {
+		encoded = append(encoded, byte(unit>>8), byte(unit))
+	}
+	pattern := regexp.MustCompile(`BT ([0-9.]+) [0-9.]+ Td \(` + regexp.QuoteMeta(string(encoded)) + `\)Tj`)
+	match := pattern.FindSubmatch(decodedContentStreams(t, data))
+	if match == nil {
+		t.Fatalf("text draw operation for %q not found", value)
+	}
+	return mustFloat(t, string(match[1]))
 }
 
 func pdfPageCount(t *testing.T, data []byte) int {
@@ -394,5 +428,53 @@ func TestV5FixtureShapesAndStyledText(t *testing.T) {
 	again := generateV5(t, v5ShapesAndStyledTextFixture())
 	if !bytes.Equal(data, again) {
 		t.Fatal("shape fixture output is not deterministic")
+	}
+}
+
+func TestV5TextKeepsTrailingGlyphsAfterLayoutResolution(t *testing.T) {
+	values := []string{"Heading", "Subheading", "Text", "ending-g", "ending-j", "ending-p", "ending-q", "ending-y", "Punctuation! 123"}
+	children := make([]documentmodel.Node, 0, len(values))
+	childIDs := make([]string, 0, len(values))
+	for index, value := range values {
+		id := fmt.Sprintf("text-%d", index)
+		childIDs = append(childIDs, id)
+		children = append(children, documentmodel.Node{
+			ID: id, Kind: "text", Role: "element",
+			Geometry:   documentmodel.Geometry{X: 4000, Y: int64(4000 + index*3500), Width: 30000, Height: 2400},
+			LayoutMode: "intrinsic", Visibility: "shown",
+			Props: []byte(fmt.Sprintf(`{"text":%q,"fontSize":14,"bold":true,"sizingMode":"auto-width"}`, value)),
+		})
+	}
+	fixture := v5Fixture{Name: "trailing-glyphs", Document: &documentmodel.Document{
+		SchemaVersion: documentmodel.SchemaVersion,
+		Settings:      documentmodel.Settings{PageSize: "A4", Orientation: "portrait"},
+		Root:          documentmodel.Root{Pages: []documentmodel.Page{{ID: "p1", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: childIDs, Children: children}}},
+	}}
+	text := extractPDFText(t, generateV5(t, fixture))
+	for _, value := range values {
+		if !strings.Contains(text, value) {
+			t.Fatalf("PDF lost trailing glyph from %q: extracted %q", value, text)
+		}
+	}
+}
+
+func TestV5TextDrawStartsAtAuthoredFrameWithoutLibraryCellMargin(t *testing.T) {
+	const textXDU = 10000 // 100 pt
+	fixture := v5Fixture{Name: "text-shape-overlap-origin", Document: &documentmodel.Document{
+		SchemaVersion: documentmodel.SchemaVersion,
+		Settings:      documentmodel.Settings{PageSize: "A4", Orientation: "portrait"},
+		Root: documentmodel.Root{Pages: []documentmodel.Page{{
+			ID: "p1", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU,
+			ChildIDs: []string{"text", "overlap"},
+			Children: []documentmodel.Node{
+				{ID: "text", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{X: textXDU, Y: 10000, Width: 8100, Height: 1880}, LayoutMode: "intrinsic", Visibility: "shown", Props: []byte(`{"text":"Subheading","fontSize":14,"bold":true,"sizingMode":"auto-width"}`)},
+				{ID: "overlap", Kind: "shape", Role: "element", Geometry: documentmodel.Geometry{X: 17600, Y: 9000, Width: 12000, Height: 8000}, LayoutMode: "fixed", Visibility: "shown", Props: []byte(`{"variant":"rect","fill":"primary"}`)},
+			},
+		}}},
+	}}
+
+	data := generateV5(t, fixture)
+	if got := findTextDrawX(t, data, "Subheading"); math.Abs(got-100) > 0.01 {
+		t.Fatalf("text started at %.2f pt, want authored x 100.00 pt", got)
 	}
 }

@@ -8,6 +8,31 @@ export type ValidatedImageAsset = {
   height: number
 }
 
+/** Fits the complete source inside a bounded document frame without cropping or distortion. */
+export function fitImageSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  maxWidth: number,
+  maxHeight: number,
+): { width: number; height: number } {
+  if (
+    !Number.isFinite(sourceWidth) ||
+    !Number.isFinite(sourceHeight) ||
+    sourceWidth <= 0 ||
+    sourceHeight <= 0 ||
+    !Number.isFinite(maxWidth) ||
+    !Number.isFinite(maxHeight) ||
+    maxWidth <= 0 ||
+    maxHeight <= 0
+  )
+    return { width: Math.max(1, maxWidth), height: Math.max(1, maxHeight) }
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight)
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+  }
+}
+
 function readDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

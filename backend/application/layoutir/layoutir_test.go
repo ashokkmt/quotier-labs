@@ -23,6 +23,88 @@ func TestResolveSkipsHiddenAndPreservesOrder(t *testing.T) {
 	}
 }
 
+type recordingMetrics struct {
+	styles []TextStyle
+}
+
+func (m *recordingMetrics) AverageCharWidthMM(sizePt float64, style TextStyle) float64 {
+	m.styles = append(m.styles, style)
+	return 1
+}
+func (m *recordingMetrics) LineHeightMM(sizePt float64) float64 { return 4 }
+func (m *recordingMetrics) TextWidthMM(text string, sizePt float64, style TextStyle) float64 {
+	m.styles = append(m.styles, style)
+	return float64(len([]rune(text)))
+}
+
+func TestResolveUsesExactTextStyleAndPreservesAuthoredIntrinsicGeometry(t *testing.T) {
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"text"}, Children: []documentmodel.Node{{ID: "text", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{Width: 10000, Height: 20000}, LayoutMode: "intrinsic", Visibility: "shown", Props: []byte(`{"text":"Heading","fontSize":18,"fontFamily":"serif","fontWeight":700,"italic":true}`)}}}}}}
+	metrics := &recordingMetrics{}
+	layout, err := ResolveWithMetrics(context.Background(), doc, ResolveInput{}, metrics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := layout.Pages[0].Boxes[0]
+	if len(box.TextLines) != 1 || box.TextLines[0] != "Heading" {
+		t.Fatalf("resolved lines = %#v", box.TextLines)
+	}
+	wantWidth, wantHeight := 10000/DUPerMM, 20000/DUPerMM
+	if math.Abs(box.Width-wantWidth) > 0.0001 || math.Abs(box.Height-wantHeight) > 0.0001 {
+		t.Fatalf("intrinsic geometry = %vx%v, want %vx%v", box.Width, box.Height, wantWidth, wantHeight)
+	}
+	if len(metrics.styles) == 0 || metrics.styles[len(metrics.styles)-1] != (TextStyle{Family: "serif", Weight: 700, Bold: true, Italic: true}) {
+		t.Fatalf("exact text style was not measured: %#v", metrics.styles)
+	}
+}
+
+func TestResolveAutoWidthTextNeverRewrapsOrChangesItsGeometry(t *testing.T) {
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"text"}, Children: []documentmodel.Node{{ID: "text", Kind: "text", Role: "element", Geometry: documentmodel.Geometry{Width: 100, Height: 100}, LayoutMode: "intrinsic", Visibility: "shown", Props: []byte(`{"text":"Heading\nText","fontSize":18,"fontWeight":700,"sizingMode":"auto-width"}`)}}}}}}
+	metrics := &recordingMetrics{}
+	layout, err := ResolveWithMetrics(context.Background(), doc, ResolveInput{}, metrics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := layout.Pages[0].Boxes[0]
+	if len(box.TextLines) != 2 || box.TextLines[0] != "Heading" || box.TextLines[1] != "Text" {
+		t.Fatalf("auto-width lines were rewrapped: %#v", box.TextLines)
+	}
+	if math.Abs(box.Width-100/DUPerMM) > 0.0001 || math.Abs(box.Height-100/DUPerMM) > 0.0001 {
+		t.Fatalf("LayoutIR changed authored auto-width geometry: %vx%v", box.Width, box.Height)
+	}
+}
+
+func TestResolveProjectsTextAndShapeThroughTheSamePhysicalGeometry(t *testing.T) {
+	geometry := documentmodel.Geometry{X: 7200, Y: 14400, Width: 21600, Height: 28800}
+	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"text", "shape"}, Children: []documentmodel.Node{
+		{ID: "text", Kind: "text", Role: "element", Geometry: geometry, LayoutMode: "intrinsic", Visibility: "shown", Props: []byte(`{"text":"Heading","sizingMode":"auto-width"}`)},
+		{ID: "shape", Kind: "shape", Role: "element", Geometry: geometry, LayoutMode: "fixed", Visibility: "shown", Props: []byte(`{"variant":"rect","fill":"primary","stroke":"none"}`)},
+	}}}}}
+	layout, err := ResolveWithMetrics(context.Background(), doc, ResolveInput{}, &recordingMetrics{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(layout.Pages[0].Boxes) != 2 {
+		t.Fatalf("boxes = %#v", layout.Pages[0].Boxes)
+	}
+	textBox, shapeBox := layout.Pages[0].Boxes[0], layout.Pages[0].Boxes[1]
+	if textBox.X != shapeBox.X || textBox.Y != shapeBox.Y || textBox.Width != shapeBox.Width || textBox.Height != shapeBox.Height {
+		t.Fatalf("renderable kinds projected different geometry: text=%+v shape=%+v", textBox, shapeBox)
+	}
+	if math.Abs(textBox.X-25.4) > 0.0001 || math.Abs(textBox.Width-76.2) > 0.0001 {
+		t.Fatalf("document-unit conversion drifted: %+v", textBox)
+	}
+}
+
+func TestWrapTextPreservesTrailingBlankLineAndBreaksLongWords(t *testing.T) {
+	metrics := &recordingMetrics{}
+	if got := wrapText("abcd\n", 2, 10, TextStyle{}, metrics); len(got) != 3 || got[0] != "ab" || got[1] != "cd" || got[2] != "" {
+		t.Fatalf("wrapped lines = %#v", got)
+	}
+	if got := wrapText("a  b", 10, 10, TextStyle{}, metrics); len(got) != 1 || got[0] != "a  b" {
+		t.Fatalf("multiple spaces were not preserved: %#v", got)
+	}
+}
+
 func TestResolveComposesRotatedGroupAroundBoxCenters(t *testing.T) {
 	doc := &documentmodel.Document{
 		SchemaVersion: documentmodel.SchemaVersion,
@@ -269,7 +351,7 @@ func TestResolveDerivesPagesWithMasterAndPageNumbers(t *testing.T) {
 
 func TestResolveReportsIntrinsicOverflowAndKeepsGeometry(t *testing.T) {
 	doc := &documentmodel.Document{SchemaVersion: documentmodel.SchemaVersion, Settings: documentmodel.Settings{PageSize: "A4", Orientation: "portrait"}, Root: documentmodel.Root{Pages: []documentmodel.Page{{ID: "p", Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU, ChildIDs: []string{"t"}, Children: []documentmodel.Node{
-		{ID: "t", Kind: "text", Role: "element", LayoutMode: "intrinsic", Geometry: documentmodel.Geometry{X: 0, Y: 80000, Width: 20000, Height: 1000}, Visibility: "shown", Props: []byte(`{"text":"lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud"}`)},
+		{ID: "t", Kind: "text", Role: "element", LayoutMode: "intrinsic", Geometry: documentmodel.Geometry{X: 0, Y: 83500, Width: 20000, Height: 1000}, Visibility: "shown", Props: []byte(`{"text":"lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud"}`)},
 	}}}}}
 	layout, err := Resolve(doc)
 	if err != nil {

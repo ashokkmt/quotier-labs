@@ -71,6 +71,54 @@ export function bounds(points: Point[]): Bounds {
     y = Math.min(...ys)
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
 }
+
+const projectedRange = (polygon: Point[], axis: Point): [number, number] => {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const point of polygon) {
+    const value = point.x * axis.x + point.y * axis.y
+    min = Math.min(min, value)
+    max = Math.max(max, value)
+  }
+  return [min, max]
+}
+
+/** Positive-area convex polygon intersection. Boundary-only contact is intentionally excluded so
+ * marquee membership does not flicker when an edge merely touches an object. */
+export function polygonsOverlap(a: Point[], b: Point[], epsilon = 0.001): boolean {
+  if (a.length < 3 || b.length < 3) return false
+  const aBounds = bounds(a)
+  const bBounds = bounds(b)
+  if (
+    aBounds.x + aBounds.width <= bBounds.x + epsilon ||
+    bBounds.x + bBounds.width <= aBounds.x + epsilon ||
+    aBounds.y + aBounds.height <= bBounds.y + epsilon ||
+    bBounds.y + bBounds.height <= aBounds.y + epsilon
+  )
+    return false
+
+  for (const polygon of [a, b]) {
+    for (let index = 0; index < polygon.length; index++) {
+      const current = polygon[index]
+      const next = polygon[(index + 1) % polygon.length]
+      const rawAxis = { x: -(next.y - current.y), y: next.x - current.x }
+      const length = Math.hypot(rawAxis.x, rawAxis.y)
+      if (length <= Number.EPSILON) continue
+      const axis = { x: rawAxis.x / length, y: rawAxis.y / length }
+      const [aMin, aMax] = projectedRange(a, axis)
+      const [bMin, bMax] = projectedRange(b, axis)
+      if (aMax <= bMin + epsilon || bMax <= aMin + epsilon) return false
+    }
+  }
+  return true
+}
+
+export const rectPolygon = (rect: Bounds): Point[] => [
+  { x: rect.x, y: rect.y },
+  { x: rect.x + rect.width, y: rect.y },
+  { x: rect.x + rect.width, y: rect.y + rect.height },
+  { x: rect.x, y: rect.y + rect.height },
+]
 export const quantizeGeometry = (g: V5Geometry): V5Geometry => ({
   x: du(g.x) as DocumentUnit,
   y: du(g.y) as DocumentUnit,
@@ -78,6 +126,22 @@ export const quantizeGeometry = (g: V5Geometry): V5Geometry => ({
   height: du(g.height) as DocumentUnit,
   rotation: Math.round(g.rotation),
 })
+
+/** Changes authored size while keeping the transformed local top-left anchor stationary. */
+export function resizeKeepingTopLeft(
+  geometry: V5Geometry,
+  width: number,
+  height: number,
+): V5Geometry {
+  const previousOrigin = apply(geometryMatrix(geometry), { x: 0, y: 0 })
+  const resized = { ...geometry, width, height }
+  const nextOrigin = apply(geometryMatrix(resized), { x: 0, y: 0 })
+  return quantizeGeometry({
+    ...resized,
+    x: resized.x + previousOrigin.x - nextOrigin.x,
+    y: resized.y + previousOrigin.y - nextOrigin.y,
+  })
+}
 export const viewportToDocument = (point: Point, zoom: number, pan: Point): Point => ({
   x: (point.x - pan.x) / zoom,
   y: (point.y - pan.y) / zoom,

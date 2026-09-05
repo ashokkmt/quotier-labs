@@ -25,7 +25,11 @@ export type V5TextVerticalAlign = (typeof V5_TEXT_VERTICAL_ALIGNS)[number]
 
 // The inset is part of the controlled document projection and is mirrored by LayoutIR/PDF.
 // Keeping it fixed avoids arbitrary CSS while ensuring glyphs never touch selection bounds.
-export const V5_TEXT_PADDING_PT = 1
+export const V5_TEXT_PADDING_X_PT = 0
+export const V5_TEXT_PADDING_Y_PT = 1
+// Auto-width frames include a small controlled end allowance for glyph overhang and browser/PDF
+// raster rounding. This is frame geometry, not visible padding, so text still starts at x = 0.
+export const V5_TEXT_INLINE_SAFETY_PT = 1
 
 export const V5_STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const
 export type V5StrokeStyle = (typeof V5_STROKE_STYLES)[number]
@@ -37,9 +41,9 @@ export type V5FontFamily = (typeof V5_FONT_FAMILIES)[number]
 export const V5_FONT_WEIGHTS = [300, 400, 500, 600, 700] as const
 export type V5FontWeight = (typeof V5_FONT_WEIGHTS)[number]
 export const V5_FONT_FAMILY_CSS: Record<V5FontFamily, string> = {
-  sans: 'Arial, Helvetica, sans-serif',
-  serif: 'Times New Roman, Times, serif',
-  mono: 'Courier New, Courier, monospace',
+  sans: "'Quotier Sans', 'Liberation Sans', Arial, sans-serif",
+  serif: "'Quotier Serif', 'Liberation Serif', 'Times New Roman', serif",
+  mono: "'Quotier Mono', 'Liberation Mono', 'Courier New', monospace",
 }
 
 export const V5_FONT_SIZE_MIN_PT = 6
@@ -58,6 +62,7 @@ export type V5TextProps = {
   align: V5TextAlign
   verticalAlign: V5TextVerticalAlign
   color: V5ColorValue
+  sizingMode: 'auto-width' | 'fixed-width'
 }
 
 export type V5ShapeProps = {
@@ -73,8 +78,10 @@ export const clampFontSize = (value: number): number =>
   Math.min(V5_FONT_SIZE_MAX_PT, Math.max(V5_FONT_SIZE_MIN_PT, Math.round(value)))
 export const clampStrokeWidth = (value: number): number =>
   Math.min(V5_STROKE_WIDTH_MAX_PT, Math.max(V5_STROKE_WIDTH_MIN_PT, Math.round(value * 4) / 4))
-export const growIntrinsicTextHeight = (authoredHeight: number, measuredHeight: number): number =>
-  Math.max(authoredHeight, measuredHeight)
+export const intrinsicTextHeight = (fontSize: number, lines = 1): number =>
+  du((Math.max(1, lines) * fontSize * 1.2 + V5_TEXT_PADDING_Y_PT * 2) * 100)
+export const fitIntrinsicTextHeight = (measuredHeight: number, fontSize: number): number =>
+  Math.max(intrinsicTextHeight(fontSize), du(measuredHeight))
 
 export const isColorToken = (value: unknown): value is V5ColorToken =>
   typeof value === 'string' && (V5_COLOR_TOKENS as readonly string[]).includes(value)
@@ -104,6 +111,7 @@ export const defaultTextProps = (overrides: Partial<V5TextProps> = {}): V5TextPr
   align: 'left',
   verticalAlign: 'top',
   color: 'black',
+  sizingMode: 'auto-width',
   ...overrides,
 })
 
@@ -149,7 +157,7 @@ export const V5_TOOL_PRESETS: V5ToolPreset[] = [
     kind: 'text',
     role: 'element',
     layoutMode: 'intrinsic',
-    size: size(200, 18),
+    size: size(200, 19),
     props: defaultTextProps({ text: 'Subheading', fontSize: 14, bold: true }),
   },
   {
@@ -158,7 +166,7 @@ export const V5_TOOL_PRESETS: V5ToolPreset[] = [
     kind: 'text',
     role: 'element',
     layoutMode: 'intrinsic',
-    size: size(220, 44),
+    size: size(220, 16),
     props: defaultTextProps({ text: 'Text', fontSize: 11 }),
   },
   {

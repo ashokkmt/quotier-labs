@@ -4,7 +4,8 @@ import type { Bounds } from './geometry'
 import type { ResizeHandle } from './commands'
 
 export type SelectionMeasurement = { label: string; placement?: 'top' | 'bottom' }
-export const SELECTION_OUTSET_PX = 4
+export const SELECTION_OUTSET_PX = 0
+export const SELECTION_STROKE = '#2563eb'
 
 const handleCursor = (handle: ResizeHandle, rotation: number): CSSProperties['cursor'] => {
   const base: Record<ResizeHandle, number> = {
@@ -55,7 +56,7 @@ export function SelectionOverlay({
     top: bounds.y - SELECTION_OUTSET_PX,
     width: Math.max(bounds.width + SELECTION_OUTSET_PX * 2, 1),
     height: Math.max(bounds.height + SELECTION_OUTSET_PX * 2, 1),
-    border: '1.5px solid #2563eb',
+    border: `1.5px solid ${SELECTION_STROKE}`,
     transform: rotation ? `rotate(${rotation / 100}deg)` : undefined,
     transformOrigin: 'center',
     pointerEvents: 'none',
@@ -155,7 +156,7 @@ export function MemberSelectionOutline({
         top: bounds.y - SELECTION_OUTSET_PX,
         width: Math.max(bounds.width + SELECTION_OUTSET_PX * 2, 1),
         height: Math.max(bounds.height + SELECTION_OUTSET_PX * 2, 1),
-        border: '1px solid rgb(147 197 253)',
+        border: `1px solid ${SELECTION_STROKE}`,
         transform: rotation ? `rotate(${rotation / 100}deg)` : undefined,
         transformOrigin: 'center',
         pointerEvents: 'none',
@@ -179,7 +180,7 @@ export function HoverOutline({ bounds, rotation = 0 }: { bounds: Bounds; rotatio
         top: bounds.y,
         width: Math.max(bounds.width, 1),
         height: Math.max(bounds.height, 1),
-        border: '1px solid rgb(147 197 253 / .85)',
+        border: `1px solid ${SELECTION_STROKE}`,
         transform: rotation ? `rotate(${rotation / 100}deg)` : undefined,
         transformOrigin: 'center',
         pointerEvents: 'none',

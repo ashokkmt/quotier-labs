@@ -147,6 +147,12 @@ function validateControlledProps(node: V5Node): string | null {
     )
       return 'invalid vertical text alignment'
     if (props.color !== undefined && !isColorValue(props.color)) return 'invalid text color value'
+    if (
+      props.sizingMode !== undefined &&
+      props.sizingMode !== 'auto-width' &&
+      props.sizingMode !== 'fixed-width'
+    )
+      return 'invalid text sizing mode'
   }
   if (node.kind === 'shape') {
     if (!(V5_SHAPE_VARIANTS as readonly string[]).includes(String(props.variant)))

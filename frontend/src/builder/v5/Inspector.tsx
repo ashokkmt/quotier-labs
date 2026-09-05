@@ -26,6 +26,7 @@ import {
   setNodesLocked,
   setNodesVisibility,
   updateNodeGeometry,
+  updateNodeGeometryAndProps,
   updateNodeProps,
   updateTableContent,
 } from './commands'
@@ -39,12 +40,14 @@ import {
   V5_FONT_SIZE_MIN_PT,
   clampFontSize,
   clampStrokeWidth,
+  type V5TextProps,
 } from './tokens'
+import { measureIntrinsicTextGeometry } from './textMeasure'
 import { ColorPicker } from './ColorPicker'
 import { ancestorChain, findNode, isEffectivelyLocked } from './selectors'
 import { getV5Widget } from './registry'
 import { du, type V5Node } from './model'
-import { readValidatedImage } from './imageAssets'
+import { fitImageSize, readValidatedImage } from './imageAssets'
 import {
   Select,
   SelectContent,
@@ -53,11 +56,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  insertTableColumn,
+  insertTableRow,
   normalizeTableData,
+  removeTableColumn,
+  removeTableRow,
   TABLE_DEFAULT_ROW_HEIGHT_MM,
   TABLE_MIN_ROW_HEIGHT_MM,
   type V5TableData,
 } from './table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const field =
   'h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50'
@@ -396,7 +411,13 @@ function ArrangeSection({ node, disabled }: { node: V5Node; disabled?: boolean }
 function TextStyle({ node, disabled }: { node: V5Node; disabled?: boolean }) {
   const session = useV5Session()
   const props = node.props ?? {}
-  const set = (patch: Record<string, unknown>) => session.execute(updateNodeProps(node.id, patch))
+  const set = (patch: Record<string, unknown>) => {
+    if (node.layout_mode === 'intrinsic') {
+      const nextProps = { ...(props as unknown as V5TextProps), ...patch } as V5TextProps
+      const geometry = measureIntrinsicTextGeometry(node, nextProps)
+      session.execute(updateNodeGeometryAndProps(node.id, geometry, patch))
+    } else session.execute(updateNodeProps(node.id, patch))
+  }
   return (
     <Section title="Text style">
       <p className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
@@ -584,8 +605,34 @@ function ImageContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
   const choose = async (file?: File) => {
     if (!file) return
     try {
-      const { source } = await readValidatedImage(file)
-      session.execute(updateNodeProps(node.id, { source }))
+      const image = await readValidatedImage(file)
+      const props = {
+        source: image.source,
+        intrinsicWidth: image.width,
+        intrinsicHeight: image.height,
+      }
+      if (node.props?.source) session.execute(updateNodeProps(node.id, props))
+      else {
+        const fitted = fitImageSize(
+          image.width,
+          image.height,
+          node.geometry.width,
+          node.geometry.height,
+        )
+        session.execute(
+          updateNodeGeometryAndProps(
+            node.id,
+            {
+              ...node.geometry,
+              x: node.geometry.x + (node.geometry.width - fitted.width) / 2,
+              y: node.geometry.y + (node.geometry.height - fitted.height) / 2,
+              width: fitted.width,
+              height: fitted.height,
+            },
+            props,
+          ),
+        )
+      }
       setError(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The image could not be read.')
@@ -624,6 +671,9 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
   const story = session.document.stories?.find((candidate) => candidate.id === node.story_id)
   const source = normalizeTableData(story?.content)
   const [draft, setDraft] = useState<V5TableData>(() => structuredClone(source))
+  const [pendingDelete, setPendingDelete] = useState<{ message: string; run: () => void } | null>(
+    null,
+  )
   useEffect(() => setDraft(normalizeTableData(story?.content)), [story?.content])
   if (!story) return null
   const commit = (next: V5TableData) => {
@@ -631,132 +681,161 @@ function TableContent({ node, disabled }: { node: V5Node; disabled?: boolean }) 
     setDraft(normalized)
     session.execute(updateTableContent(node.id, normalized))
   }
+  const confirmIfPopulated = (message: string, populated: boolean, run: () => void) => {
+    if (populated) setPendingDelete({ message, run })
+    else run()
+  }
   return (
-    <Section title="Table content">
-      <div className="overflow-x-auto">
-        <div
-          className="grid min-w-[240px] gap-1"
-          style={{
-            gridTemplateColumns: `repeat(${draft.column_count}, minmax(72px, 1fr))`,
-          }}
-        >
-          {draft.headers.map((header, column) => (
-            <BufferedText
-              key={`h-${column}`}
-              value={header}
-              label={`Header ${column + 1}`}
-              disabled={disabled}
-              exact
-              onCommit={(value) =>
-                commit({
-                  ...draft,
-                  headers: draft.headers.map((item, index) => (index === column ? value : item)),
-                })
-              }
-            />
-          ))}
-          {draft.rows.map((row, rowIndex) =>
-            row.map((cell, column) => (
+    <>
+      <Section title="Table content">
+        <div className="overflow-x-auto">
+          <div
+            className="grid min-w-[240px] gap-1"
+            style={{
+              gridTemplateColumns: `repeat(${draft.column_count}, minmax(72px, 1fr))`,
+            }}
+          >
+            {draft.headers.map((header, column) => (
               <BufferedText
-                key={`${rowIndex}-${column}`}
-                value={cell}
-                label={`Row ${rowIndex + 1}, column ${column + 1}`}
+                key={`h-${column}`}
+                value={header}
+                label={`Header ${column + 1}`}
                 disabled={disabled}
                 exact
                 onCommit={(value) =>
                   commit({
                     ...draft,
-                    rows: draft.rows.map((item, index) =>
-                      index === rowIndex
-                        ? item.map((entry, cellIndex) => (cellIndex === column ? value : entry))
-                        : item,
-                    ),
+                    headers: draft.headers.map((item, index) => (index === column ? value : item)),
                   })
                 }
               />
-            )),
-          )}
+            ))}
+            {draft.rows.map((row, rowIndex) =>
+              row.map((cell, column) => (
+                <BufferedText
+                  key={`${rowIndex}-${column}`}
+                  value={cell}
+                  label={`Row ${rowIndex + 1}, column ${column + 1}`}
+                  disabled={disabled}
+                  exact
+                  onCommit={(value) =>
+                    commit({
+                      ...draft,
+                      rows: draft.rows.map((item, index) =>
+                        index === rowIndex
+                          ? item.map((entry, cellIndex) => (cellIndex === column ? value : entry))
+                          : item,
+                      ),
+                    })
+                  }
+                />
+              )),
+            )}
+          </div>
         </div>
-      </div>
-      <label className="flex h-8 items-center gap-2 rounded-md border px-2 text-xs">
-        <input
-          type="checkbox"
-          checked={draft.header_enabled}
+        <label className="flex h-8 items-center gap-2 rounded-md border px-2 text-xs">
+          <input
+            type="checkbox"
+            checked={draft.header_enabled}
+            disabled={disabled}
+            onChange={(event) =>
+              commit({
+                ...draft,
+                header_enabled: event.target.checked,
+                repeat_header: event.target.checked && draft.repeat_header,
+              })
+            }
+          />
+          Header row
+        </label>
+        <BufferedNumber
+          label="Uniform row height (mm)"
+          value={draft.row_height_mm ?? TABLE_DEFAULT_ROW_HEIGHT_MM}
+          min={TABLE_MIN_ROW_HEIGHT_MM}
+          max={30}
           disabled={disabled}
-          onChange={(event) =>
-            commit({
-              ...draft,
-              header_enabled: event.target.checked,
-              repeat_header: event.target.checked && draft.repeat_header,
-            })
-          }
+          onCommit={(row_height_mm) => commit({ ...draft, row_height_mm })}
         />
-        Header row
-      </label>
-      <BufferedNumber
-        label="Uniform row height (mm)"
-        value={draft.row_height_mm ?? TABLE_DEFAULT_ROW_HEIGHT_MM}
-        min={TABLE_MIN_ROW_HEIGHT_MM}
-        max={30}
-        disabled={disabled}
-        onCommit={(row_height_mm) => commit({ ...draft, row_height_mm })}
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={disabled}
-          className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
-          onClick={() => commit({ ...draft, rows: [...draft.rows, draft.headers.map(() => '')] })}
-        >
-          Add row
-        </button>
-        <button
-          type="button"
-          disabled={disabled || draft.rows.length <= 1}
-          className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
-          onClick={() => commit({ ...draft, rows: draft.rows.slice(0, -1) })}
-        >
-          Remove row
-        </button>
-        <button
-          type="button"
-          disabled={disabled || draft.column_count >= 12}
-          className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
-          onClick={() => {
-            const count = draft.column_count + 1
-            const averageWidth = Math.round(
-              draft.column_widths.reduce((sum, width) => sum + width, 0) / draft.column_count,
-            )
-            commit({
-              ...draft,
-              column_count: count,
-              headers: [...draft.headers, ''],
-              rows: draft.rows.map((row) => [...row, '']),
-              column_widths: [...draft.column_widths, averageWidth],
-            })
-          }}
-        >
-          Add column
-        </button>
-        <button
-          type="button"
-          disabled={disabled || draft.column_count <= 1}
-          className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
-          onClick={() => {
-            const count = draft.column_count - 1
-            commit({
-              ...draft,
-              column_count: count,
-              headers: draft.headers.slice(0, count),
-              rows: draft.rows.map((row) => row.slice(0, count)),
-              column_widths: draft.column_widths.slice(0, count),
-            })
-          }}
-        >
-          Remove column
-        </button>
-      </div>
-    </Section>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+            onClick={() => commit(insertTableRow(draft, draft.rows.length))}
+          >
+            Add row at end
+          </button>
+          <button
+            type="button"
+            disabled={disabled || draft.rows.length <= 1}
+            className="h-8 flex-1 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+            onClick={() =>
+              confirmIfPopulated(
+                'The last row contains content. Delete it?',
+                draft.rows.at(-1)?.some(Boolean) ?? false,
+                () => commit(removeTableRow(draft, draft.rows.length - 1)),
+              )
+            }
+          >
+            Remove last row
+          </button>
+          <button
+            type="button"
+            disabled={disabled || draft.column_count >= 12}
+            className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+            onClick={() => commit(insertTableColumn(draft, draft.column_count))}
+          >
+            Add column at end
+          </button>
+          <button
+            type="button"
+            disabled={disabled || draft.column_count <= 1}
+            className="h-8 rounded-md border text-xs hover:bg-accent disabled:opacity-40"
+            onClick={() => {
+              const index = draft.column_count - 1
+              const populated = [draft.headers[index], ...draft.rows.map((row) => row[index])].some(
+                Boolean,
+              )
+              confirmIfPopulated('The last column contains content. Delete it?', populated, () =>
+                commit(removeTableColumn(draft, index)),
+              )
+            }}
+          >
+            Remove last column
+          </button>
+        </div>
+      </Section>
+      <Dialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
+        <DialogContent data-v5-editor-chrome>
+          <DialogHeader>
+            <DialogTitle>Delete table content?</DialogTitle>
+            <DialogDescription>{pendingDelete?.message}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              className="h-9 rounded-md border px-3 text-sm hover:bg-accent"
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="h-9 rounded-md bg-destructive px-3 text-sm text-destructive-foreground"
+              onClick={() => {
+                pendingDelete?.run()
+                setPendingDelete(null)
+              }}
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

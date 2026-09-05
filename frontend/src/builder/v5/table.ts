@@ -8,6 +8,14 @@ export const TABLE_DEFAULT_ROW_HEIGHT_MM = 8
 export const TABLE_MIN_ROW_HEIGHT_MM = 5
 export const TABLE_MIN_COLUMN_WIDTH_MM = 15
 export const DU_PER_MM = (72 / 25.4) * 100
+export const TABLE_FONT_SIZE_PT = 8
+export const TABLE_CELL_PADDING_X_PT = 3
+export const TABLE_CELL_PADDING_Y_PT = 2
+export const TABLE_BORDER_WIDTH_PT = 0.5
+export const TABLE_TEXT_COLOR = '#111827'
+export const TABLE_BORDER_COLOR = '#4B5563'
+export const TABLE_HEADER_FILL = '#F3F4F6'
+export const TABLE_BODY_FILL = '#FFFFFF'
 
 export type V5TableData = {
   headers: string[]
@@ -87,6 +95,103 @@ export function normalizeTableData(content: unknown): V5TableData {
 
 export const tableHeightDU = (table: V5TableData) =>
   Math.ceil((table.rows.length + (table.header_enabled ? 1 : 0)) * table.row_height_mm * DU_PER_MM)
+
+/** Projects authored column ratios into the current frame width. LayoutIR/PDF applies this same
+ * rule, so legacy or constrained frames never clip columns only in the editor. */
+export function resolvedTableColumnWidths(table: V5TableData, frameWidthDU: number): number[] {
+  const normalized = normalizeTableData(table)
+  const total = normalized.column_widths.reduce(
+    (sum, width) => sum + (Number.isFinite(width) && width > 0 ? width : 0),
+    0,
+  )
+  if (total <= 0)
+    return Array.from(
+      { length: normalized.column_count },
+      () => frameWidthDU / normalized.column_count,
+    )
+  return normalized.column_widths.map((width) => (width / total) * frameWidthDU)
+}
+
+/** Resolves an object-mode pointer to the exact editable cell without adding DOM-only data. */
+export function tableCellAtPoint(
+  table: V5TableData,
+  xDU: number,
+  yDU: number,
+  frameWidthDU?: number,
+): { row: number; column: number } {
+  const normalized = normalizeTableData(table)
+  const projectedWidths = resolvedTableColumnWidths(
+    normalized,
+    frameWidthDU ?? normalized.column_widths.reduce((sum, width) => sum + width, 0),
+  )
+  const totalWidth = projectedWidths.reduce((sum, width) => sum + width, 0)
+  const fallbackWidth = totalWidth > 0 ? totalWidth / normalized.column_count : 1
+  let edge = 0
+  let column = normalized.column_count - 1
+  for (let index = 0; index < normalized.column_count; index++) {
+    edge += projectedWidths[index] || fallbackWidth
+    if (xDU < edge) {
+      column = index
+      break
+    }
+  }
+  const rowHeight = normalized.row_height_mm * DU_PER_MM
+  const visualRow = Math.max(
+    0,
+    Math.min(
+      normalized.rows.length + (normalized.header_enabled ? 1 : 0) - 1,
+      Math.floor(yDU / Math.max(1, rowHeight)),
+    ),
+  )
+  return {
+    row: normalized.header_enabled ? visualRow - 1 : visualRow,
+    column,
+  }
+}
+
+export function insertTableRow(table: V5TableData, index: number): V5TableData {
+  const next = normalizeTableData(table)
+  if (next.rows.length >= TABLE_MAX_ROWS) return next
+  const at = Math.max(0, Math.min(index, next.rows.length))
+  next.rows.splice(
+    at,
+    0,
+    Array.from({ length: next.column_count }, () => ''),
+  )
+  return next
+}
+
+export function removeTableRow(table: V5TableData, index: number): V5TableData {
+  const next = normalizeTableData(table)
+  if (next.rows.length <= TABLE_MIN_ROWS) return next
+  const at = Math.max(0, Math.min(index, next.rows.length - 1))
+  next.rows.splice(at, 1)
+  return next
+}
+
+export function insertTableColumn(table: V5TableData, index: number): V5TableData {
+  const next = normalizeTableData(table)
+  if (next.column_count >= TABLE_MAX_COLUMNS) return next
+  const at = Math.max(0, Math.min(index, next.column_count))
+  const fallback =
+    next.column_widths.find((width) => width > 0) ?? du(TABLE_MIN_COLUMN_WIDTH_MM * DU_PER_MM)
+  next.column_count += 1
+  next.headers.splice(at, 0, '')
+  next.rows.forEach((row) => row.splice(at, 0, ''))
+  next.column_widths.splice(at, 0, fallback)
+  return next
+}
+
+export function removeTableColumn(table: V5TableData, index: number): V5TableData {
+  const next = normalizeTableData(table)
+  if (next.column_count <= TABLE_MIN_COLUMNS) return next
+  const at = Math.max(0, Math.min(index, next.column_count - 1))
+  next.column_count -= 1
+  next.headers.splice(at, 1)
+  next.rows.forEach((row) => row.splice(at, 1))
+  next.column_widths.splice(at, 1)
+  return next
+}
 
 function clampInt(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(value) || min))

@@ -4,9 +4,13 @@ import {
   bounds,
   corners,
   documentToViewport,
+  geometryMatrix,
   invert,
   multiply,
+  polygonsOverlap,
   quantizeGeometry,
+  rectPolygon,
+  resizeKeepingTopLeft,
   rotate,
   translate,
   viewportToDocument,
@@ -40,5 +44,24 @@ describe('V5 geometry kernel', () => {
     expect(
       documentToViewport(viewportToDocument(p, 2, { x: 10, y: 20 }), 2, { x: 10, y: 20 }),
     ).toEqual(p)
+  })
+  it('detects every positive marquee overlap without selecting edge-only contact', () => {
+    const marquee = rectPolygon({ x: 0, y: 0, width: 10, height: 10 })
+    expect(polygonsOverlap(marquee, rectPolygon({ x: 9, y: 9, width: 10, height: 10 }))).toBe(true)
+    expect(polygonsOverlap(marquee, rectPolygon({ x: 2, y: 2, width: 2, height: 2 }))).toBe(true)
+    expect(polygonsOverlap(marquee, rectPolygon({ x: -2, y: 4, width: 14, height: 2 }))).toBe(true)
+    expect(
+      polygonsOverlap(marquee, corners({ x: 8, y: 2, width: 4, height: 4, rotation: 4500 })),
+    ).toBe(true)
+    expect(polygonsOverlap(marquee, rectPolygon({ x: 10, y: 0, width: 4, height: 4 }))).toBe(false)
+    expect(polygonsOverlap(marquee, rectPolygon({ x: 11, y: 0, width: 4, height: 4 }))).toBe(false)
+  })
+  it('resizes rotated intrinsic text without moving its transformed top-left anchor', () => {
+    const before = { x: 100, y: 200, width: 300, height: 100, rotation: 4500 }
+    const origin = apply(geometryMatrix(before), { x: 0, y: 0 })
+    const after = resizeKeepingTopLeft(before, 500, 240)
+    const nextOrigin = apply(geometryMatrix(after), { x: 0, y: 0 })
+    expect(nextOrigin.x).toBeCloseTo(origin.x, 0)
+    expect(nextOrigin.y).toBeCloseTo(origin.y, 0)
   })
 })

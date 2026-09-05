@@ -102,6 +102,19 @@ export function snapRect(
   }
 }
 
+/** Reports relationships already reached by an exact keyboard nudge without applying the
+ * nearby pointer-snap correction. This keeps Arrow movement at precisely 1pt/10pt. */
+export function guidesAtExactPosition(
+  active: SnapRect,
+  candidates: SnapRect[],
+  epsilonDU = 0.5,
+): SnapGuide[] {
+  const result = snapRect(active, candidates, epsilonDU)
+  return result.guides.filter((guide) =>
+    guide.axis === 'x' ? Math.abs(result.dx) <= epsilonDU : Math.abs(result.dy) <= epsilonDU,
+  )
+}
+
 function equalSpacing(
   active: SnapRect,
   candidates: SnapRect[],

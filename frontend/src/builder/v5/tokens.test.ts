@@ -4,7 +4,8 @@ import {
   clampStrokeWidth,
   defaultShapeProps,
   defaultTextProps,
-  growIntrinsicTextHeight,
+  fitIntrinsicTextHeight,
+  intrinsicTextHeight,
   isColorToken,
   V5_COLOR_TOKENS,
   V5_TOOL_PRESETS,
@@ -13,9 +14,10 @@ import { getV5Widget, validateNodeContract } from './registry'
 import { du, type V5Node } from './model'
 
 describe('V5 design tokens', () => {
-  it('does not shrink an authored text frame merely by entering edit mode', () => {
-    expect(growIntrinsicTextHeight(4800, 2200)).toBe(4800)
-    expect(growIntrinsicTextHeight(4800, 6200)).toBe(6200)
+  it('fits intrinsic text in both directions with a one-line minimum', () => {
+    expect(fitIntrinsicTextHeight(2200, 11)).toBe(2200)
+    expect(fitIntrinsicTextHeight(6200, 11)).toBe(6200)
+    expect(fitIntrinsicTextHeight(200, 11)).toBe(intrinsicTextHeight(11))
   })
   it('uses a closed token palette', () => {
     expect([...V5_COLOR_TOKENS].sort()).toEqual([
@@ -66,6 +68,7 @@ describe('V5 design tokens', () => {
     ).toBe(true)
     const text = defaultTextProps()
     expect(text.color).toBe('black')
+    expect(text.sizingMode).toBe('auto-width')
     expect(clampFontSize(text.fontSize)).toBe(text.fontSize)
     expect(du(1.5)).toBe(2)
   })
@@ -83,5 +86,12 @@ describe('V5 design tokens', () => {
       subheading: 'Subheading',
       'body-text': 'Text',
     })
+  })
+
+  it('uses compact typography-derived text preset heights', () => {
+    const presets = Object.fromEntries(V5_TOOL_PRESETS.map((preset) => [preset.id, preset]))
+    expect(presets.heading.size.height).toBe(2400)
+    expect(presets.subheading.size.height).toBe(1900)
+    expect(presets['body-text'].size.height).toBe(1600)
   })
 })
