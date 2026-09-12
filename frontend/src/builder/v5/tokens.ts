@@ -27,6 +27,8 @@ export type V5TextVerticalAlign = (typeof V5_TEXT_VERTICAL_ALIGNS)[number]
 // Keeping it fixed avoids arbitrary CSS while ensuring glyphs never touch selection bounds.
 export const V5_TEXT_PADDING_X_PT = 0
 export const V5_TEXT_PADDING_Y_PT = 1
+export const V5_TEXT_UNDERLINE_OFFSET_EM = 0.23
+export const V5_TEXT_UNDERLINE_THICKNESS_EM = 0.055
 // Auto-width frames include a small controlled end allowance for glyph overhang and browser/PDF
 // raster rounding. This is frame geometry, not visible padding, so text still starts at x = 0.
 export const V5_TEXT_INLINE_SAFETY_PT = 1

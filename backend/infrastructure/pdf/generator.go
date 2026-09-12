@@ -58,6 +58,10 @@ func (g *generator) generateV5(ctx context.Context, input document.GeneratorInpu
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")
 	registerDocumentFonts(pdf)
+	// LayoutIR already owns every physical page. Leaving fpdf's default automatic page breaking
+	// enabled makes a fixed box near an authored page edge call AddPage from inside CellFormat,
+	// splitting individual lines onto otherwise blank PDF pages and corrupting clip state.
+	pdf.SetAutoPageBreak(false, 0)
 	// CellFormat defaults to a 1 mm implicit horizontal margin. LayoutIR already resolves
 	// every authored padding value, so retaining that library default shifts PDF glyphs
 	// relative to shapes and makes editor/preview overlap geometry disagree.
@@ -191,9 +195,6 @@ func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
 	if box.Italic {
 		style += "I"
 	}
-	if box.Underline {
-		style += "U"
-	}
 	fontSize := box.FontSizePt
 	if fontSize <= 0 {
 		fontSize = layoutir.DefaultFontSizePt
@@ -236,9 +237,37 @@ func drawText(pdf *fpdf.Fpdf, box layoutir.Box, metrics layoutir.Metrics) {
 	for _, line := range lines {
 		pdf.SetXY(box.X+paddingX, y)
 		pdf.CellFormat(contentWidth, metrics.LineHeightMM(fontSize), line, "", 0, align, false, 0, "")
+		if box.Underline && line != "" {
+			drawTextUnderline(pdf, box, line, y, contentWidth, fontSize, metrics)
+		}
 		y += metrics.LineHeightMM(fontSize)
 	}
 	pdf.ClipEnd()
+}
+
+// drawTextUnderline avoids fpdf's built-in U style, whose font-specific underline position sits
+// against glyphs in the bundled fonts. This controlled line matches the canvas decoration and is
+// drawn per resolved line, so wrapping and alignment remain identical in both projections.
+func drawTextUnderline(pdf *fpdf.Fpdf, box layoutir.Box, line string, lineY, contentWidth, fontSizePt float64, metrics layoutir.Metrics) {
+	x, underlineY, width, thickness := textUnderlineGeometry(box, pdf.GetStringWidth(line), lineY, contentWidth, fontSizePt, metrics)
+	applyDrawColor(pdf, box.TextColor)
+	pdf.SetLineWidth(thickness)
+	pdf.Line(x, underlineY, x+width, underlineY)
+}
+
+func textUnderlineGeometry(box layoutir.Box, width, lineY, contentWidth, fontSizePt float64, metrics layoutir.Metrics) (x, y, lineWidth, thickness float64) {
+	x = box.X + layoutir.TextPaddingXMM
+	switch box.Align {
+	case "center":
+		x += (contentWidth - width) / 2
+	case "right":
+		x += contentWidth - width
+	}
+	fontSizeMM := fontSizePt * 25.4 / 72
+	baselineY := lineY + metrics.LineHeightMM(fontSizePt)/2 + 0.3*fontSizeMM
+	underlineY := baselineY + layoutir.TextUnderlineOffsetEm*fontSizeMM
+	underlineThickness := math.Max(0.5*25.4/72, layoutir.TextUnderlineThicknessEm*fontSizeMM)
+	return x, underlineY, width, underlineThickness
 }
 
 // drawShape paints a resolved shape with controlled fill/stroke tokens. Stroke dash patterns and

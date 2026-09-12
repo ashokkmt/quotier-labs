@@ -59,6 +59,7 @@ quotierlabs
 temp/
 
 plans/
+graphify-out/
 test*.md
 logs.txt
 AGENTS.md

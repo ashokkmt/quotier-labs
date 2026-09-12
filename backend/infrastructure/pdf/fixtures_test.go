@@ -52,6 +52,29 @@ func v5TextFixture() v5Fixture {
 	}
 }
 
+func v5FixedBottomEdgePagesFixture() v5Fixture {
+	page := func(id, text string) documentmodel.Page {
+		return documentmodel.Page{
+			ID: id, Width: documentmodel.A4WidthDU, Height: documentmodel.A4HeightDU,
+			ChildIDs: []string{id + "-bottom"},
+			Children: []documentmodel.Node{{
+				ID: id + "-bottom", Kind: "text", Role: "element",
+				Geometry:   documentmodel.Geometry{X: 7200, Y: 79000, Width: 30000, Height: 4500},
+				LayoutMode: "fixed", Visibility: "shown",
+				Props: []byte(`{"text":"` + text + `","underline":true}`),
+			}},
+		}
+	}
+	return v5Fixture{
+		Name: "fixed-bottom-edge-pages",
+		Document: &documentmodel.Document{
+			SchemaVersion: documentmodel.SchemaVersion,
+			Settings:      documentmodel.Settings{PageSize: "A4", Orientation: "portrait"},
+			Root:          documentmodel.Root{Pages: []documentmodel.Page{page("p1", "Authored page one footer"), page("p2", "Authored page two footer")}},
+		},
+	}
+}
+
 func v5MultipageTableFixture() v5Fixture {
 	rows := make([][]string, 0, 30)
 	for i := 0; i < 30; i++ {
@@ -308,6 +331,20 @@ func TestV5FixtureSimpleTextSemantic(t *testing.T) {
 	// rectangle strokes around otherwise borderless objects.
 	if regexp.MustCompile(`(?m)\bre\s+S\b`).Match(decodedContentStreams(t, data)) {
 		t.Fatal("text-only PDF contains an unexpected rectangle stroke")
+	}
+}
+
+func TestV5FixedPageRendererNeverCreatesLibraryAutoPages(t *testing.T) {
+	data := generateV5(t, v5FixedBottomEdgePagesFixture())
+	if pages := pdfPageCount(t, data); pages != 2 {
+		t.Fatalf("two authored pages became %d PDF pages", pages)
+	}
+	text := extractPDFText(t, data)
+	if !strings.Contains(text, "Authored page one footer") || !strings.Contains(text, "Authored page two footer") {
+		t.Fatalf("bottom-edge text was lost: %q", text)
+	}
+	if !regexp.MustCompile(`(?m)[0-9.]+ [0-9.]+ m [0-9.]+ [0-9.]+ l S`).Match(decodedContentStreams(t, data)) {
+		t.Fatal("controlled underline line was not emitted")
 	}
 }
 

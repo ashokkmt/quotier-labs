@@ -33,6 +33,11 @@ const TextPaddingYPt = 1.0
 const TextPaddingXMM = TextPaddingXPt * 25.4 / 72
 const TextPaddingYMM = TextPaddingYPt * 25.4 / 72
 
+// TextUnderlineOffsetEm and TextUnderlineThicknessEm define the controlled decoration geometry
+// shared by the canvas and PDF projections. The offset deliberately clears glyph descenders.
+const TextUnderlineOffsetEm = 0.23
+const TextUnderlineThicknessEm = 0.055
+
 func contentWidthMM(width float64) float64 {
 	width -= 2 * TextPaddingXMM
 	if width < 0.1 {

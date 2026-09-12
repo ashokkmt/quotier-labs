@@ -39,3 +39,24 @@ func TestDocumentFontsUseSameResourcesForMetricsAndDrawing(t *testing.T) {
 		}
 	}
 }
+
+func TestTextUnderlineClearsGlyphsAndHonorsAlignment(t *testing.T) {
+	metrics := NewLayoutMetrics()
+	box := layoutir.Box{X: 10, Width: 80, Align: "right"}
+	fontSizePt := 20.0
+	fontSizeMM := fontSizePt * 25.4 / 72
+	lineY := 15.0
+	contentWidth := 70.0
+	x, y, width, thickness := textUnderlineGeometry(box, 25, lineY, contentWidth, fontSizePt, metrics)
+	wantX := box.X + layoutir.TextPaddingXMM + contentWidth - 25
+	baselineY := lineY + metrics.LineHeightMM(fontSizePt)/2 + 0.3*fontSizeMM
+	if math.Abs(x-wantX) > 0.0001 || width != 25 {
+		t.Fatalf("right-aligned underline geometry = x:%v width:%v", x, width)
+	}
+	if gap := y - baselineY; math.Abs(gap-layoutir.TextUnderlineOffsetEm*fontSizeMM) > 0.0001 || gap < 0.2*fontSizeMM {
+		t.Fatalf("underline does not clear glyphs: baseline=%v underline=%v gap=%v", baselineY, y, gap)
+	}
+	if thickness < 0.5*25.4/72 {
+		t.Fatalf("underline is too thin for reliable rendering: %v mm", thickness)
+	}
+}
