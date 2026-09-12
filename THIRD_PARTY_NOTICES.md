@@ -1,5 +1,13 @@
 # Third-Party Notices
 
+## Tiptap / ProseMirror
+
+The document editor uses Tiptap and ProseMirror packages, distributed under the MIT License.
+
+## docx
+
+DOCX export uses the `docx` JavaScript package, distributed under the MIT License.
+
 ## Liberation Fonts
 
 Digitized data copyright (c) 2010 Google Corporation
@@ -80,4 +88,3 @@ HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY GENERA
 INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE
 FONT SOFTWARE.
-

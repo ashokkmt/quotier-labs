@@ -7,7 +7,7 @@ import (
 
 	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentformat"
 	domain_template "quotierlabs/backend/domain/template"
 )
 
@@ -58,13 +58,17 @@ func (s *Service) CreateTemplate(ctx context.Context, companyID string, input Te
 	}
 	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
+	version, err := documentformat.Validate([]byte(input.Layout))
+	if err != nil {
+		return nil, &domain.ValidationError{Field: "layout", Message: "template layout is invalid"}
+	}
 	t := &domain.Template{
 		ID:             s.idGen.Generate(),
 		CompanyID:      &companyID,
 		Name:           input.Name,
 		Description:    input.Description,
 		Layout:         input.Layout,
-		SchemaVersion:  documentmodel.SchemaVersion,
+		SchemaVersion:  version,
 		IsBuiltin:      false,
 		CurrentVersion: 1,
 		AuditMetadata: domain.AuditMetadata{
@@ -125,8 +129,12 @@ func (s *Service) UpdateTemplate(ctx context.Context, companyID string, input Te
 
 	t.Name = input.Name
 	t.Description = input.Description
+	version, err := documentformat.Validate([]byte(input.Layout))
+	if err != nil {
+		return nil, &domain.ValidationError{Field: "layout", Message: "template layout is invalid"}
+	}
 	t.Layout = input.Layout
-	t.SchemaVersion = documentmodel.SchemaVersion
+	t.SchemaVersion = version
 	t.UpdatedAt = time.Now().UTC()
 	t.CurrentVersion++
 

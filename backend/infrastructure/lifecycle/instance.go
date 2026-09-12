@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/infrastructure/appidentity"
 	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/fileutil"
@@ -166,7 +166,7 @@ func ValidatePendingUpdate(paths apppaths.Paths, build appidentity.BuildInfo) er
 	if err != nil {
 		return err
 	}
-	if int64(transaction.DBSchemaAfter) != target || transaction.DocumentSchemaAfter != documentmodel.SchemaVersion {
+	if int64(transaction.DBSchemaAfter) != target || transaction.DocumentSchemaAfter != documentformat.CurrentVersion {
 		return errors.New("installed update schemas do not match its signed transaction")
 	}
 	return nil

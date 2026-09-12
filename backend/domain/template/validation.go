@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentformat"
 )
 
 var (
@@ -20,7 +20,8 @@ func ValidateTemplate(t *domain.Template) error {
 	if t.Layout == "" {
 		return ErrInvalidLayout
 	}
-	if _, err := documentmodel.Parse([]byte(t.Layout)); err != nil {
+	version, err := documentformat.Validate([]byte(t.Layout))
+	if err != nil || (t.SchemaVersion != 0 && version != t.SchemaVersion) {
 		return ErrInvalidLayout
 	}
 

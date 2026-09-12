@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"quotierlabs/backend/application/flowlayout"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/calculation"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
@@ -27,12 +31,28 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 		return nil, err
 	}
 
-	// 1. Validate Document Structure
-	v5Doc, err := documentmodel.Parse([]byte(q.Document))
+	// 1. Validate Document Structure and extract only registered quotation nodes.
+	version, err := documentformat.Validate([]byte(q.Document))
 	if err != nil {
 		return nil, err
 	}
-	lines := domain_quotation.ExtractV5LineItems(v5Doc)
+	var v5Doc *documentmodel.Document
+	var v6Doc *documentv6.Document
+	var lines []calculation.LineItemInput
+	if version == documentmodel.SchemaVersion {
+		v5Doc, err = documentmodel.Parse([]byte(q.Document))
+		if err == nil {
+			lines = domain_quotation.ExtractV5LineItems(v5Doc)
+		}
+	} else {
+		v6Doc, err = documentv6.Parse([]byte(q.Document))
+		if err == nil {
+			lines = domain_quotation.ExtractV6LineItems(v6Doc)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
 
 	// 2. Authoritative Recalculation
 	comp, err := s.companyRepo.GetByID(txCtx, companyID)
@@ -44,9 +64,13 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 		return nil, err
 	}
 
-	// V5 documents must resolve cleanly before they can become immutable: required overset
-	// content, invalid assets, and unresolved required bindings all block finalization.
-	if err := s.checkV5Finalization(txCtx, v5Doc, q, comp, cust); err != nil {
+	// Documents must resolve cleanly before they can become immutable.
+	if version == documentmodel.SchemaVersion {
+		err = s.checkV5Finalization(txCtx, v5Doc, q, comp, cust)
+	} else {
+		err = s.checkV6Finalization(txCtx, v6Doc, q, comp, cust)
+	}
+	if err != nil {
 		return nil, err
 	}
 
@@ -92,6 +116,13 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 
 	dto := mapToDTO(q)
 	return &dto, nil
+}
+
+func (s *Service) checkV6Finalization(ctx context.Context, doc *documentv6.Document, q *domain.Quotation, comp *domain.Company, cust *domain.Customer) error {
+	if _, err := flowlayout.Resolve(ctx, doc, flowlayout.ResolveInput{Company: comp, Customer: cust, Quotation: q}, s.layoutMetrics); err != nil {
+		return &domain.ValidationError{Field: "document", Message: "quotation layout is invalid and cannot be finalized"}
+	}
+	return nil
 }
 
 // checkV5Finalization runs the authoritative layout resolution and rejects required content that

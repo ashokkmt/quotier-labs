@@ -8,6 +8,8 @@ export function OpenPDF(arg1:string,arg2:string):Promise<void>;
 
 export function PrintPDF(arg1:string,arg2:string):Promise<void>;
 
+export function SaveDOCX(arg1:string,arg2:string):Promise<string>;
+
 export function SavePDF(arg1:string,arg2:string):Promise<string>;
 
 export function SharePDF(arg1:string,arg2:string):Promise<void>;

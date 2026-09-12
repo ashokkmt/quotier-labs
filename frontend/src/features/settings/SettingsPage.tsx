@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { BackupSettings } from './BackupSettings'
-import { GetAppInfo, GetPreferences, SetDensity } from '../../../wailsjs/go/wails/AppHandler'
+import {
+  GetAppInfo,
+  GetPreferences,
+  SetDensity,
+  SetV6EditorEnabled,
+} from '../../../wailsjs/go/wails/AppHandler'
 import { Building2, Palette } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -15,6 +20,7 @@ import { useNavigate } from 'react-router-dom'
 import { wails } from '../../../wailsjs/go/models'
 import { UpdateSettings } from './UpdateSettings'
 import { DiagnosticsSettings } from './DiagnosticsSettings'
+import { Checkbox } from '@/components/ui/checkbox'
 
 export function SettingsPage() {
   const [appInfo, setAppInfo] = useState<wails.AppInfo | null>(null)
@@ -22,6 +28,7 @@ export function SettingsPage() {
   const [density, setDensityState] = useState(
     () => localStorage.getItem('quotierlabs-density') || 'default',
   )
+  const [v6Enabled, setV6Enabled] = useState(false)
   const updateDensity = (value: string) => {
     setDensityState(value)
     localStorage.setItem('quotierlabs-density', value)
@@ -32,7 +39,10 @@ export function SettingsPage() {
   useEffect(() => {
     GetAppInfo().then(setAppInfo).catch(console.error)
     GetPreferences()
-      .then((preferences) => updateDensity(preferences.density))
+      .then((preferences) => {
+        updateDensity(preferences.density)
+        setV6Enabled(Boolean(preferences.v6_editor_enabled))
+      })
       .catch(console.error)
   }, [])
 
@@ -88,6 +98,31 @@ export function SettingsPage() {
             </Select>
           </div>
         </div>
+      </section>
+
+      <section
+        className="rounded-xl border bg-card p-5 shadow-sm sm:p-6"
+        aria-labelledby="editor-heading"
+      >
+        <h2 id="editor-heading" className="font-semibold">
+          Document editor preview
+        </h2>
+        <label className="mt-3 flex items-start gap-3 text-sm">
+          <Checkbox
+            checked={v6Enabled}
+            onCheckedChange={(checked) => {
+              const value = checked === true
+              setV6Enabled(value)
+              SetV6EditorEnabled(value).catch(() => setV6Enabled(!value))
+            }}
+          />
+          <span>
+            <span className="font-medium">Create new blank documents with V6</span>
+            <span className="mt-1 block text-muted-foreground">
+              Existing V5 and V6 documents always open in their matching editor.
+            </span>
+          </span>
+        </label>
       </section>
 
       <section className="space-y-3 rounded-xl border bg-card p-5 shadow-sm sm:p-6">

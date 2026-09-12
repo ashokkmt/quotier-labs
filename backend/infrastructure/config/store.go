@@ -18,11 +18,12 @@ type Preferences struct {
 	Theme                     string `json:"theme"`
 	Density                   string `json:"density"`
 	AutomaticUpdates          bool   `json:"automatic_updates"`
+	V6EditorEnabled           bool   `json:"v6_editor_enabled"`
 	SkippedVersion            string `json:"skipped_version,omitempty"`
 	LastUpdateCheckUTC        string `json:"last_update_check_utc,omitempty"`
 	LastObservedUpdateVersion string `json:"last_observed_update_version,omitempty"`
-	UpdateFeedETag             string `json:"update_feed_etag,omitempty"`
-	UpdateFeedLastModified     string `json:"update_feed_last_modified,omitempty"`
+	UpdateFeedETag            string `json:"update_feed_etag,omitempty"`
+	UpdateFeedLastModified    string `json:"update_feed_last_modified,omitempty"`
 }
 
 func Defaults() Preferences {

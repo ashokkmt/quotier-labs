@@ -7,21 +7,28 @@ import (
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/quotation"
 	"quotierlabs/backend/application/template"
+	appconfig "quotierlabs/backend/infrastructure/config"
 )
 
 type QuotationHandler struct {
 	ctx            context.Context
 	companyService *company.Service
 	quotationSvc   *quotation.Service
+	templateSvc    *template.Service
+	preferences    *appconfig.Store
 }
 
 func NewQuotationHandler(
 	companyService *company.Service,
 	quotationSvc *quotation.Service,
+	templateSvc *template.Service,
+	preferences *appconfig.Store,
 ) *QuotationHandler {
 	return &QuotationHandler{
 		companyService: companyService,
 		quotationSvc:   quotationSvc,
+		templateSvc:    templateSvc,
+		preferences:    preferences,
 	}
 }
 
@@ -41,6 +48,20 @@ func (h *QuotationHandler) CreateQuotationDraft(input quotation.QuotationCreateD
 	compID, err := h.getCompanyID()
 	if err != nil {
 		return nil, err
+	}
+	usesV6 := input.UseV6
+	if input.TemplateID != "" {
+		tmpl, templateErr := h.templateSvc.GetTemplate(h.ctx, compID, input.TemplateID)
+		if templateErr != nil {
+			return nil, templateErr
+		}
+		usesV6 = tmpl.SchemaVersion == 6
+	}
+	if usesV6 {
+		preferences, err := h.preferences.Load()
+		if err != nil || !preferences.V6EditorEnabled {
+			return nil, fmt.Errorf("the V6 document editor is not enabled on this device")
+		}
 	}
 	return h.quotationSvc.CreateQuotationDraft(h.ctx, compID, input)
 }

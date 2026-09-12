@@ -73,6 +73,13 @@ This derives a development version from the nearest Git tag, injects BuildInfo, 
 
 Use `make dev-open-data` to inspect it. Use `make dev-reset` for a confirmed, marker-checked reset, or `CONFIRM=1 make dev-reset` in automation. These commands never touch installed beta or production data. Do not run `wails dev` directly: the app deliberately requires the explicit development profile/root.
 
+The Phase 1 document editor is opt-in while V5 remains available. Start with `make dev`, then enable **Settings → Document editor preview**. For a clean builder-design test run:
+
+```bash
+CONFIRM=1 make dev-reset
+make dev
+```
+
 ### Local performance diagnostics
 
 Development and beta builds include an explicit, local-only recording in **Settings → Developer diagnostics**. Start a recording before reproducing a CPU, memory, autosave, preview, PDF, or canvas responsiveness issue, then stop it to save a bounded report under `diagnostics/`. The report has timestamped resource samples, allowlisted operation timings, and aggregated frame timing—never quotation contents, customer data, document IDs, SQL, paths, or telemetry uploads.

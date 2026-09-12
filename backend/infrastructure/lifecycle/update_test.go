@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/infrastructure/appidentity"
 	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/sqlite"
@@ -19,7 +19,7 @@ func TestPendingUpdateMustMatchInstalledSchemasBeforeMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw := []byte(fmt.Sprintf(`{"schema_version":1,"from":"1.0.0","to":"2.0.0","db_schema_after":%d,"document_schema_after":%d}`, target, documentmodel.SchemaVersion))
+	raw := []byte(fmt.Sprintf(`{"schema_version":1,"from":"1.0.0","to":"2.0.0","db_schema_after":%d,"document_schema_after":%d}`, target, documentformat.CurrentVersion))
 	if err := os.WriteFile(filepath.Join(root, "update-pending.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}

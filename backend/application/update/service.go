@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/infrastructure/appidentity"
 	"quotierlabs/backend/infrastructure/apppaths"
 	appconfig "quotierlabs/backend/infrastructure/config"
@@ -575,7 +575,7 @@ func (s *Service) fetchAndVerifyManifest(ctx context.Context, manifestURL, signa
 	if manifest.DBSchemaBeforeMin < 1 || manifest.DBSchemaAfter < manifest.DBSchemaBeforeMin || manifest.DocumentSchemaAfter < 1 {
 		return nil, errors.New("update manifest schema compatibility range is invalid")
 	}
-	if s.dbSchema < manifest.DBSchemaBeforeMin || s.dbSchema > manifest.DBSchemaAfter || documentmodel.SchemaVersion > manifest.DocumentSchemaAfter {
+	if s.dbSchema < manifest.DBSchemaBeforeMin || s.dbSchema > manifest.DBSchemaAfter || documentformat.CurrentVersion > manifest.DocumentSchemaAfter {
 		return nil, errors.New("this update is not compatible with the current data schemas")
 	}
 	if _, err := parseSemVersion(manifest.Version); err != nil {

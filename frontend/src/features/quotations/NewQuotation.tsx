@@ -4,22 +4,30 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { CreateQuotationDraft } from '../../../wailsjs/go/wails/QuotationHandler'
 import { ListTemplates } from '../../../wailsjs/go/wails/TemplateHandler'
+import { GetPreferences } from '../../../wailsjs/go/wails/AppHandler'
 
 export function NewQuotation() {
   const navigate = useNavigate()
   const [templates, setTemplates] = useState<any[]>([])
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [v6Enabled, setV6Enabled] = useState(false)
   useEffect(() => {
     ListTemplates()
       .then(setTemplates)
       .catch(() => setError('Could not load templates. Please retry.'))
+    GetPreferences()
+      .then((value) => setV6Enabled(Boolean(value.v6_editor_enabled)))
+      .catch(() => {})
   }, [])
   const create = async (template_id?: string) => {
     setCreating(true)
     setError('')
     try {
-      const q = await CreateQuotationDraft({ template_id: template_id || '' })
+      const q = await CreateQuotationDraft({
+        template_id: template_id || '',
+        use_v6: !template_id && v6Enabled,
+      })
       navigate(`/quotations/${q.id}/edit`)
     } catch {
       setError('Could not create the quotation. Your data was not changed.')
@@ -27,6 +35,7 @@ export function NewQuotation() {
       setCreating(false)
     }
   }
+  const availableTemplates = templates.filter((t) => v6Enabled || t.schema_version !== 6)
   return (
     <div className="mx-auto max-w-3xl space-y-5 py-3 sm:space-y-6 sm:py-8">
       <div>
@@ -44,7 +53,8 @@ export function NewQuotation() {
         <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Start From Scratch</h2>
           <p className="text-sm text-muted-foreground">
-            Start with a clean A4 page and add quotation widgets, text, tables, and images.
+            Start with a clean A4 {v6Enabled ? 'document' : 'canvas'} and add quotation text,
+            tables, and images.
           </p>
           <Button className="w-full sm:w-auto" onClick={() => create()} disabled={creating}>
             Create Empty Draft
@@ -52,10 +62,10 @@ export function NewQuotation() {
         </Card>
         <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Use Existing Template</h2>
-          {templates.length === 0 ? (
+          {availableTemplates.length === 0 ? (
             <p className="text-sm text-muted-foreground">No templates available.</p>
           ) : (
-            templates.map((t) => (
+            availableTemplates.map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-3 border-b py-2">
                 <span className="min-w-0 truncate">{t.name}</span>
                 <Button

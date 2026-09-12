@@ -3,7 +3,7 @@ package quotation
 import (
 	"errors"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentformat"
 )
 
 var (
@@ -22,7 +22,8 @@ func ValidateQuotation(q *domain.Quotation) error {
 	if q.Document == "" {
 		return ErrInvalidDocument
 	}
-	if _, err := documentmodel.Parse([]byte(q.Document)); err != nil {
+	version, err := documentformat.Validate([]byte(q.Document))
+	if err != nil || (q.SchemaVersion != 0 && version != q.SchemaVersion) {
 		return ErrInvalidDocument
 	}
 

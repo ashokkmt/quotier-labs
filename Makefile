@@ -32,7 +32,7 @@ generate:
 migrate:
 	@echo "Running migrations..."
 	@mkdir -p "$(CURDIR)/.devdata/quotier-labs/data/db" && printf '%s\n' 'Quotier Labs development data' > "$(CURDIR)/.devdata/quotier-labs/.quotier-devdata"
-	goose -dir migrations sqlite3 "$(CURDIR)/.devdata/quotier-labs/data/db/quotierlabs.sqlite3" up
+	go run github.com/pressly/goose/v3/cmd/goose@v3.27.3 -dir migrations sqlite3 "$(CURDIR)/.devdata/quotier-labs/data/db/quotierlabs.sqlite3" up
 
 check-runtime-paths:
 	@./scripts/check-runtime-paths.sh

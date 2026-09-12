@@ -6,9 +6,12 @@ import { useToast } from '@/hooks/use-toast'
 import { GetTemplate, UpdateTemplate } from '../../../wailsjs/go/wails/TemplateHandler'
 import {
   V5BuilderEngine,
+  V6BuilderEngine,
   createBlankV5Document,
   type V5Document,
   type V5EngineHandle,
+  type V6EngineHandle,
+  type V6Document,
 } from '../../builder'
 import { useAutosave } from '../quotations/hooks/useAutosave'
 import { useRecovery } from '../quotations/hooks/useRecovery'
@@ -23,7 +26,7 @@ export function TemplateBuilder({
   templateId: string
   onBack: () => void
 }) {
-  const [document, setDocument] = useState<V5Document>(() => createBlankV5Document())
+  const [document, setDocument] = useState<V5Document | V6Document>(() => createBlankV5Document())
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
@@ -34,6 +37,7 @@ export function TemplateBuilder({
   const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
   const { toast } = useToast()
   const v5EngineRef = useRef<V5EngineHandle | null>(null)
+  const v6EngineRef = useRef<V6EngineHandle | null>(null)
 
   const { clearRecovery } = useRecovery(templateId, document)
   useNavigationGuard(dirty)
@@ -50,7 +54,7 @@ export function TemplateBuilder({
         setDescription(res.description || '')
         const raw = res.layout || JSON.stringify(createBlankV5Document())
         const parsed = JSON.parse(raw)
-        if (parsed?.schema_version !== 5) {
+        if (parsed?.schema_version !== 5 && parsed?.schema_version !== 6) {
           throw new Error('This template uses an unsupported document format.')
         }
         if (!cancelled) setDocument(parsed)
@@ -180,17 +184,33 @@ export function TemplateBuilder({
           <div className="hidden sm:block">
             <UndoRedoControls
               onUndo={() => {
-                v5EngineRef.current?.undo()
+                ;(document.schema_version === 6 ? v6EngineRef.current : v5EngineRef.current)?.undo()
                 setV5UndoRedo({
-                  canUndo: v5EngineRef.current?.canUndo() ?? false,
-                  canRedo: v5EngineRef.current?.canRedo() ?? false,
+                  canUndo:
+                    (document.schema_version === 6
+                      ? v6EngineRef.current
+                      : v5EngineRef.current
+                    )?.canUndo() ?? false,
+                  canRedo:
+                    (document.schema_version === 6
+                      ? v6EngineRef.current
+                      : v5EngineRef.current
+                    )?.canRedo() ?? false,
                 })
               }}
               onRedo={() => {
-                v5EngineRef.current?.redo()
+                ;(document.schema_version === 6 ? v6EngineRef.current : v5EngineRef.current)?.redo()
                 setV5UndoRedo({
-                  canUndo: v5EngineRef.current?.canUndo() ?? false,
-                  canRedo: v5EngineRef.current?.canRedo() ?? false,
+                  canUndo:
+                    (document.schema_version === 6
+                      ? v6EngineRef.current
+                      : v5EngineRef.current
+                    )?.canUndo() ?? false,
+                  canRedo:
+                    (document.schema_version === 6
+                      ? v6EngineRef.current
+                      : v5EngineRef.current
+                    )?.canRedo() ?? false,
                 })
               }}
               canUndo={v5UndoRedo.canUndo}
@@ -222,24 +242,42 @@ export function TemplateBuilder({
         </div>
       </header>
       <div className="min-h-0 flex-1 relative overflow-hidden">
-        <V5BuilderEngine
-          document={document as V5Document}
-          onReady={(handle) => {
-            v5EngineRef.current = handle
-            setV5UndoRedo({
-              canUndo: handle?.canUndo() ?? false,
-              canRedo: handle?.canRedo() ?? false,
-            })
-          }}
-          onChange={(newDoc) => {
-            setDocument(newDoc)
-            setDirty(true)
-            setV5UndoRedo({
-              canUndo: v5EngineRef.current?.canUndo() ?? false,
-              canRedo: v5EngineRef.current?.canRedo() ?? false,
-            })
-          }}
-        />
+        {document.schema_version === 6 ? (
+          <V6BuilderEngine
+            document={document as V6Document}
+            exportName={name || 'template'}
+            onReady={(handle) => {
+              v6EngineRef.current = handle
+            }}
+            onChange={(newDoc) => {
+              setDocument(newDoc)
+              setDirty(true)
+              setV5UndoRedo({
+                canUndo: v6EngineRef.current?.canUndo() ?? false,
+                canRedo: v6EngineRef.current?.canRedo() ?? false,
+              })
+            }}
+          />
+        ) : (
+          <V5BuilderEngine
+            document={document as V5Document}
+            onReady={(handle) => {
+              v5EngineRef.current = handle
+              setV5UndoRedo({
+                canUndo: handle?.canUndo() ?? false,
+                canRedo: handle?.canRedo() ?? false,
+              })
+            }}
+            onChange={(newDoc) => {
+              setDocument(newDoc)
+              setDirty(true)
+              setV5UndoRedo({
+                canUndo: v5EngineRef.current?.canUndo() ?? false,
+                canRedo: v5EngineRef.current?.canRedo() ?? false,
+              })
+            }}
+          />
+        )}
       </div>
     </div>
   )

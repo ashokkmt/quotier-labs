@@ -6,7 +6,9 @@ import (
 
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/calculation"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
@@ -33,11 +35,24 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 		return nil, err
 	}
 
-	doc, err := documentmodel.Parse([]byte(q.Document))
+	version, err := documentformat.Validate([]byte(q.Document))
 	if err != nil {
 		return nil, err
 	}
-	lines := domain_quotation.ExtractV5LineItems(doc)
+	var lines []calculation.LineItemInput
+	if version == documentmodel.SchemaVersion {
+		doc, parseErr := documentmodel.Parse([]byte(q.Document))
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		lines = domain_quotation.ExtractV5LineItems(doc)
+	} else {
+		doc, parseErr := documentv6.Parse([]byte(q.Document))
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		lines = domain_quotation.ExtractV6LineItems(doc)
+	}
 
 	var comp *domain.Company
 	if q.CompanySnapshot != nil {

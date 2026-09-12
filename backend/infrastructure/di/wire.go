@@ -9,9 +9,9 @@ import (
 	"gorm.io/gorm"
 
 	backup_app "quotierlabs/backend/application/backup"
-	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/company"
 	"quotierlabs/backend/application/customer"
+	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/onboarding"
 	"quotierlabs/backend/application/quotation"
@@ -52,6 +52,10 @@ func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
 	return recovery.NewStore(paths.RecoveryRoot())
 }
 
+func ProvidePDFGenerator(paths apppaths.Paths, recorders []appdiagnostics.Recorder) document.PDFGenerator {
+	return pdf.NewGeneratorWithAssetRoot(paths.AssetsRoot(), recorders...)
+}
+
 // ProvideRecorder adapts the infrastructure diagnostics manager to the
 // application-facing Recorder boundary consumed by the application services.
 func ProvideRecorder(manager *diagnostics.Manager) []appdiagnostics.Recorder {
@@ -76,7 +80,7 @@ var InfrastructureSet = wire.NewSet(
 	sqlite.NewQuotationRepository,
 	sqlite.NewNumberSequenceRepository,
 	sqlite.NewSettingsRepository,
-	pdf.NewGenerator,
+	ProvidePDFGenerator,
 	pdf.NewLayoutMetrics,
 	os_infra.NewPrintService,
 	os_infra.NewShareService,

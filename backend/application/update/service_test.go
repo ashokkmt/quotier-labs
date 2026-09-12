@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"testing"
 
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/infrastructure/appidentity"
 	"quotierlabs/backend/infrastructure/apppaths"
 	appconfig "quotierlabs/backend/infrastructure/config"
@@ -120,7 +121,7 @@ func signedProvider(t *testing.T, key ed25519.PrivateKey, version string) *fakeP
 	manifest := Manifest{
 		FormatVersion: 1, AppID: appidentity.AppID, Channel: "production", Version: version,
 		MinimumSourceVersion: "1.0.0", DBSchemaBeforeMin: 9, DBSchemaAfter: 10,
-		DocumentSchemaAfter: 5, Assets: []Asset{{OS: runtime.GOOS, Arch: runtime.GOARCH, Package: packageKind, URL: "https://github.com/update-package", Size: 100, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+		DocumentSchemaAfter: documentformat.CurrentVersion, Assets: []Asset{{OS: runtime.GOOS, Arch: runtime.GOARCH, Package: packageKind, URL: "https://github.com/update-package", Size: 100, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
 	}
 	raw, err := json.Marshal(manifest)
 	if err != nil {

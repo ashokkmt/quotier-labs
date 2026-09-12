@@ -92,6 +92,14 @@ func (h *AppHandler) SetDensity(value string) error {
 	return err
 }
 
+func (h *AppHandler) SetV6EditorEnabled(value bool) error {
+	_, err := h.preferences.Update(func(p *appconfig.Preferences) error {
+		p.V6EditorEnabled = value
+		return nil
+	})
+	return err
+}
+
 func (h *AppHandler) SetAutomaticUpdates(value bool) error {
 	_, err := h.preferences.Update(func(p *appconfig.Preferences) error {
 		p.AutomaticUpdates = value

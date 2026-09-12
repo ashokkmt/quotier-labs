@@ -74,8 +74,8 @@ func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, err
 	templateHandler := wails.NewTemplateHandler(service, templateService)
 	metrics := pdf.NewLayoutMetrics()
 	quotationService := quotation.NewService(quotationRepository, templateRepository, customerRepository, companyRepository, numberSequenceRepository, txManager, idGenerator, metrics, v...)
-	quotationHandler := wails.NewQuotationHandler(service, quotationService)
-	pdfGenerator := pdf.NewGenerator(v...)
+	quotationHandler := wails.NewQuotationHandler(service, quotationService, templateService, store)
+	pdfGenerator := ProvidePDFGenerator(paths, v)
 	documentService := document.NewService(quotationRepository, companyRepository, customerRepository, pdfGenerator, metrics, v...)
 	documentHandler := wails.NewDocumentHandler(documentService)
 	exportService := document.NewExportService(documentService, quotationRepository, customerRepository, v...)
@@ -150,6 +150,10 @@ func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
 	return recovery.NewStore(paths.RecoveryRoot())
 }
 
+func ProvidePDFGenerator(paths apppaths.Paths, recorders []diagnostics2.Recorder) document.PDFGenerator {
+	return pdf.NewGeneratorWithAssetRoot(paths.AssetsRoot(), recorders...)
+}
+
 // ProvideRecorder adapts the infrastructure diagnostics manager to the
 // application-facing Recorder boundary consumed by the application services.
 func ProvideRecorder(manager *diagnostics.Manager) []diagnostics2.Recorder {
@@ -160,7 +164,7 @@ var InfrastructureSet = wire.NewSet(id.NewULIDGenerator, logging.NewSink, loggin
 	ProvideRecovery,
 	ProvideDB,
 	ProvideCurrentDBPath,
-	ProvideSchemaVersion, legacydata.NewService, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, pdf.NewGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), ProvideRecorder, export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
+	ProvideSchemaVersion, legacydata.NewService, sqlite.NewGormTxManager, sqlite.NewCompanyRepository, sqlite.NewCustomerRepository, sqlite.NewTemplateRepository, sqlite.NewQuotationRepository, sqlite.NewNumberSequenceRepository, sqlite.NewSettingsRepository, ProvidePDFGenerator, pdf.NewLayoutMetrics, os.NewPrintService, os.NewShareService, backup.NewSQLiteBackupService, wire.Bind(new(backup2.BackupRepo), new(*backup.SQLiteBackupService)), ProvideRecorder, export.NewCSVExportService, csvimport.NewCSVImportService, wire.Bind(new(document.PrintService), new(*os.PrintService)), wire.Bind(new(document.ShareService), new(*os.ShareService)),
 )
 
 var ApplicationSet = wire.NewSet(company.NewService, onboarding.NewService, customer.NewService, template.NewService, quotation.NewService, document.NewService, document.NewExportService, backup2.NewService, backup2.NewAutoBackupManager, update.NewService)

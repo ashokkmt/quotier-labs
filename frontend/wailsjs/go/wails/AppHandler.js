@@ -50,6 +50,10 @@ export function SetTheme(arg1) {
   return window['go']['wails']['AppHandler']['SetTheme'](arg1);
 }
 
+export function SetV6EditorEnabled(arg1) {
+  return window['go']['wails']['AppHandler']['SetV6EditorEnabled'](arg1);
+}
+
 export function Startup(arg1) {
   return window['go']['wails']['AppHandler']['Startup'](arg1);
 }

@@ -28,6 +28,7 @@ type QuotationDTO struct {
 type QuotationCreateDTO struct {
 	TemplateID string `json:"template_id,omitempty"`
 	CustomerID string `json:"customer_id,omitempty"`
+	UseV6      bool   `json:"use_v6,omitempty"`
 }
 
 type SaveAsTemplateDTO struct {

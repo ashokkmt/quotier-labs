@@ -1,15 +1,19 @@
 package wails
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/infrastructure/apppaths"
+	"quotierlabs/backend/infrastructure/fileutil"
 )
 
 type ExportHandler struct {
@@ -36,6 +40,37 @@ func NewExportHandler(
 
 func (h *ExportHandler) Startup(ctx context.Context) {
 	h.ctx = ctx
+}
+
+// SaveDOCX writes a browser-generated, bounded DOCX package through the desktop save dialog.
+// Export never mutates the quotation and the final destination is replaced atomically.
+func (h *ExportHandler) SaveDOCX(encoded, defaultFilename string) (string, error) {
+	if len(encoded) == 0 || len(encoded) > 48<<20 {
+		return "", fmt.Errorf("DOCX output is empty or exceeds the size limit")
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(data) == 0 || len(data) > 32<<20 || !bytes.HasPrefix(data, []byte("PK")) {
+		return "", fmt.Errorf("DOCX output is invalid")
+	}
+	name := filepath.Base(strings.TrimSpace(defaultFilename))
+	if name == "." || name == "" {
+		name = "quotation.docx"
+	}
+	if !strings.EqualFold(filepath.Ext(name), ".docx") {
+		name += ".docx"
+	}
+	savePath, err := wailsRuntime.SaveFileDialog(h.ctx, wailsRuntime.SaveDialogOptions{
+		DefaultFilename: name,
+		Title:           "Save Quotation DOCX",
+		Filters:         []wailsRuntime.FileFilter{{DisplayName: "Word Documents (*.docx)", Pattern: "*.docx"}},
+	})
+	if err != nil || savePath == "" {
+		return "", err
+	}
+	if err := fileutil.AtomicWrite(savePath, data, 0644); err != nil {
+		return "", fmt.Errorf("write DOCX: %w", err)
+	}
+	return savePath, nil
 }
 
 func (h *ExportHandler) SavePDF(companyID, quotationID string) (string, error) {

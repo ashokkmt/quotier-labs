@@ -14,6 +14,10 @@ export function PrintPDF(arg1, arg2) {
   return window['go']['wails']['ExportHandler']['PrintPDF'](arg1, arg2);
 }
 
+export function SaveDOCX(arg1, arg2) {
+  return window['go']['wails']['ExportHandler']['SaveDOCX'](arg1, arg2);
+}
+
 export function SavePDF(arg1, arg2) {
   return window['go']['wails']['ExportHandler']['SavePDF'](arg1, arg2);
 }

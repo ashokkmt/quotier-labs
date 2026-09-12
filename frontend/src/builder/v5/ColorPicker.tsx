@@ -13,18 +13,7 @@ import {
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value))
 
-export function ColorPicker({
-  label,
-  value,
-  disabled,
-  allowTransparent = true,
-  compact = false,
-  open: controlledOpen,
-  onOpenChange,
-  onDragStart,
-  onDismissIntent,
-  onChange,
-}: {
+export type ColorPickerProps = {
   label: string
   value: string
   disabled?: boolean
@@ -35,8 +24,27 @@ export function ColorPicker({
   onDragStart?: () => void
   onDismissIntent?: () => void
   onChange: (value: string) => void
-}) {
+}
+
+// V5 keeps this adapter so existing call sites and behavior remain unchanged.
+export function ColorPicker(props: ColorPickerProps) {
   const { document } = useV5Session()
+  return <ControlledColorPicker {...props} usedColors={usedColorsForDocument(document)} />
+}
+
+export function ControlledColorPicker({
+  label,
+  value,
+  disabled,
+  allowTransparent = true,
+  compact = false,
+  open: controlledOpen,
+  onOpenChange,
+  onDragStart,
+  onDismissIntent,
+  onChange,
+  usedColors = [],
+}: ColorPickerProps & { usedColors?: string[] }) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = (next: boolean) => {
@@ -52,7 +60,6 @@ export function ColorPicker({
   const hue = hueDraft ?? current.h
   const [hexDraft, setHexDraft] = useState<string | null>(null)
   const hex = hexDraft ?? (css === 'transparent' ? '#000000' : css.toUpperCase())
-  const usedColors = usedColorsForDocument(document)
 
   const beginDragging = () => {
     dragging.current = true

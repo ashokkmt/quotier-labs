@@ -14,19 +14,27 @@ import (
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/documentfonts"
 	"quotierlabs/backend/application/layoutir"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/domain/documentmodel"
 )
 
 type generator struct {
-	recorder appdiagnostics.Recorder
+	recorder  appdiagnostics.Recorder
+	assetRoot string
 }
 
 func NewGenerator(recorders ...appdiagnostics.Recorder) document.PDFGenerator {
+	return NewGeneratorWithAssetRoot("", recorders...)
+}
+
+// NewGeneratorWithAssetRoot enables managed asset: references for V6 while retaining a
+// path-free constructor for V5 and focused tests.
+func NewGeneratorWithAssetRoot(assetRoot string, recorders ...appdiagnostics.Recorder) document.PDFGenerator {
 	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
 	if len(recorders) > 0 && recorders[0] != nil {
 		recorder = recorders[0]
 	}
-	return &generator{recorder: recorder}
+	return &generator{recorder: recorder, assetRoot: assetRoot}
 }
 
 func (g *generator) Generate(ctx context.Context, input document.GeneratorInput) (out []byte, err error) {
@@ -38,6 +46,13 @@ func (g *generator) Generate(ctx context.Context, input document.GeneratorInput)
 		}
 		g.recorder.RecordOperation(ctx, "pdf.generate", time.Since(started), result, nil)
 	}()
+	version, err := documentformat.Version([]byte(input.Quotation.Document))
+	if err != nil {
+		return nil, err
+	}
+	if version == 6 {
+		return g.generateV6(ctx, input)
+	}
 	return g.generateV5(ctx, input)
 }
 

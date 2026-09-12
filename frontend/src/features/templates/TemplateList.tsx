@@ -14,12 +14,15 @@ import {
   DeleteTemplate,
 } from '../../../wailsjs/go/wails/TemplateHandler'
 import { createBlankV5Document } from '../../builder'
+import { createBlankV6Document } from '../../builder'
+import { GetPreferences } from '../../../wailsjs/go/wails/AppHandler'
 
 export function TemplateList() {
   const [templates, setTemplates] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [v6Enabled, setV6Enabled] = useState(false)
   const { toast } = useToast()
 
   const navigate = useNavigate()
@@ -59,6 +62,9 @@ export function TemplateList() {
 
   useEffect(() => {
     loadTemplates()
+    GetPreferences()
+      .then((value) => setV6Enabled(Boolean(value.v6_editor_enabled)))
+      .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -66,7 +72,7 @@ export function TemplateList() {
     try {
       const res = await CreateTemplate({
         name: 'New Template',
-        layout: JSON.stringify(createBlankV5Document()),
+        layout: JSON.stringify(v6Enabled ? createBlankV6Document() : createBlankV5Document()),
       })
       toast({ title: 'Template created' })
       navigate(`/templates/${res.id}/edit`)

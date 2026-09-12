@@ -20,7 +20,13 @@ import {
 } from '../../../wailsjs/go/wails/QuotationHandler'
 import { GetDocumentLayoutDiagnostics } from '../../../wailsjs/go/wails/DocumentHandler'
 import { BuilderHeader } from './BuilderHeader'
-import { V5BuilderEngine, type V5EngineHandle } from '../../builder'
+import {
+  V5BuilderEngine,
+  V6BuilderEngine,
+  type V5EngineHandle,
+  type V6Document,
+  type V6EngineHandle,
+} from '../../builder'
 import type { V5Document } from '../../builder/v5/model'
 import { Preview } from './components/Preview'
 import { useAutosave } from './hooks/useAutosave'
@@ -39,7 +45,7 @@ export function QuotationBuilder({
   onBack: () => void
 }) {
   const [quotation, setQuotation] = useState<any>(null)
-  const [document, setDocument] = useState<V5Document | null>(null)
+  const [document, setDocument] = useState<V5Document | V6Document | null>(null)
   const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -51,6 +57,7 @@ export function QuotationBuilder({
   const [leaving, setLeaving] = useState(false)
   const { toast } = useToast()
   const v5EngineRef = useRef<V5EngineHandle | null>(null)
+  const v6EngineRef = useRef<V6EngineHandle | null>(null)
   const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
   useFrontendDiagnostics(!readOnly && !loading)
 
@@ -64,7 +71,7 @@ export function QuotationBuilder({
         setQuotation(res)
         if (res.document) {
           const raw = JSON.parse(res.document)
-          if (raw?.schema_version !== 5) {
+          if (raw?.schema_version !== 5 && raw?.schema_version !== 6) {
             throw new Error('This quotation uses an unsupported document format.')
           }
           // Never replace persisted content silently with a local checkpoint.
@@ -251,8 +258,16 @@ export function QuotationBuilder({
         saveIndicator={<SaveIndicator state={saveState} lastSaved={lastSaved} />}
         undoRedoControls={
           <UndoRedoControls
-            onUndo={() => v5EngineRef.current?.undo()}
-            onRedo={() => v5EngineRef.current?.redo()}
+            onUndo={() =>
+              document?.schema_version === 6
+                ? v6EngineRef.current?.undo()
+                : v5EngineRef.current?.undo()
+            }
+            onRedo={() =>
+              document?.schema_version === 6
+                ? v6EngineRef.current?.redo()
+                : v5EngineRef.current?.redo()
+            }
             canUndo={v5UndoRedo.canUndo}
             canRedo={v5UndoRedo.canRedo}
           />
@@ -272,6 +287,29 @@ export function QuotationBuilder({
               quotationId={quotation.id}
               // eslint-disable-next-line react/purity
               version={lastSaved ? lastSaved.getTime() : new Date().getTime()}
+            />
+          ) : document?.schema_version === 6 ? (
+            <V6BuilderEngine
+              document={document as V6Document}
+              exportName={quotation.number || 'quotation'}
+              onReady={(handle) => {
+                v6EngineRef.current = handle
+              }}
+              onChange={(newDoc) => {
+                setDocument(newDoc)
+                setDirty(true)
+                setV5UndoRedo({
+                  canUndo: v6EngineRef.current?.canUndo() ?? false,
+                  canRedo: v6EngineRef.current?.canRedo() ?? false,
+                })
+              }}
+              resolvePageMap={async (doc) =>
+                GetDocumentLayoutDiagnostics(
+                  quotation.company_id,
+                  quotation.id,
+                  JSON.stringify(doc),
+                ) as any
+              }
             />
           ) : document ? (
             <V5BuilderEngine

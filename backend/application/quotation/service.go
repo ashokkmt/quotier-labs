@@ -11,7 +11,9 @@ import (
 	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
 
@@ -126,9 +128,14 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	if tmpl != nil {
 		docJSON, docVersion, err = s.resolveDraftDocument(tmpl)
 	} else {
-		raw, marshalErr := json.Marshal(documentmodel.NewBlank(s.idGen.Generate()))
-		docJSON, err = string(raw), marshalErr
+		blank := any(documentmodel.NewBlank(s.idGen.Generate()))
 		docVersion = documentmodel.SchemaVersion
+		if input.UseV6 {
+			blank = documentv6.NewBlank(s.idGen.Generate())
+			docVersion = documentv6.SchemaVersion
+		}
+		raw, marshalErr := json.Marshal(blank)
+		docJSON, err = string(raw), marshalErr
 	}
 	if err != nil {
 		return nil, err
@@ -198,18 +205,22 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	return &dto, nil
 }
 
-// resolveDraftDocument validates and deep-copies a V5 template. Templates and quotations are
+// resolveDraftDocument validates and deep-copies a supported template. Templates and quotations are
 // separate persisted values even when their initial JSON is identical.
 func (s *Service) resolveDraftDocument(tmpl *domain.Template) (string, int, error) {
-	parsed, err := documentmodel.Parse([]byte(tmpl.Layout))
+	version, err := documentformat.Validate([]byte(tmpl.Layout))
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid V5 template layout: %w", err)
+		return "", 0, fmt.Errorf("invalid template layout: %w", err)
 	}
-	out, err := json.Marshal(parsed)
+	var copied any
+	if err := json.Unmarshal([]byte(tmpl.Layout), &copied); err != nil {
+		return "", 0, err
+	}
+	out, err := json.Marshal(copied)
 	if err != nil {
 		return "", 0, err
 	}
-	return string(out), documentmodel.SchemaVersion, nil
+	return string(out), version, nil
 }
 
 func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input SaveAsTemplateDTO) (*domain.Template, error) {
@@ -229,15 +240,15 @@ func (s *Service) SaveAsTemplate(ctx context.Context, companyID string, input Sa
 	if q.Status != string(domain_quotation.StatusDraft) {
 		return nil, ErrQuotationNotDraft
 	}
-	_, err = documentmodel.Parse([]byte(q.Document))
+	version, err := documentformat.Validate([]byte(q.Document))
 	if err != nil {
 		return nil, fmt.Errorf("invalid quotation document: %w", err)
 	}
-	t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: q.Document, SchemaVersion: documentmodel.SchemaVersion, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
+	t := &domain.Template{ID: s.idGen.Generate(), CompanyID: &companyID, Name: name, Layout: q.Document, SchemaVersion: version, CurrentVersion: 1, AuditMetadata: domain.AuditMetadata{CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}}
 	if err := s.templateRepo.Create(txCtx, t); err != nil {
 		return nil, err
 	}
-	if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: documentmodel.SchemaVersion, CreatedAt: t.CreatedAt}); err != nil {
+	if err := s.templateRepo.CreateVersion(txCtx, &domain.TemplateVersion{ID: s.idGen.Generate(), TemplateID: t.ID, Version: 1, Layout: t.Layout, SchemaVersion: version, CreatedAt: t.CreatedAt}); err != nil {
 		return nil, err
 	}
 	if err := s.txManager.Commit(txCtx); err != nil {
@@ -272,11 +283,12 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 		return nil, ErrQuotationNotDraft
 	}
 
-	if _, err := documentmodel.Parse([]byte(input.Document)); err != nil {
-		return nil, &domain.ValidationError{Field: "document", Message: "document must be a valid schema 5 document"}
+	version, err := documentformat.Validate([]byte(input.Document))
+	if err != nil {
+		return nil, &domain.ValidationError{Field: "document", Message: "document must be a valid supported document"}
 	}
 	q.Document = input.Document
-	q.SchemaVersion = documentmodel.SchemaVersion
+	q.SchemaVersion = version
 	q.UpdatedAt = time.Now().UTC()
 
 	if err := domain_quotation.ValidateQuotation(q); err != nil {
