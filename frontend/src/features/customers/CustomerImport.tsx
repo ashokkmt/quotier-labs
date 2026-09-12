@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { AppSelect } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import {
   SelectImportFile,
@@ -77,18 +78,20 @@ export function CustomerImport({ onComplete }: { onComplete: () => void }) {
             {Object.keys(mapping).map((field) => (
               <div key={field} className="space-y-1">
                 <label className="text-sm font-medium capitalize">{field}</label>
-                <select
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={mapping[field as keyof typeof mapping]}
-                  onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}
-                >
-                  <option value="">-- Ignore --</option>
-                  {preview.headers.map((h: string) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
+                <AppSelect
+                  label={`${field} CSV column`}
+                  value={mapping[field as keyof typeof mapping] || '__ignore__'}
+                  options={[
+                    { value: '__ignore__', label: 'Ignore' },
+                    ...preview.headers.map((header: string) => ({
+                      value: header,
+                      label: header,
+                    })),
+                  ]}
+                  onValueChange={(value) =>
+                    setMapping({ ...mapping, [field]: value === '__ignore__' ? '' : value })
+                  }
+                />
               </div>
             ))}
           </div>

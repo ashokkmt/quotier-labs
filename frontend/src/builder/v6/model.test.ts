@@ -1,7 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { createBlankV6Document, normalizeV6Body, usedColorsForV6 } from './model'
+import {
+  clampV6Indent,
+  clampV6RowMinHeight,
+  createBlankV6Document,
+  normalizeV6Body,
+  normalizeV6Story,
+  usedColorsForV6,
+} from './model'
 
 describe('V6 document model', () => {
+  it('adds controlled Phase 2 starter styles and stories', () => {
+    const document = createBlankV6Document()
+    expect(document.styles?.map((style) => style.name)).toHaveLength(9)
+    expect(document.header_story?.type).toBe('doc')
+    expect(document.footer_story?.type).toBe('doc')
+    expect(clampV6Indent(-1)).toBe(0)
+    expect(clampV6Indent(20000)).toBe(14400)
+    expect(clampV6RowMinHeight(1)).toBe(2400)
+    expect(clampV6RowMinHeight(999999)).toBe(84189)
+    expect(
+      normalizeV6Story({
+        type: 'doc',
+        content: [
+          { type: 'imageBlock', attrs: { id: 'unsupported-in-story' } },
+          { type: 'paragraph', attrs: { id: 'safe' }, content: [{ type: 'text', text: 'Header' }] },
+        ],
+      }).content,
+    ).toEqual([
+      { type: 'paragraph', attrs: { id: 'safe' }, content: [{ type: 'text', text: 'Header' }] },
+    ])
+  })
   it('preserves marks only on the selected text run', () => {
     const document = createBlankV6Document()
     document.body.content![0].content = [
@@ -46,5 +74,27 @@ describe('V6 document model', () => {
       ],
     })
     expect(body.content?.[0].attrs?.column_widths).toEqual([15000, 22500])
+  })
+
+  it('preserves controlled table row minimum heights', () => {
+    const body = normalizeV6Body({
+      type: 'doc',
+      content: [
+        {
+          type: 'table',
+          attrs: { id: 't', column_widths: [15000] },
+          content: [
+            {
+              type: 'tableRow',
+              attrs: { min_height: 4200 },
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', attrs: { id: 'p' } }] },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(body.content?.[0].content?.[0].attrs?.min_height).toBe(4200)
   })
 })

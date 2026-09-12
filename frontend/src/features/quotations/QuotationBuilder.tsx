@@ -29,7 +29,7 @@ import {
 } from '../../builder'
 import type { V5Document } from '../../builder/v5/model'
 import { Preview } from './components/Preview'
-import { useAutosave } from './hooks/useAutosave'
+import { useAutosave, useSerialSave } from './hooks/useAutosave'
 import { useRecovery } from './hooks/useRecovery'
 import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { UndoRedoControls } from './components/UndoRedoControls'
@@ -95,7 +95,7 @@ export function QuotationBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quotationId])
 
-  const executeSave = async (docToSave: any) => {
+  const persistDocument = async (docToSave: any) => {
     if (!docToSave) return
     // For V5 documents the per-instance session serializes the authoritative state, so a save
     // can never race a pending gesture or mark a newer revision as saved.
@@ -119,6 +119,7 @@ export function QuotationBuilder({
       throw err
     }
   }
+  const executeSave = useSerialSave(persistDocument)
 
   const handleFinalize = async () => {
     setActionBusy(true)

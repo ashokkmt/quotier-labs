@@ -46,6 +46,9 @@ func (g *generator) generateV6(ctx context.Context, input document.GeneratorInpu
 			switch block.Kind {
 			case "paragraph":
 				drawV6Paragraph(pdf, block)
+			case "horizontalRule":
+				pdf.SetDrawColor(107, 114, 128)
+				pdf.Line(block.X, block.Y+1.5, block.X+block.Width, block.Y+1.5)
 			case "tableRow":
 				drawV6TableRow(pdf, block)
 			case "image":
@@ -81,10 +84,12 @@ func drawV6Paragraph(pdf *fpdf.Fpdf, block flowlayout.Block) {
 	y := block.Y
 	for lineIndex, line := range block.Lines {
 		lineWidth := 0.0
+		lineHeight := 4.3
 		for _, run := range line.Runs {
 			family, style := v6Font(run)
 			pdf.SetFont(family, style, run.FontSizePt)
 			lineWidth += pdf.GetStringWidth(run.Text)
+			lineHeight = max(lineHeight, run.FontSizePt*25.4/72*1.2)
 		}
 		x := block.X
 		if lineIndex == 0 {
@@ -95,21 +100,40 @@ func drawV6Paragraph(pdf *fpdf.Fpdf, block flowlayout.Block) {
 		} else if block.Align == "right" {
 			x += block.Width - lineWidth
 		}
-		lineHeight := 4.3
+		extraSpace := 0.0
+		if block.Align == "justify" && lineIndex < len(block.Lines)-1 {
+			spaces := 0
+			for _, run := range line.Runs {
+				spaces += strings.Count(run.Text, " ")
+			}
+			if spaces > 0 && lineWidth < block.Width {
+				extraSpace = (block.Width - lineWidth) / float64(spaces)
+			}
+		}
 		for _, run := range line.Runs {
 			family, style := v6Font(run)
 			pdf.SetFont(family, style, run.FontSizePt)
-			w := pdf.GetStringWidth(run.Text)
-			if run.Highlight != "" {
-				rgb, _ := resolveColor(run.Highlight)
-				pdf.SetFillColor(rgb[0], rgb[1], rgb[2])
-				pdf.Rect(x, y, w, lineHeight, "F")
-			}
-			applyTextColor(pdf, run.Color)
-			pdf.Text(x, y+block.TextTop+lineHeight*.78, run.Text)
-			x += w
-			if run.FontSizePt*25.4/72*1.2 > lineHeight {
-				lineHeight = run.FontSizePt * 25.4 / 72 * 1.2
+			for _, glyph := range []rune(run.Text) {
+				text := string(glyph)
+				w := pdf.GetStringWidth(text)
+				if run.Highlight != "" {
+					rgb, _ := resolveColor(run.Highlight)
+					pdf.SetFillColor(rgb[0], rgb[1], rgb[2])
+					pdf.Rect(x, y+block.TextTop, w, lineHeight, "F")
+				}
+				applyTextColor(pdf, run.Color)
+				baseline := y + block.TextTop + lineHeight*.78
+				pdf.Text(x, baseline, text)
+				if run.Strike {
+					pdf.Line(x, baseline-lineHeight*.3, x+w, baseline-lineHeight*.3)
+				}
+				if run.Link != "" {
+					pdf.LinkString(x, y+block.TextTop, w, lineHeight, run.Link)
+				}
+				x += w
+				if glyph == ' ' {
+					x += extraSpace
+				}
 			}
 		}
 		y += lineHeight
@@ -163,10 +187,12 @@ func drawV6TableCell(pdf *fpdf.Fpdf, cell flowlayout.TableCell, x, y, width floa
 	lineY := y
 	for _, line := range cell.Lines {
 		lineWidth := 0.0
+		lineHeight := 4.3
 		for _, run := range line.Runs {
 			family, style := v6Font(run)
 			pdf.SetFont(family, style, run.FontSizePt)
 			lineWidth += pdf.GetStringWidth(run.Text)
+			lineHeight = max(lineHeight, run.FontSizePt*25.4/72*1.2)
 		}
 		lineX := x
 		if cell.Align == "center" {
@@ -179,10 +205,23 @@ func drawV6TableCell(pdf *fpdf.Fpdf, cell flowlayout.TableCell, x, y, width floa
 			pdf.SetFont(family, style, run.FontSizePt)
 			applyTextColor(pdf, run.Color)
 			text := truncateToWidth(pdf, run.Text, width-(lineX-x))
-			pdf.Text(lineX, lineY+run.FontSizePt*25.4/72, text)
-			lineX += pdf.GetStringWidth(text)
+			textWidth := pdf.GetStringWidth(text)
+			baseline := lineY + lineHeight*.78
+			if run.Highlight != "" {
+				rgb, _ := resolveColor(run.Highlight)
+				pdf.SetFillColor(rgb[0], rgb[1], rgb[2])
+				pdf.Rect(lineX, lineY, textWidth, lineHeight, "F")
+			}
+			pdf.Text(lineX, baseline, text)
+			if run.Strike {
+				pdf.Line(lineX, baseline-lineHeight*.3, lineX+textWidth, baseline-lineHeight*.3)
+			}
+			if run.Link != "" {
+				pdf.LinkString(lineX, lineY, textWidth, lineHeight, run.Link)
+			}
+			lineX += textWidth
 		}
-		lineY += 4.3
+		lineY += lineHeight
 	}
 }
 

@@ -7,16 +7,22 @@ import { useToast } from '@/hooks/use-toast'
 import { v6Extensions } from './extensions'
 import {
   V6_A4,
+  blankStory,
   nodeID,
   normalizeV6Body,
+  normalizeV6Story,
+  starterV6Styles,
   type V6Asset,
   type V6Document,
   type V6Settings,
+  type V6StoryKey,
 } from './model'
 import { Toolbar } from './Toolbar'
-import { Ruler } from './Ruler'
 import { generateV6Docx } from './docx'
 import { loadDocumentFonts } from '../v5/documentFonts'
+import { DocumentSettingsPanel } from './DocumentSettingsPanel'
+import { TableControls } from './TableControls'
+import { ContextMenu, type MenuItem } from '../v5/ContextMenu'
 
 export type V6EngineHandle = {
   undo: () => void
@@ -47,19 +53,34 @@ export function V6BuilderEngine({
 }) {
   const [settings, setSettings] = useState<V6Settings>(document.settings)
   const [assets, setAssets] = useState<V6Asset[]>(document.assets ?? [])
+  const [stories, setStories] = useState<Record<V6StoryKey, any>>(() => ({
+    header_story: document.header_story ?? blankStory(),
+    footer_story: document.footer_story ?? blankStory(),
+    first_page_header_story: document.first_page_header_story ?? blankStory(),
+    first_page_footer_story: document.first_page_footer_story ?? blankStory(),
+  }))
   const [pageMap, setPageMap] = useState<PageMap | null>(null)
   const [pageMapFailed, setPageMapFailed] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [revision, setRevision] = useState(0)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    items: MenuItem[]
+  } | null>(null)
   const settingsRef = useRef(settings)
   const assetsRef = useRef(assets)
+  const storiesRef = useRef(stories)
   const latestRef = useRef(document)
+  const surfaceRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
   useEffect(() => {
     settingsRef.current = settings
     assetsRef.current = assets
+    storiesRef.current = stories
     latestRef.current = document
-  }, [settings, assets, document])
+  }, [settings, assets, stories, document])
 
   useEffect(() => {
     loadDocumentFonts().catch((error) =>
@@ -71,12 +92,19 @@ export function V6BuilderEngine({
     )
   }, [toast])
 
-  const emit = (body: any, nextSettings = settingsRef.current, nextAssets = assetsRef.current) => {
+  const emit = (
+    body: any,
+    nextSettings = settingsRef.current,
+    nextAssets = assetsRef.current,
+    nextStories = storiesRef.current,
+  ) => {
     const next: V6Document = {
       schema_version: 6,
       settings: nextSettings,
+      styles: document.styles?.length ? document.styles : starterV6Styles(),
       body: normalizeV6Body(body),
       assets: nextAssets,
+      ...nextStories,
     }
     latestRef.current = next
     onChange(next)
@@ -119,6 +147,7 @@ export function V6BuilderEngine({
         body: normalizeV6Body(editor.getJSON()),
         settings: settingsRef.current,
         assets: assetsRef.current,
+        ...storiesRef.current,
       }
       resolvePageMap(current)
         .then((map) => {
@@ -135,7 +164,7 @@ export function V6BuilderEngine({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [editor, resolvePageMap, revision, settings, assets])
+  }, [editor, resolvePageMap, revision, settings, assets, stories])
 
   if (!editor)
     return (
@@ -146,6 +175,12 @@ export function V6BuilderEngine({
   const updateSettings = (next: V6Settings) => {
     setSettings(next)
     emit(editor.getJSON(), next, assetsRef.current)
+  }
+  const updateStory = (key: V6StoryKey, story: any) => {
+    const nextStories = { ...storiesRef.current, [key]: normalizeV6Story(story) }
+    storiesRef.current = nextStories
+    setStories(nextStories)
+    emit(editor.getJSON(), settingsRef.current, assetsRef.current, nextStories)
   }
   const insertImage = async () => {
     try {
@@ -190,6 +225,7 @@ export function V6BuilderEngine({
         body: normalizeV6Body(editor.getJSON()),
         settings,
         assets,
+        ...stories,
       }
       const buffer = await generateV6Docx(current)
       const encoded = bytesToBase64(new Uint8Array(buffer))
@@ -199,77 +235,68 @@ export function V6BuilderEngine({
       toast({ title: 'DOCX export failed', description: String(error), variant: 'destructive' })
     }
   }
-  const paragraph = editor.getAttributes('paragraph')
   const pageWidth = (settings.orientation === 'portrait' ? V6_A4.width : V6_A4.height) / 75
   const pageHeight = (settings.orientation === 'portrait' ? V6_A4.height : V6_A4.width) / 75
   const count = Math.max(1, pageMap?.pageCount ?? 1)
+  const openContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault()
+    const edit = (command: 'copy' | 'cut') => {
+      editor.view.focus()
+      window.document.execCommand(command)
+    }
+    const items: MenuItem[] = [
+      { label: 'Cut', shortcut: '⌘X', run: () => edit('cut') },
+      { label: 'Copy', shortcut: '⌘C', run: () => edit('copy') },
+      {
+        label: 'Paste as text',
+        shortcut: '⌘⇧V',
+        run: () =>
+          void navigator.clipboard
+            ?.readText()
+            .then((text) => editor.chain().focus().insertContent(text).run())
+            .catch(() => undefined),
+      },
+      { separator: true, label: '' },
+      { label: 'Select all', shortcut: '⌘A', run: () => editor.chain().focus().selectAll().run() },
+      {
+        label: 'Formatting',
+        menu: [
+          { label: 'Bold', shortcut: '⌘B', run: () => editor.chain().focus().toggleBold().run() },
+          {
+            label: 'Italic',
+            shortcut: '⌘I',
+            run: () => editor.chain().focus().toggleItalic().run(),
+          },
+          {
+            label: 'Underline',
+            shortcut: '⌘U',
+            run: () => editor.chain().focus().toggleUnderline().run(),
+          },
+        ],
+      },
+    ]
+    setContextMenu({ x: event.clientX, y: event.clientY, items })
+  }
   return (
     <div className="flex h-full min-h-0 flex-col bg-muted/40">
       <Toolbar
         editor={editor}
-        document={{ ...document, settings, assets }}
+        document={{ ...document, settings, assets, ...stories }}
         onInsertImage={() => void insertImage()}
         onExportDOCX={() => void exportDOCX()}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
-      <Ruler
-        values={paragraph}
-        onChange={(name, value) =>
-          editor
-            .chain()
-            .focus()
-            .updateAttributes('paragraph', { [name]: value })
-            .run()
-        }
+      <DocumentSettingsPanel
+        open={settingsOpen}
+        settings={settings}
+        stories={stories}
+        pageCount={count}
+        pageMapFailed={pageMapFailed}
+        onOpenChange={setSettingsOpen}
+        onSettingsChange={updateSettings}
+        onStoryChange={updateStory}
       />
-      <div className="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-2 text-xs">
-        <label>
-          Orientation{' '}
-          <select
-            className="ml-1 rounded border bg-background p-1"
-            value={settings.orientation}
-            onChange={(e) =>
-              updateSettings({
-                ...settings,
-                orientation: e.target.value as V6Settings['orientation'],
-              })
-            }
-          >
-            <option value="portrait">Portrait</option>
-            <option value="landscape">Landscape</option>
-          </select>
-        </label>
-        {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
-          <label key={side}>
-            {side} margin{' '}
-            <input
-              aria-label={`${side} margin in millimetres`}
-              className="ml-1 w-14 rounded border bg-background p-1"
-              type="number"
-              min={5}
-              max={80}
-              value={Math.round(settings.margins[side] / 283.465)}
-              onChange={(e) =>
-                updateSettings({
-                  ...settings,
-                  margins: {
-                    ...settings.margins,
-                    [side]: Math.round(Number(e.target.value) * 283.465),
-                  },
-                })
-              }
-            />
-          </label>
-        ))}
-        <span
-          role="status"
-          className={pageMapFailed ? 'text-destructive' : 'text-muted-foreground'}
-        >
-          {pageMapFailed
-            ? 'Page layout unavailable — retrying'
-            : `${count} page${count === 1 ? '' : 's'} · PDF-authoritative layout`}
-        </span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="v6-editor-scroller min-h-0 flex-1 overflow-auto p-6">
         <div
           className="relative mx-auto bg-white text-gray-950 shadow-xl"
           style={{
@@ -282,11 +309,21 @@ export function V6BuilderEngine({
           }}
         >
           <div
+            ref={surfaceRef}
+            className="relative"
             style={{
               padding: `${settings.margins.top / 75}px ${settings.margins.right / 75}px ${settings.margins.bottom / 75}px ${settings.margins.left / 75}px`,
             }}
           >
-            <EditorContent editor={editor} />
+            <div onContextMenu={openContextMenu}>
+              <EditorContent editor={editor} />
+            </div>
+            <TableControls
+              editor={editor}
+              document={{ ...document, settings, assets, ...stories }}
+              surfaceRef={surfaceRef}
+            />
+            {contextMenu && <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />}
           </div>
         </div>
       </div>

@@ -45,8 +45,11 @@ type Run struct {
 	Bold       bool
 	Italic     bool
 	Underline  bool
+	Strike     bool
 	Color      string
 	Highlight  string
+	Link       string
+	Field      string
 }
 
 type Line struct{ Runs []Run }
@@ -128,7 +131,7 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 		y += block.Height
 	}
 
-	for _, node := range doc.Body.Content {
+	for _, node := range flattenBlocks(doc.Body.Content, 0) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -139,26 +142,30 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 			newPage()
 		case "paragraph":
 			attrs := decode[documentv6.ParagraphAttrs](node.Attrs)
-			fontRuns := inlineRuns(node.Content)
-			available := contentWidth - float64(attrs.LeftIndent+attrs.RightIndent)/duPerMM
+			style, styleErr := documentv6.ResolveParagraphStyle(doc, attrs)
+			if styleErr != nil {
+				return nil, styleErr
+			}
+			fontRuns := inlineRuns(node.Content, style)
+			available := contentWidth - float64(style.LeftIndent+style.RightIndent)/duPerMM
 			if available < 10 {
 				available = 10
 			}
-			firstLine := float64(attrs.FirstLineIndent) / duPerMM
+			firstLine := float64(style.FirstLineIndent-style.HangingIndent) / duPerMM
 			lines := wrapRuns(fontRuns, math.Max(10, available-firstLine), metrics)
-			lineHeight := 1.2
-			if attrs.LineHeight > 0 {
-				lineHeight = attrs.LineHeight
-			}
+			lineHeight := style.LineHeight
 			maxPt := 10.0
 			for _, run := range fontRuns {
 				if run.FontSizePt > maxPt {
 					maxPt = run.FontSizePt
 				}
 			}
-			height := float64(attrs.SpacingBefore+attrs.SpacingAfter)/duPerMM + math.Max(1, float64(len(lines)))*metrics.LineHeightMM(maxPt)*lineHeight/1.2
-			x := left + float64(attrs.LeftIndent)/duPerMM
-			place(Block{ID: attrs.ID, Kind: "paragraph", X: x, Width: available, Height: height, Align: defaultString(attrs.Alignment, "left"), FirstLine: firstLine, TextTop: float64(attrs.SpacingBefore) / duPerMM, Lines: lines})
+			height := float64(style.SpacingBefore+style.SpacingAfter)/duPerMM + math.Max(1, float64(len(lines)))*metrics.LineHeightMM(maxPt)*lineHeight/1.2
+			x := left + float64(style.LeftIndent)/duPerMM
+			place(Block{ID: attrs.ID, Kind: "paragraph", X: x, Width: available, Height: height, Align: style.Alignment, FirstLine: firstLine, TextTop: float64(style.SpacingBefore) / duPerMM, Lines: lines})
+		case "horizontalRule":
+			attrs := decode[documentv6.IDAttrs](node.Attrs)
+			place(Block{ID: attrs.ID, Kind: "horizontalRule", X: left, Width: contentWidth, Height: 3})
 		case "imageBlock":
 			attrs := decode[documentv6.ImageAttrs](node.Attrs)
 			w, h := float64(attrs.Width)/duPerMM, float64(attrs.Height)/duPerMM
@@ -192,36 +199,51 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 				x = pageWidth - right - sum
 			}
 			for rowIndex, rowNode := range node.Content {
+				rowAttrs := decode[documentv6.TableRowAttrs](rowNode.Attrs)
 				cells := make([]TableCell, len(rowNode.Content))
-				rowHeight := 8.0
+				rowHeight := math.Max(8, float64(rowAttrs.MinHeight)/duPerMM)
 				for i, cell := range rowNode.Content {
 					ca := decode[documentv6.TableCellAttrs](cell.Attrs)
-					runs := cellRuns(cell)
+					runs := cellRuns(doc, cell)
 					lines := wrapRuns(runs, math.Max(1, columns[i]-3), metrics)
 					cells[i] = TableCell{Lines: lines, Text: plainText(cell), Background: defaultString(ca.Background, "transparent"), Align: defaultString(ca.Alignment, "left")}
-					rowHeight = math.Max(rowHeight, math.Max(1, float64(len(lines)))*metrics.LineHeightMM(10)+2)
+					rowHeight = math.Max(rowHeight, tableLinesHeight(lines, metrics)+2)
 				}
 				place(Block{ID: fmt.Sprintf("%s-row-%d", attrs.ID, rowIndex), Kind: "tableRow", X: x, Width: sum, Height: rowHeight, Columns: columns, TableRows: []TableRow{{Cells: cells}}})
 			}
 		case "lineItemTable":
 			attrs := decode[documentv6.LineItemTableAttrs](node.Attrs)
 			columns := []float64{contentWidth * .46, contentWidth * .12, contentWidth * .18, contentWidth * .12, contentWidth * .12}
-			head := textTableRow([]string{"Description", "Qty", "Rate", "Tax", "Amount"}, "#e5e7eb")
+			head := textTableRow(doc, "Table Header", []string{"Description", "Qty", "Rate", "Tax", "Amount"}, "#e5e7eb")
 			place(Block{ID: attrs.ID + "-header", Kind: "tableRow", X: left, Width: contentWidth, Height: 8, Columns: columns, TableRows: []TableRow{head}})
 			items := make([]calculation.LineItemInput, 0, len(attrs.Rows))
 			for _, row := range attrs.Rows {
 				items = append(items, calculation.LineItemInput{ID: row.ID, QuantityFloat: row.Quantity, Rate: row.Rate, Discount: row.Discount, TaxRateFloat: row.TaxRate, TaxInclusive: row.TaxInclusive})
 				amount := int64(math.Round(row.Quantity*float64(row.Rate))) - row.Discount
 				cells := []string{row.Description, strconv.FormatFloat(row.Quantity, 'f', -1, 64), money(row.Rate), strconv.FormatFloat(row.TaxRate, 'f', -1, 64) + "%", money(amount)}
-				place(Block{ID: attrs.ID + "-" + row.ID, Kind: "tableRow", X: left, Width: contentWidth, Height: 8, Columns: columns, TableRows: []TableRow{textTableRow(cells, "transparent")}})
+				place(Block{ID: attrs.ID + "-" + row.ID, Kind: "tableRow", X: left, Width: contentWidth, Height: 8, Columns: columns, TableRows: []TableRow{textTableRow(doc, "Table Body", cells, "transparent")}})
 			}
 			taxMode := calculation.TaxModeIntraState
 			if input.Company != nil && input.Customer != nil && input.Company.State != nil && input.Customer.State != nil && *input.Company.State != *input.Customer.State {
 				taxMode = calculation.TaxModeInterState
 			}
 			total := calculation.NewEngine().Calculate(items, taxMode)
-			place(Block{ID: attrs.ID + "-total", Kind: "tableRow", X: left, Width: contentWidth, Height: 9, Columns: []float64{contentWidth * .7, contentWidth * .3}, TableRows: []TableRow{textTableRow([]string{"Grand total", money(total.GrandTotal)}, "#f3f4f6")}})
+			place(Block{ID: attrs.ID + "-total", Kind: "tableRow", X: left, Width: contentWidth, Height: 9, Columns: []float64{contentWidth * .7, contentWidth * .3}, TableRows: []TableRow{textTableRow(doc, "Total", []string{"Grand total", money(total.GrandTotal)}, "#f3f4f6")}})
 		}
+	}
+	for pageIndex := range result.Pages {
+		header, footer := doc.HeaderStory, doc.FooterStory
+		if pageIndex == 0 && doc.Settings.DifferentFirstPage {
+			if doc.FirstPageHeaderStory != nil {
+				header = doc.FirstPageHeaderStory
+			}
+			if doc.FirstPageFooterStory != nil {
+				footer = doc.FirstPageFooterStory
+			}
+		}
+		appendStory(doc, &result.Pages[pageIndex], header, left, 4, contentWidth, metrics, pageIndex+1, "header")
+		appendStory(doc, &result.Pages[pageIndex], footer, left, pageHeight-bottom+2, contentWidth, metrics, pageIndex+1, "footer")
+		resolveFields(result.Pages[pageIndex].Blocks, pageIndex+1, len(result.Pages))
 	}
 	return result, nil
 }
@@ -234,10 +256,18 @@ func (l *Layout) PageMap(doc *documentv6.Document) PageMap {
 	return PageMap{PageWidth: w, PageHeight: h, PageCount: len(l.Pages), Ranges: l.Ranges, Diagnostics: l.Diagnostics}
 }
 
-func inlineRuns(nodes []documentv6.Node) []Run {
+func inlineRuns(nodes []documentv6.Node, base documentv6.ResolvedStyle) []Run {
 	result := []Run{}
 	for _, node := range nodes {
-		r := Run{Text: node.Text, FontFamily: "Quotier Sans", FontSizePt: 10, Color: "#111827"}
+		if node.Type == "hardBreak" {
+			result = append(result, Run{Text: "\n", FontFamily: base.FontFamily, FontSizePt: float64(base.FontSize) / 100, Color: base.Color})
+			continue
+		}
+		if node.Type == "pageNumber" || node.Type == "pageCount" {
+			result = append(result, Run{Text: "8", FontFamily: base.FontFamily, FontSizePt: float64(base.FontSize) / 100, Bold: base.Bold, Italic: base.Italic, Underline: base.Underline, Strike: base.Strike, Color: base.Color, Highlight: base.Highlight, Field: node.Type})
+			continue
+		}
+		r := Run{Text: node.Text, FontFamily: base.FontFamily, FontSizePt: float64(base.FontSize) / 100, Bold: base.Bold, Italic: base.Italic, Underline: base.Underline, Strike: base.Strike, Color: base.Color, Highlight: base.Highlight}
 		for _, mark := range node.Marks {
 			switch mark.Type {
 			case "bold":
@@ -246,6 +276,8 @@ func inlineRuns(nodes []documentv6.Node) []Run {
 				r.Italic = true
 			case "underline":
 				r.Underline = true
+			case "strike":
+				r.Strike = true
 			case "textStyle":
 				a := decode[documentv6.TextStyleAttrs](mark.Attrs)
 				if a.FontFamily != "" {
@@ -260,6 +292,9 @@ func inlineRuns(nodes []documentv6.Node) []Run {
 			case "highlight":
 				a := decode[documentv6.ColorAttrs](mark.Attrs)
 				r.Highlight = a.Color
+			case "link":
+				a := decode[documentv6.LinkAttrs](mark.Attrs)
+				r.Link = a.Href
 			}
 		}
 		result = append(result, r)
@@ -267,21 +302,99 @@ func inlineRuns(nodes []documentv6.Node) []Run {
 	return result
 }
 
-func cellRuns(cell documentv6.Node) []Run {
+func cellRuns(doc *documentv6.Document, cell documentv6.Node) []Run {
 	var runs []Run
 	for i, paragraph := range cell.Content {
+		attrs := decode[documentv6.ParagraphAttrs](paragraph.Attrs)
+		style, _ := documentv6.ResolveParagraphStyle(doc, attrs)
 		if i > 0 {
 			runs = append(runs, Run{Text: "\n", FontFamily: "Quotier Sans", FontSizePt: 10, Color: "#111827"})
 		}
-		runs = append(runs, inlineRuns(paragraph.Content)...)
+		runs = append(runs, inlineRuns(paragraph.Content, style)...)
 	}
 	return runs
 }
 
-func textTableRow(values []string, background string) TableRow {
+func flattenBlocks(nodes []documentv6.Node, depth int) []documentv6.Node {
+	var result []documentv6.Node
+	for _, node := range nodes {
+		if node.Type != "bulletList" && node.Type != "orderedList" {
+			result = append(result, node)
+			continue
+		}
+		attrs := decode[documentv6.ListAttrs](node.Attrs)
+		start := attrs.Start
+		if start == 0 {
+			start = 1
+		}
+		for index, item := range node.Content {
+			for _, child := range item.Content {
+				if child.Type == "paragraph" {
+					paragraphAttrs := decode[documentv6.ParagraphAttrs](child.Attrs)
+					paragraphAttrs.LeftIndent += int64(depth+1) * 1800
+					paragraphAttrs.HangingIndent = 900
+					prefix := "• "
+					if node.Type == "orderedList" {
+						prefix = strconv.Itoa(start+index) + ". "
+					}
+					child.Attrs, _ = json.Marshal(paragraphAttrs)
+					child.Content = append([]documentv6.Node{{Type: "text", Text: prefix}}, child.Content...)
+					result = append(result, child)
+				} else {
+					result = append(result, flattenBlocks([]documentv6.Node{child}, depth+1)...)
+				}
+			}
+		}
+	}
+	return result
+}
+
+func appendStory(doc *documentv6.Document, page *Page, story *documentv6.Node, x, y, width float64, metrics layoutir.Metrics, pageNumber int, kind string) {
+	if story == nil {
+		return
+	}
+	for _, node := range flattenBlocks(story.Content, 0) {
+		switch node.Type {
+		case "paragraph":
+			attrs := decode[documentv6.ParagraphAttrs](node.Attrs)
+			style, err := documentv6.ResolveParagraphStyle(doc, attrs)
+			if err != nil {
+				continue
+			}
+			runs := inlineRuns(node.Content, style)
+			lines := wrapRuns(runs, width, metrics)
+			height := math.Max(1, float64(len(lines))) * metrics.LineHeightMM(float64(style.FontSize)/100)
+			page.Blocks = append(page.Blocks, Block{ID: fmt.Sprintf("%s-%d-%s", kind, pageNumber, attrs.ID), Kind: "paragraph", X: x, Y: y, Width: width, Height: height, Align: style.Alignment, Lines: lines})
+			y += height
+		case "horizontalRule":
+			attrs := decode[documentv6.IDAttrs](node.Attrs)
+			page.Blocks = append(page.Blocks, Block{ID: fmt.Sprintf("%s-%d-%s", kind, pageNumber, attrs.ID), Kind: "horizontalRule", X: x, Y: y, Width: width, Height: 3})
+			y += 3
+		}
+	}
+}
+
+func resolveFields(blocks []Block, page, count int) {
+	for blockIndex := range blocks {
+		for lineIndex := range blocks[blockIndex].Lines {
+			for runIndex := range blocks[blockIndex].Lines[lineIndex].Runs {
+				run := &blocks[blockIndex].Lines[lineIndex].Runs[runIndex]
+				if run.Field == "pageNumber" {
+					run.Text = strconv.Itoa(page)
+				}
+				if run.Field == "pageCount" {
+					run.Text = strconv.Itoa(count)
+				}
+			}
+		}
+	}
+}
+
+func textTableRow(doc *documentv6.Document, styleName string, values []string, background string) TableRow {
+	style, _ := documentv6.ResolveParagraphStyle(doc, documentv6.ParagraphAttrs{Style: styleName})
 	cells := make([]TableCell, len(values))
 	for i, value := range values {
-		cells[i] = TableCell{Text: value, Lines: []Line{{Runs: []Run{{Text: value, FontFamily: "Quotier Sans", FontSizePt: 8, Color: "#111827"}}}}, Background: background, Align: "left"}
+		cells[i] = TableCell{Text: value, Lines: []Line{{Runs: inlineRuns([]documentv6.Node{{Type: "text", Text: value}}, style)}}, Background: background, Align: style.Alignment}
 	}
 	return TableRow{Cells: cells}
 }
@@ -323,6 +436,21 @@ func wrapRuns(runs []Run, maxWidth float64, m layoutir.Metrics) []Line {
 		return nil
 	}
 	return lines
+}
+
+func tableLinesHeight(lines []Line, metrics layoutir.Metrics) float64 {
+	if len(lines) == 0 {
+		return metrics.LineHeightMM(10)
+	}
+	height := 0.0
+	for _, line := range lines {
+		maxPt := 10.0
+		for _, run := range line.Runs {
+			maxPt = math.Max(maxPt, run.FontSizePt)
+		}
+		height += metrics.LineHeightMM(maxPt)
+	}
+	return height
 }
 
 func withText(run Run, text string) Run { run.Text = text; return run }

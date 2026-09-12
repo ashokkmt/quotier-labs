@@ -13,7 +13,7 @@ import {
   type V6EngineHandle,
   type V6Document,
 } from '../../builder'
-import { useAutosave } from '../quotations/hooks/useAutosave'
+import { useAutosave, useSerialSave } from '../quotations/hooks/useAutosave'
 import { useRecovery } from '../quotations/hooks/useRecovery'
 import { useNavigationGuard } from '../../shared/hooks/useNavigationGuard'
 import { SaveIndicator } from '../quotations/components/SaveIndicator'
@@ -82,7 +82,7 @@ export function TemplateBuilder({
     [description, document, name],
   )
 
-  const save = async (payload: typeof autosavePayload) => {
+  const persistTemplate = async (payload: typeof autosavePayload) => {
     const docToSave = payload.document
     if (!docToSave) return
     const v5 = docToSave?.schema_version === 5 ? v5EngineRef.current : null
@@ -109,6 +109,7 @@ export function TemplateBuilder({
       throw err
     }
   }
+  const save = useSerialSave(persistTemplate)
 
   const { saveState, lastSaved, forceSave } = useAutosave(
     autosavePayload,

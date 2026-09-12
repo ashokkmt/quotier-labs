@@ -4,6 +4,10 @@ import './index.css'
 import App from './App.tsx'
 import { loadDocumentFonts } from './builder/v5/documentFonts.ts'
 
+// Wails enables Chromium's browser context menu in development builds. The app supplies its own
+// editor menus, so browser navigation/reload/inspection actions must never leak into the product UI.
+document.addEventListener('contextmenu', (event) => event.preventDefault())
+
 async function start() {
   try {
     await loadDocumentFonts()

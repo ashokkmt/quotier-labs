@@ -2,6 +2,7 @@ package documentv6
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,62 @@ func TestSelectionMarksAndLineItemsValidate(t *testing.T) {
 	raw, _ := json.Marshal(doc)
 	if _, err := Parse(raw); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTableRowMinimumHeightValidation(t *testing.T) {
+	cell := Node{Type: "tableCell", Attrs: mustJSON(TableCellAttrs{Colspan: 1, Rowspan: 1}), Content: []Node{{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: "cell"})}}}
+	doc := NewBlank("body")
+	doc.Body.Content = []Node{{Type: "table", Attrs: mustJSON(TableAttrs{ID: "table", ColumnWidths: []int64{15000}}), Content: []Node{{Type: "tableRow", Attrs: mustJSON(TableRowAttrs{MinHeight: 4200}), Content: []Node{cell}}}}}
+	raw, _ := json.Marshal(doc)
+	if _, err := Parse(raw); err != nil {
+		t.Fatal(err)
+	}
+	doc.Body.Content[0].Content[0].Attrs = mustJSON(TableRowAttrs{MinHeight: A4HeightDU + 1})
+	raw, _ = json.Marshal(doc)
+	if _, err := Parse(raw); err == nil {
+		t.Fatal("expected oversized table row minimum height rejection")
+	}
+}
+
+func TestPhase2StylesListsLinksAndStoriesValidate(t *testing.T) {
+	doc := NewBlank("body")
+	doc.Settings.DifferentFirstPage = true
+	link := mustJSON(LinkAttrs{Href: "https://quotier.example/terms"})
+	paragraph := Node{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: "list-p", Style: "Terms", Alignment: "justify", LeftIndent: 1800, HangingIndent: 900}), Content: []Node{{Type: "text", Text: "Terms", Marks: []Mark{{Type: "strike"}, {Type: "link", Attrs: link}}}, {Type: "hardBreak"}, {Type: "text", Text: "apply\u00a0today"}}}
+	item := Node{Type: "listItem", Attrs: mustJSON(IDAttrs{ID: "item"}), Content: []Node{paragraph}}
+	doc.Body.Content = append(doc.Body.Content, Node{Type: "bulletList", Attrs: mustJSON(ListAttrs{ID: "list"}), Content: []Node{item}}, Node{Type: "horizontalRule", Attrs: mustJSON(IDAttrs{ID: "rule"})})
+	doc.HeaderStory = &Node{Type: "doc", Content: []Node{{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: "header"}), Content: []Node{{Type: "text", Text: "Page "}, {Type: "pageNumber"}, {Type: "text", Text: " of "}, {Type: "pageCount"}}}}}
+	doc.FirstPageFooterStory = &Node{Type: "doc", Content: []Node{{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: "first-footer"}), Content: []Node{{Type: "text", Text: "First page"}}}}}
+	raw, _ := json.Marshal(doc)
+	if _, err := Parse(raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPhase2RejectsUnsafeLinkDeepListAndAlteredStyle(t *testing.T) {
+	tests := []func(*Document){
+		func(doc *Document) {
+			doc.Body.Content[0].Content = []Node{{Type: "text", Text: "bad", Marks: []Mark{{Type: "link", Attrs: mustJSON(LinkAttrs{Href: "javascript:alert(1)"})}}}}
+		},
+		func(doc *Document) { doc.Styles[0].FontSize = 1100 },
+		func(doc *Document) {
+			doc.Body.Content[0].Content = []Node{{Type: "text", Text: "bad", Marks: []Mark{{Type: "link", Attrs: mustJSON(LinkAttrs{Href: "https://"})}}}}
+		},
+		func(doc *Document) {
+			child := Node{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: "deep-p"})}
+			for level := 4; level > 0; level-- {
+				child = Node{Type: "bulletList", Attrs: mustJSON(ListAttrs{ID: fmt.Sprintf("list-%d", level)}), Content: []Node{{Type: "listItem", Attrs: mustJSON(IDAttrs{ID: fmt.Sprintf("item-%d", level)}), Content: []Node{child}}}}
+			}
+			doc.Body.Content = []Node{child}
+		},
+	}
+	for index, mutate := range tests {
+		doc := NewBlank("body")
+		mutate(doc)
+		raw, _ := json.Marshal(doc)
+		if _, err := Parse(raw); err == nil {
+			t.Fatalf("case %d was accepted", index)
+		}
 	}
 }

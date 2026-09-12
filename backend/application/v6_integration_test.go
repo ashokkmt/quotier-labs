@@ -18,14 +18,33 @@ import (
 func v6Fixture(t *testing.T) string {
 	t.Helper()
 	doc := documentv6.NewBlank("v6-title")
+	paragraphAttrs, _ := json.Marshal(documentv6.ParagraphAttrs{ID: "v6-title", Style: "Title", Alignment: "justify"})
+	doc.Body.Content[0].Attrs = paragraphAttrs
 	style, _ := json.Marshal(documentv6.TextStyleAttrs{FontFamily: "Quotier Sans", FontSize: 1400, Color: "#1F2937"})
+	link, _ := json.Marshal(documentv6.LinkAttrs{Href: "https://quotier.example"})
 	doc.Body.Content[0].Content = []documentv6.Node{
 		{Type: "text", Text: "A ", Marks: []documentv6.Mark{}},
-		{Type: "text", Text: "useful", Marks: []documentv6.Mark{{Type: "bold"}, {Type: "underline"}, {Type: "textStyle", Attrs: style}}},
-		{Type: "text", Text: " quotation", Marks: []documentv6.Mark{}},
+		{Type: "text", Text: "useful", Marks: []documentv6.Mark{{Type: "bold"}, {Type: "underline"}, {Type: "strike"}, {Type: "textStyle", Attrs: style}, {Type: "link", Attrs: link}}},
+		{Type: "hardBreak"},
+		{Type: "text", Text: "quotation\u00a0document", Marks: []documentv6.Mark{}},
 	}
+	listAttrs, _ := json.Marshal(documentv6.ListAttrs{ID: "terms-list"})
+	itemAttrs, _ := json.Marshal(documentv6.IDAttrs{ID: "terms-item"})
+	termAttrs, _ := json.Marshal(documentv6.ParagraphAttrs{ID: "terms-paragraph", Style: "Terms"})
+	ruleAttrs, _ := json.Marshal(documentv6.IDAttrs{ID: "terms-rule"})
 	items, _ := json.Marshal(documentv6.LineItemTableAttrs{ID: "items", Rows: []documentv6.LineItem{{ID: "item-1", Description: "Design", Quantity: 2, Rate: 5000, TaxRate: 18}}})
-	doc.Body.Content = append(doc.Body.Content, documentv6.Node{Type: "lineItemTable", Attrs: items})
+	doc.Body.Content = append(doc.Body.Content,
+		documentv6.Node{Type: "bulletList", Attrs: listAttrs, Content: []documentv6.Node{{Type: "listItem", Attrs: itemAttrs, Content: []documentv6.Node{{Type: "paragraph", Attrs: termAttrs, Content: []documentv6.Node{{Type: "text", Text: "Payment due on receipt"}}}}}}},
+		documentv6.Node{Type: "horizontalRule", Attrs: ruleAttrs},
+		documentv6.Node{Type: "lineItemTable", Attrs: items},
+	)
+	headerAttrs, _ := json.Marshal(documentv6.ParagraphAttrs{ID: "default-header", Style: "Body", Alignment: "right"})
+	footerAttrs, _ := json.Marshal(documentv6.ParagraphAttrs{ID: "default-footer", Style: "Body", Alignment: "center"})
+	firstHeaderAttrs, _ := json.Marshal(documentv6.ParagraphAttrs{ID: "first-header", Style: "Title"})
+	doc.HeaderStory = &documentv6.Node{Type: "doc", Content: []documentv6.Node{{Type: "paragraph", Attrs: headerAttrs, Content: []documentv6.Node{{Type: "text", Text: "Page "}, {Type: "pageNumber"}}}}}
+	doc.FooterStory = &documentv6.Node{Type: "doc", Content: []documentv6.Node{{Type: "paragraph", Attrs: footerAttrs, Content: []documentv6.Node{{Type: "pageNumber"}, {Type: "text", Text: " of "}, {Type: "pageCount"}}}}}
+	doc.FirstPageHeaderStory = &documentv6.Node{Type: "doc", Content: []documentv6.Node{{Type: "paragraph", Attrs: firstHeaderAttrs, Content: []documentv6.Node{{Type: "text", Text: "Quotation"}}}}}
+	doc.Settings.DifferentFirstPage = true
 	raw, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)

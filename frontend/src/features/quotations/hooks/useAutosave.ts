@@ -1,7 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
 
 export type SaveState = 'Saved' | 'Saving…' | 'Save failed — retrying' | 'Unsaved changes'
+
+export function createSerialTask<T>(task: (value: T) => Promise<void>) {
+  let tail = Promise.resolve()
+  return (value: T) => {
+    const current = tail.catch(() => undefined).then(() => task(value))
+    tail = current.catch(() => undefined)
+    return current
+  }
+}
+
+export function useSerialSave<T>(save: (value: T) => Promise<void>) {
+  const latest = useRef(save)
+  useEffect(() => {
+    latest.current = save
+  }, [save])
+  const runLatest = useCallback((value: T) => latest.current(value), [])
+  // oxlint-disable-next-line react-hooks/refs -- initializer stores the callback without invoking it
+  const [queued] = useState(() => createSerialTask(runLatest))
+  return queued
+}
 
 export function useAutosave(
   document: any,
