@@ -2,6 +2,7 @@ package backup_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"gorm.io/gorm"
 
 	backup_domain "quotierlabs/backend/domain/backup"
+	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/backup"
 )
@@ -87,6 +90,61 @@ func TestBackupAndRestore(t *testing.T) {
 	err = restoredDB.Raw("SELECT name FROM dummy LIMIT 1").Scan(&name).Error
 	if err != nil || name != "test-record" {
 		t.Fatalf("failed to read from restored db, name=%s, err=%v", name, err)
+	}
+}
+
+func TestBackupRestorePreservesMixedDocumentSchemasAndAssets(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "source.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE TABLE documents (id TEXT PRIMARY KEY, payload TEXT NOT NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	v5, err := json.Marshal(documentmodel.NewBlank("v5-page"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v6, err := json.Marshal(documentv6.NewBlank("v6-paragraph"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []struct{ id, payload string }{{"v5", string(v5)}, {"v6", string(v6)}} {
+		if err := db.Exec("INSERT INTO documents (id, payload) VALUES (?, ?)", value.id, value.payload).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	assets := filepath.Join(tempDir, "assets")
+	if err := os.MkdirAll(assets, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assets, "logo.png"), []byte("asset bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	svc := backup.NewSQLiteBackupService(db, apppaths.Paths{TempRoot: tempDir})
+	archive := filepath.Join(tempDir, "mixed.zip")
+	if _, err := svc.CreateBackup(context.Background(), archive, backup_domain.BackupMetadata{FormatVersion: 1, AppVersion: "test", SchemaVersion: 1, CompanyID: "comp", CreatedAt: time.Now()}, assets); err != nil {
+		t.Fatal(err)
+	}
+	restoredDBPath := filepath.Join(tempDir, "restored.db")
+	restoredAssets := filepath.Join(tempDir, "restored-assets")
+	if err := svc.RestoreBackup(context.Background(), archive, restoredDBPath, restoredAssets); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := gorm.Open(sqlite.Open(restoredDBPath), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []struct{ id, payload string }{{"v5", string(v5)}, {"v6", string(v6)}} {
+		var got string
+		if err := restored.Raw("SELECT payload FROM documents WHERE id = ?", value.id).Scan(&got).Error; err != nil || got != value.payload {
+			t.Fatalf("%s payload was not preserved: %v", value.id, err)
+		}
+	}
+	if raw, err := os.ReadFile(filepath.Join(restoredAssets, "logo.png")); err != nil || string(raw) != "asset bytes" {
+		t.Fatalf("managed asset was not preserved: %v", err)
 	}
 }
 

@@ -35,7 +35,6 @@ export function NewQuotation() {
       setCreating(false)
     }
   }
-  const availableTemplates = templates.filter((t) => v6Enabled || t.schema_version !== 6)
   return (
     <div className="mx-auto max-w-3xl space-y-5 py-3 sm:space-y-6 sm:py-8">
       <div>
@@ -62,17 +61,27 @@ export function NewQuotation() {
         </Card>
         <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Use Existing Template</h2>
-          {availableTemplates.length === 0 ? (
+          {templates.length === 0 ? (
             <p className="text-sm text-muted-foreground">No templates available.</p>
           ) : (
-            availableTemplates.map((t) => (
+            templates.map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-3 border-b py-2">
-                <span className="min-w-0 truncate">{t.name}</span>
+                <span className="min-w-0 truncate">
+                  {t.name}
+                  {t.schema_version === 6 && (
+                    <span className="ml-2 text-xs text-muted-foreground">V6</span>
+                  )}
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => create(t.id)}
-                  disabled={creating}
+                  disabled={creating || (t.schema_version === 6 && !v6Enabled)}
+                  title={
+                    t.schema_version === 6 && !v6Enabled
+                      ? 'Enable the V6 document editor preview to create a new V6 quotation.'
+                      : undefined
+                  }
                 >
                   Use
                 </Button>

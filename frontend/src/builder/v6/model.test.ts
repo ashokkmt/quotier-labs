@@ -29,6 +29,14 @@ describe('V6 document model', () => {
     ).toEqual([
       { type: 'paragraph', attrs: { id: 'safe' }, content: [{ type: 'text', text: 'Header' }] },
     ])
+    const story = normalizeV6Story({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { id: 'same' } },
+        { type: 'paragraph', attrs: { id: 'same' } },
+      ],
+    })
+    expect(new Set(story.content?.map((node) => node.attrs?.id)).size).toBe(2)
   })
   it('preserves marks only on the selected text run', () => {
     const document = createBlankV6Document()
@@ -74,6 +82,33 @@ describe('V6 document model', () => {
       ],
     })
     expect(body.content?.[0].attrs?.column_widths).toEqual([15000, 22500])
+  })
+
+  it('strips Tiptap-only table attributes before autosave', () => {
+    const body = normalizeV6Body({
+      type: 'doc',
+      content: [
+        {
+          type: 'table',
+          attrs: { id: 'table', unexpected: true },
+          content: [
+            {
+              type: 'tableRow',
+              attrs: { unexpected: true },
+              content: [
+                {
+                  type: 'tableCell',
+                  attrs: { unexpected: true },
+                  content: [{ type: 'paragraph', attrs: { id: 'cell' } }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(body.content?.[0].content?.[0].attrs).toEqual({ min_height: 0, keep_together: false })
+    expect(body.content?.[0].content?.[0].content?.[0].attrs).not.toHaveProperty('unexpected')
   })
 
   it('preserves controlled table row minimum heights', () => {

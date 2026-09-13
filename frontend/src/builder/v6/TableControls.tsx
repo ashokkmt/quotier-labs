@@ -9,7 +9,6 @@ import {
   Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AppSelect } from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,20 +20,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ControlledColorPicker } from '../v5/ColorPicker'
-import { colorValueToCSS } from '../v5/tokens'
-import {
-  V6_EMPTY_ROW_MIN_HEIGHT,
-  clampV6RowMinHeight,
-  usedColorsForV6,
-  type V6Document,
-} from './model'
+import { V6_EMPTY_ROW_MIN_HEIGHT, clampV6RowMinHeight } from './model'
 import {
   moveTableColumn,
   moveTableRow,
   selectTableColumn,
   selectTableRow,
-  selectWholeTable,
   setTableRowMinHeight,
   tableTargetAt,
   type TableTarget,
@@ -58,16 +49,14 @@ type Geometry = {
 
 export function TableControls({
   editor,
-  document,
   surfaceRef,
 }: {
   editor: Editor
-  document: V6Document
   surfaceRef: RefObject<HTMLDivElement | null>
 }) {
   const [geometry, setGeometry] = useState<Geometry | null>(null)
   const geometryRef = useRef<Geometry | null>(null)
-  const [selected, setSelected] = useState(false)
+  const [hovered, setHovered] = useState(false)
   const [heightLabel, setHeightLabel] = useState('')
 
   const measure = useCallback(
@@ -122,21 +111,27 @@ export function TableControls({
   useEffect(() => {
     const root = editor.view.dom
     const selectionChanged = () => {
-      const target = tableTargetAt(editor)
-      setSelected(Boolean(target))
-      if (target) measure()
+      if (hovered && geometryRef.current) measure(geometryRef.current.cell)
     }
     const mouseMove = (event: MouseEvent) => {
       const element = event.target instanceof Element ? event.target.closest('td,th') : null
-      if (element instanceof HTMLTableCellElement && root.contains(element)) measure(element)
+      if (element instanceof HTMLTableCellElement && root.contains(element)) {
+        setHovered(true)
+        measure(element)
+      } else if (!(
+        event.target instanceof Element && event.target.closest('[data-v6-table-controls]')
+      )) {
+        setHovered(false)
+        geometryRef.current = null
+        setGeometry(null)
+      }
     }
     const mouseLeave = (event: MouseEvent) => {
       const controls = surfaceRef.current?.querySelector('[data-v6-table-controls]')
       if (event.relatedTarget instanceof Node && controls?.contains(event.relatedTarget)) return
-      if (!tableTargetAt(editor)) {
-        geometryRef.current = null
-        setGeometry(null)
-      }
+      setHovered(false)
+      geometryRef.current = null
+      setGeometry(null)
     }
     const reposition = () => {
       if (geometryRef.current) measure(geometryRef.current.cell)
@@ -157,9 +152,9 @@ export function TableControls({
       window.removeEventListener('resize', reposition)
       scroller?.removeEventListener('scroll', reposition)
     }
-  }, [editor, measure, surfaceRef])
+  }, [editor, hovered, measure, surfaceRef])
 
-  if (!geometry) return null
+  if (!geometry || !hovered) return null
   const { target } = geometry
   const selectRow = () => selectTableRow(editor, target)
   const selectColumn = () => selectTableColumn(editor, target)
@@ -345,14 +340,6 @@ export function TableControls({
           {heightLabel}
         </span>
       )}
-      {selected && (
-        <CellToolbar
-          editor={editor}
-          document={document}
-          left={geometry.cellLeft}
-          top={geometry.cellBottom + 6}
-        />
-      )}
     </div>
   )
 }
@@ -457,6 +444,7 @@ function AxisMenu({
   )
 }
 
+/* Cell formatting is intentionally provided by the main document toolbar.
 function CellToolbar({
   editor,
   document,
@@ -641,6 +629,7 @@ function CellToolbar({
     </div>
   )
 }
+*/
 
 function rowContentHeight(row: HTMLTableRowElement) {
   let pixels = 0

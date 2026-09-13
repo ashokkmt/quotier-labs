@@ -88,6 +88,9 @@ type ParagraphAttrs struct {
 	FirstLineIndent int64   `json:"first_line_indent,omitempty"`
 	HangingIndent   int64   `json:"hanging_indent,omitempty"`
 	RightIndent     int64   `json:"right_indent,omitempty"`
+	KeepWithNext    bool    `json:"keep_with_next,omitempty"`
+	KeepTogether    bool    `json:"keep_together,omitempty"`
+	WidowOrphans    int     `json:"widow_orphans,omitempty"`
 }
 
 type TableAttrs struct {
@@ -99,10 +102,12 @@ type TableAttrs struct {
 	BorderColor  string  `json:"border_color,omitempty"`
 	CellPadding  int64   `json:"cell_padding,omitempty"`
 	HeaderRows   int     `json:"header_rows,omitempty"`
+	KeepTogether bool    `json:"keep_together,omitempty"`
 }
 
 type TableRowAttrs struct {
-	MinHeight int64 `json:"min_height,omitempty"`
+	MinHeight    int64 `json:"min_height,omitempty"`
+	KeepTogether bool  `json:"keep_together,omitempty"`
 }
 
 type TableCellAttrs struct {
@@ -127,6 +132,10 @@ type ImageAttrs struct {
 	AspectLock  bool   `json:"aspect_lock,omitempty"`
 	SpaceBefore int64  `json:"space_before,omitempty"`
 	SpaceAfter  int64  `json:"space_after,omitempty"`
+	Positioning string `json:"positioning,omitempty"`
+	OffsetX     int64  `json:"offset_x,omitempty"`
+	OffsetY     int64  `json:"offset_y,omitempty"`
+	Layer       string `json:"layer,omitempty"`
 }
 
 type IDAttrs struct {
@@ -362,7 +371,7 @@ func validateNode(n Node, depth int, state *validationState, parent string, list
 			return invalid("paragraph has invalid parent")
 		}
 		attrs, err := decodeAttrs[ParagraphAttrs](n.Attrs)
-		if err != nil || attrs.ID == "" || (attrs.Style != "" && !ValidStyleName(attrs.Style)) || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right", "justify") || attrs.SpacingBefore < 0 || attrs.SpacingAfter < 0 || attrs.SpacingBefore > 7200 || attrs.SpacingAfter > 7200 || attrs.LineHeight < 0 || attrs.LineHeight > 3 || attrs.LeftIndent < 0 || attrs.RightIndent < 0 || attrs.FirstLineIndent < 0 || attrs.FirstLineIndent > 14400 || attrs.HangingIndent < 0 || attrs.HangingIndent > 14400 || attrs.HangingIndent > attrs.LeftIndent || (attrs.FirstLineIndent > 0 && attrs.HangingIndent > 0) {
+		if err != nil || attrs.ID == "" || (attrs.Style != "" && !ValidStyleName(attrs.Style)) || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right", "justify") || attrs.SpacingBefore < 0 || attrs.SpacingAfter < 0 || attrs.SpacingBefore > 7200 || attrs.SpacingAfter > 7200 || attrs.LineHeight < 0 || attrs.LineHeight > 3 || attrs.LeftIndent < 0 || attrs.RightIndent < 0 || attrs.FirstLineIndent < 0 || attrs.FirstLineIndent > 14400 || attrs.HangingIndent < 0 || attrs.HangingIndent > 14400 || attrs.HangingIndent > attrs.LeftIndent || (attrs.FirstLineIndent > 0 && attrs.HangingIndent > 0) || attrs.WidowOrphans < 0 || attrs.WidowOrphans > 5 {
 			return invalid("invalid paragraph attributes")
 		}
 		if err := state.addID(attrs.ID); err != nil {
@@ -475,7 +484,7 @@ func validateNode(n Node, depth int, state *validationState, parent string, list
 			return invalid("image has invalid parent")
 		}
 		attrs, err := decodeAttrs[ImageAttrs](n.Attrs)
-		if err != nil || attrs.ID == "" || attrs.Width < 100 || attrs.Height < 100 || attrs.Width > A4HeightDU || attrs.Height > A4HeightDU || attrs.PixelWidth <= 0 || attrs.PixelHeight <= 0 || len([]rune(attrs.Alt)) > 300 || attrs.SpaceBefore < 0 || attrs.SpaceAfter < 0 || attrs.SpaceBefore > 7200 || attrs.SpaceAfter > 7200 || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right") || len(n.Content) != 0 {
+		if err != nil || attrs.ID == "" || attrs.Width < 100 || attrs.Height < 100 || attrs.Width > A4HeightDU || attrs.Height > A4HeightDU || attrs.PixelWidth <= 0 || attrs.PixelHeight <= 0 || len([]rune(attrs.Alt)) > 300 || attrs.SpaceBefore < 0 || attrs.SpaceAfter < 0 || attrs.SpaceBefore > 7200 || attrs.SpaceAfter > 7200 || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right") || !oneOf(defaultString(attrs.Positioning, "inline"), "inline", "floating") || !oneOf(defaultString(attrs.Layer, "front"), "front", "behind") || attrs.OffsetX < -A4WidthDU || attrs.OffsetX > A4WidthDU || attrs.OffsetY < -A4HeightDU || attrs.OffsetY > A4HeightDU || len(n.Content) != 0 {
 			return invalid("invalid image attributes")
 		}
 		if err := state.addID(attrs.ID); err != nil {

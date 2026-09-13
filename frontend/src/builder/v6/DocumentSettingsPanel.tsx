@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { JSONContent } from '@tiptap/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +21,8 @@ export function DocumentSettingsPanel({
   onOpenChange,
   onSettingsChange,
   onStoryChange,
+  tab,
+  onTabChange,
 }: {
   open: boolean
   settings: V6Settings
@@ -31,8 +32,9 @@ export function DocumentSettingsPanel({
   onOpenChange: (open: boolean) => void
   onSettingsChange: (settings: V6Settings) => void
   onStoryChange: (key: V6StoryKey, story: JSONContent) => void
+  tab: 'document' | 'stories'
+  onTabChange: (tab: 'document' | 'stories') => void
 }) {
-  const [tab, setTab] = useState<'document' | 'stories'>('document')
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -57,7 +59,7 @@ export function DocumentSettingsPanel({
             variant={tab === 'document' ? 'secondary' : 'ghost'}
             role="tab"
             aria-selected={tab === 'document'}
-            onClick={() => setTab('document')}
+            onClick={() => onTabChange('document')}
           >
             Document
           </Button>
@@ -67,7 +69,7 @@ export function DocumentSettingsPanel({
             variant={tab === 'stories' ? 'secondary' : 'ghost'}
             role="tab"
             aria-selected={tab === 'stories'}
-            onClick={() => setTab('stories')}
+            onClick={() => onTabChange('stories')}
           >
             Headers &amp; footers
           </Button>

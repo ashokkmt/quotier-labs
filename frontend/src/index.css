@@ -5,12 +5,66 @@
 @layer components {
   .v6-prosemirror p {
     min-height: 1.4em;
+    position: relative;
+    z-index: 1;
+  }
+
+  .v6-image-handle {
+    position: absolute;
+    z-index: 4;
+    width: 10px;
+    height: 10px;
+    border: 1px solid #2563eb;
+    border-radius: 9999px;
+    background: white;
+  }
+  .v6-image-handle-n {
+    top: -5px;
+    left: calc(50% - 5px);
+    cursor: ns-resize;
+  }
+  .v6-image-handle-ne {
+    top: -5px;
+    right: -5px;
+    cursor: nesw-resize;
+  }
+  .v6-image-handle-e {
+    top: calc(50% - 5px);
+    right: -5px;
+    cursor: ew-resize;
+  }
+  .v6-image-handle-se {
+    right: -5px;
+    bottom: -5px;
+    cursor: nwse-resize;
+  }
+  .v6-image-handle-s {
+    bottom: -5px;
+    left: calc(50% - 5px);
+    cursor: ns-resize;
+  }
+  .v6-image-handle-sw {
+    bottom: -5px;
+    left: -5px;
+    cursor: nesw-resize;
+  }
+  .v6-image-handle-w {
+    top: calc(50% - 5px);
+    left: -5px;
+    cursor: ew-resize;
+  }
+  .v6-image-handle-nw {
+    top: -5px;
+    left: -5px;
+    cursor: nwse-resize;
   }
 
   .v6-prosemirror table {
     width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
+    position: relative;
+    z-index: 1;
   }
 
   .v6-prosemirror .tableWrapper {

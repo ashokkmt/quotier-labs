@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSerialTask } from './useAutosave'
+import { createLatestTask, createSerialTask } from './useAutosave'
 
 describe('autosave serialization', () => {
   it('never overlaps saves and continues after a failed save', async () => {
@@ -20,5 +20,27 @@ describe('autosave serialization', () => {
 
     expect(maxActive).toBe(1)
     expect(order).toEqual(['start-1', 'end-1', 'start-2', 'end-2', 'start-3', 'end-3'])
+  })
+})
+
+describe('autosave coalescing', () => {
+  it('saves only the newest state queued while a save is running', async () => {
+    const started: number[] = []
+    let release!: () => void
+    const firstSave = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const save = createLatestTask(async (value: number) => {
+      started.push(value)
+      if (value === 1) await firstSave
+    })
+
+    const initial = save(1)
+    save(2)
+    save(3)
+    release()
+    await initial
+
+    expect(started).toEqual([1, 3])
   })
 })

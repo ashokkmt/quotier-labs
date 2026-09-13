@@ -11,12 +11,35 @@ import (
 	"gorm.io/gorm"
 
 	"quotierlabs/backend/application/quotation"
+	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentmodel"
 	"quotierlabs/backend/domain/documentv6"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 	infra_id "quotierlabs/backend/infrastructure/id"
 	infra_sqlite "quotierlabs/backend/infrastructure/sqlite"
 )
+
+type conflictOnceQuotationRepository struct {
+	domain.QuotationRepository
+	inner    domain.QuotationRepository
+	conflict bool
+}
+
+func (r *conflictOnceQuotationRepository) Update(ctx context.Context, quotation *domain.Quotation) error {
+	if !r.conflict {
+		r.conflict = true
+		current, err := r.inner.GetByID(ctx, quotation.ID, quotation.CompanyID)
+		if err != nil {
+			return err
+		}
+		note := "concurrent update"
+		current.Notes = &note
+		if err := r.inner.Update(ctx, current); err != nil {
+			return err
+		}
+	}
+	return r.inner.Update(ctx, quotation)
+}
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -169,6 +192,25 @@ func TestCreateQuotationDraftFromScratch(t *testing.T) {
 	}
 }
 
+func TestUpdateQuotationDocumentRetriesOneOptimisticConflict(t *testing.T) {
+	db := setupTestDB(t)
+	now := time.Now()
+	db.Exec("INSERT INTO companies (id, name, currency, state, is_active, created_at, updated_at, version) VALUES ('retry-comp', 'Retry Co', 'INR', 'Maharashtra', 1, ?, ?, 1)", now, now)
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('retry-seq', 'retry-comp', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", now.Year(), now, now)
+	inner := infra_sqlite.NewQuotationRepository(db)
+	repo := &conflictOnceQuotationRepository{QuotationRepository: inner, inner: inner}
+	svc := quotation.NewService(repo, infra_sqlite.NewTemplateRepository(db), infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator(), nil)
+	ctx := context.Background()
+	created, err := svc.CreateQuotationDraft(ctx, "retry-comp", quotation.QuotationCreateDTO{UseV6: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.UpdateQuotationDocument(ctx, "retry-comp", quotation.QuotationUpdateDocumentDTO{ID: created.ID, Document: created.Document})
+	if err != nil || !repo.conflict || updated.ID != created.ID {
+		t.Fatalf("save did not recover from one optimistic conflict: updated=%+v conflict=%v err=%v", updated, repo.conflict, err)
+	}
+}
+
 func TestSaveQuotationAsTemplate(t *testing.T) {
 	db := setupTestDB(t)
 	now := time.Now()
@@ -248,6 +290,9 @@ func TestRecalculateQuotation(t *testing.T) {
 	}
 	if res.CGSTTotal != 900 {
 		t.Errorf("expected cgst 900, got %v", res.CGSTTotal)
+	}
+	if len(res.LineItems) != 1 || res.LineItems[0].ID != "line-1" || res.LineItems[0].GrandTotal != 11800 {
+		t.Errorf("expected authoritative line result, got %+v", res.LineItems)
 	}
 }
 

@@ -266,6 +266,18 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 		}
 		s.recorder.RecordOperation(ctx, "quotation.save", time.Since(started), result, nil)
 	}()
+	// A document save can race a customer or expected-total update. Retry once
+	// from a fresh draft instead of leaving autosave permanently behind.
+	for attempt := 0; attempt < 2; attempt++ {
+		dto, err = s.updateQuotationDocument(ctx, companyID, input)
+		if !errors.Is(err, domain.ErrConflict) {
+			return dto, err
+		}
+	}
+	return nil, err
+}
+
+func (s *Service) updateQuotationDocument(ctx context.Context, companyID string, input QuotationUpdateDocumentDTO) (*QuotationDTO, error) {
 	txCtx, err := s.txManager.BeginTx(ctx)
 	if err != nil {
 		return nil, err
@@ -322,8 +334,7 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 	}
 
 	value := mapToDTO(q)
-	dto = &value
-	return dto, nil
+	return &value, nil
 }
 
 func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string, input QuotationUpdateCustomerDTO) (*QuotationDTO, error) {

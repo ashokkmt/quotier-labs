@@ -4,6 +4,7 @@ package diagnostics
 
 import (
 	"archive/zip"
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -439,7 +440,7 @@ func (m *Manager) CaptureProfile(kind string) (string, error) {
 }
 
 // ArchiveSession only accepts an owned session ID and writes a safe, bounded ZIP.
-func (m *Manager) ArchiveSession(id string, out io.Writer) error {
+func (m *Manager) ArchiveSession(id string, out io.Writer, options ...SupportOptions) error {
 	if !validSessionID(id) {
 		return errors.New("invalid diagnostic session")
 	}
@@ -451,6 +452,14 @@ func (m *Manager) ArchiveSession(id string, out io.Writer) error {
 		return errors.New("diagnostic session was not found")
 	}
 	zw := zip.NewWriter(out)
+	option := SupportOptions{}
+	if len(options) > 0 {
+		option = options[0]
+	}
+	if err := writeSupportBundle(zw, dir, option); err != nil {
+		_ = zw.Close()
+		return err
+	}
 	var total int64
 	err := filepath.Walk(dir, func(filename string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -483,6 +492,72 @@ func (m *Manager) ArchiveSession(id string, out io.Writer) error {
 		return err
 	}
 	return zw.Close()
+}
+
+func writeSupportBundle(zw *zip.Writer, dir string, options SupportOptions) error {
+	manifestRaw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		return err
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		return errors.New("invalid diagnostic manifest")
+	}
+	bundle := SupportBundle{
+		SchemaVersion: schemaVersion,
+		Version:       manifest.Version,
+		Channel:       manifest.Channel,
+		OS:            manifest.OS,
+		Arch:          manifest.Arch,
+		Capabilities:  manifest.Capabilities,
+		FeatureFlags:  options,
+	}
+	counts := map[string]*TimingSummary{}
+	errors := map[string]bool{}
+	operations, err := os.Open(filepath.Join(dir, "operations.jsonl"))
+	if err == nil {
+		defer operations.Close()
+		scanner := bufio.NewScanner(operations)
+		scanner.Buffer(make([]byte, 1024), 64<<10)
+		for scanner.Scan() {
+			var event OperationEvent
+			if json.Unmarshal(scanner.Bytes(), &event) != nil || !allowedOperations[event.Name] || !allowedResult(event.Result) {
+				continue
+			}
+			key := event.Name + ":" + event.Result
+			if counts[key] == nil {
+				counts[key] = &TimingSummary{Operation: event.Name, ResultCode: event.Result}
+			}
+			counts[key].Count++
+			counts[key].TotalDurationMS += event.DurationMS
+			if event.Result != "success" {
+				errors[event.Name+"."+event.Result] = true
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+	}
+	for _, value := range counts {
+		bundle.Timings = append(bundle.Timings, *value)
+	}
+	for code := range errors {
+		bundle.ErrorCodes = append(bundle.ErrorCodes, code)
+	}
+	sort.Slice(bundle.Timings, func(i, j int) bool {
+		return bundle.Timings[i].Operation+bundle.Timings[i].ResultCode < bundle.Timings[j].Operation+bundle.Timings[j].ResultCode
+	})
+	sort.Strings(bundle.ErrorCodes)
+	raw, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
+		return err
+	}
+	entry, err := zw.Create("support-bundle.json")
+	if err != nil {
+		return err
+	}
+	_, err = entry.Write(raw)
+	return err
 }
 
 func (m *Manager) pruneLocked() error {

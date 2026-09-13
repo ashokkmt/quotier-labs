@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -69,7 +70,7 @@ func TestRecordingWritesBoundedSafeEvidence(t *testing.T) {
 		t.Fatalf("unexpected operation output %s", raw)
 	}
 	var out bytes.Buffer
-	if err := m.ArchiveSession(status.LastSessionID, &out); err != nil {
+	if err := m.ArchiveSession(status.LastSessionID, &out, SupportOptions{V6EditorEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
@@ -78,6 +79,27 @@ func TestRecordingWritesBoundedSafeEvidence(t *testing.T) {
 	}
 	if len(zr.File) == 0 {
 		t.Fatal("empty archive")
+	}
+	var bundle SupportBundle
+	for _, file := range zr.File {
+		if file.Name != "support-bundle.json" {
+			continue
+		}
+		reader, openErr := file.Open()
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		decodeErr := json.NewDecoder(reader).Decode(&bundle)
+		_ = reader.Close()
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+	}
+	if !bundle.FeatureFlags.V6EditorEnabled || bundle.Version != "test" || len(bundle.Timings) != 1 {
+		t.Fatalf("unexpected support bundle: %+v", bundle)
+	}
+	if len(bundle.ErrorCodes) != 0 {
+		t.Fatalf("unexpected error codes: %+v", bundle.ErrorCodes)
 	}
 }
 func TestRecordingIsUnavailableInProduction(t *testing.T) {

@@ -14,6 +14,7 @@ import {
   Paragraph,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   WidthType,
@@ -23,16 +24,35 @@ import {
 import { GetImageDataURI } from '../../../wailsjs/go/wails/CompanyHandler'
 import type { JSONContent } from '@tiptap/react'
 import { isSafeV6Link, starterV6Styles, v6Style, type V6Document, type V6Style } from './model'
+import { calculateAdvisoryTotals } from './lineItemCalculation'
 
 const twips = (du: number) => Math.round(du / 5)
 const color = (value?: string) => value?.replace(/^#/, '').toUpperCase()
 const styleID = (name: string) => `Quotier${name.replace(/\s+/g, '')}`
 
+export type DOCXWarning = { code: string; nodeId?: string; message: string }
+export type DOCXPackage = { buffer: ArrayBuffer; warnings: DOCXWarning[] }
+type ProjectorContext = {
+  fields: Record<string, string>
+  warnings: DOCXWarning[]
+  images: Map<string, Promise<{ bytes: Uint8Array; type: 'jpg' | 'png' }>>
+  signal?: AbortSignal
+}
+
 export async function generateV6Docx(
   document: V6Document,
   fields: Record<string, string> = {},
 ): Promise<ArrayBuffer> {
-  const children = await blocks(document, document.body.content ?? [], 0, fields)
+  return (await generateV6DocxPackage(document, fields)).buffer
+}
+
+export async function generateV6DocxPackage(
+  document: V6Document,
+  fields: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<DOCXPackage> {
+  const context: ProjectorContext = { fields, warnings: [], images: new Map(), signal }
+  const children = await blocks(document, document.body.content ?? [], 0, context)
   const portrait = document.settings.orientation === 'portrait'
   const width = twips(portrait ? 59528 : 84189)
   const height = twips(portrait ? 84189 : 59528)
@@ -40,23 +60,24 @@ export async function generateV6Docx(
   const footers: { default?: Footer; first?: Footer } = {}
   if (document.header_story)
     headers.default = new Header({
-      children: await blocks(document, document.header_story.content ?? [], 0, fields),
+      children: await blocks(document, document.header_story.content ?? [], 0, context),
     })
   if (document.footer_story)
     footers.default = new Footer({
-      children: await blocks(document, document.footer_story.content ?? [], 0, fields),
+      children: await blocks(document, document.footer_story.content ?? [], 0, context),
     })
   const firstHeaderStory = document.first_page_header_story ?? document.header_story
   const firstFooterStory = document.first_page_footer_story ?? document.footer_story
   if (document.settings.different_first_page && firstHeaderStory)
     headers.first = new Header({
-      children: await blocks(document, firstHeaderStory.content ?? [], 0, fields),
+      children: await blocks(document, firstHeaderStory.content ?? [], 0, context),
     })
   if (document.settings.different_first_page && firstFooterStory)
     footers.first = new Footer({
-      children: await blocks(document, firstFooterStory.content ?? [], 0, fields),
+      children: await blocks(document, firstFooterStory.content ?? [], 0, context),
     })
   const output = new Document({
+    features: { updateFields: true },
     styles: {
       paragraphStyles: (document.styles?.length ? document.styles : starterV6Styles()).map(
         (style) => ({
@@ -70,18 +91,16 @@ export async function generateV6Docx(
       ),
     },
     numbering: {
-      config: [
-        {
-          reference: 'v6-numbered',
-          levels: [0, 1, 2].map((level) => ({
-            level,
-            format: LevelFormat.DECIMAL,
-            text: `%${level + 1}.`,
-            alignment: AlignmentType.LEFT,
-            style: { paragraph: { indent: { left: 720 * (level + 1), hanging: 260 } } },
-          })),
-        },
-      ],
+      config: orderedListReferences(document).map((reference) => ({
+        reference,
+        levels: [0, 1, 2].map((level) => ({
+          level,
+          format: LevelFormat.DECIMAL,
+          text: `%${level + 1}.`,
+          alignment: AlignmentType.LEFT,
+          style: { paragraph: { indent: { left: 720 * (level + 1), hanging: 260 } } },
+        })),
+      })),
     },
     sections: [
       {
@@ -103,18 +122,21 @@ export async function generateV6Docx(
       },
     ],
   })
-  return Packer.toArrayBuffer(output)
+  context.signal?.throwIfAborted()
+  return { buffer: await Packer.toArrayBuffer(output), warnings: context.warnings }
 }
 
 async function blocks(
   document: V6Document,
   nodes: JSONContent[],
   listLevel = 0,
-  fields: Record<string, string> = {},
+  context: ProjectorContext,
 ): Promise<Array<Paragraph | Table>> {
   const output: Array<Paragraph | Table> = []
   for (const node of nodes) {
-    if (node.type === 'paragraph') output.push(paragraph(document, node, {}, fields))
+    context.signal?.throwIfAborted()
+    let mapped = true
+    if (node.type === 'paragraph') output.push(paragraph(document, node, {}, context))
     if (node.type === 'pageBreak') output.push(new Paragraph({ children: [new PageBreak()] }))
     if (node.type === 'horizontalRule')
       output.push(
@@ -122,9 +144,9 @@ async function blocks(
           border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: '6B7280' } },
         }),
       )
-    if (node.type === 'table') output.push(await table(document, node, fields))
-    if (node.type === 'lineItemTable') output.push(lineItems(document, node))
-    if (node.type === 'imageBlock') output.push(await image(node))
+    if (node.type === 'table') output.push(await table(document, node, context))
+    if (node.type === 'lineItemTable') output.push(lineItems(document, node, context))
+    if (node.type === 'imageBlock') output.push(await image(node, context))
     if (node.type === 'bulletList' || node.type === 'orderedList') {
       for (const item of node.content ?? []) {
         for (const child of item.content ?? []) {
@@ -136,15 +158,34 @@ async function blocks(
                 {
                   ...(node.type === 'bulletList'
                     ? { bullet: { level: listLevel } }
-                    : { numbering: { reference: 'v6-numbered', level: listLevel } }),
+                    : { numbering: { reference: orderedListReference(node), level: listLevel } }),
                 },
-                fields,
+                context,
               ),
             )
-          else output.push(...(await blocks(document, [child], listLevel + 1, fields)))
+          else output.push(...(await blocks(document, [child], listLevel + 1, context)))
         }
       }
     }
+    if (
+      ![
+        'paragraph',
+        'pageBreak',
+        'horizontalRule',
+        'table',
+        'lineItemTable',
+        'imageBlock',
+        'bulletList',
+        'orderedList',
+      ].includes(node.type ?? '')
+    )
+      mapped = false
+    if (!mapped)
+      context.warnings.push({
+        code: 'unsupported_node',
+        nodeId: String(node.attrs?.id || ''),
+        message: `Unsupported ${node.type || 'unknown'} content was omitted from DOCX.`,
+      })
   }
   return output
 }
@@ -153,7 +194,7 @@ function paragraph(
   document: V6Document,
   node: JSONContent,
   extra: Record<string, unknown> = {},
-  fields: Record<string, string> = {},
+  context: ProjectorContext,
 ): Paragraph {
   const attrs = node.attrs ?? {}
   const style = v6Style(document, String(attrs.style || 'Normal'))
@@ -171,7 +212,10 @@ function paragraph(
       firstLine: attrs.hanging_indent ? undefined : twips(Number(attrs.first_line_indent || 0)),
       hanging: attrs.hanging_indent ? twips(Number(attrs.hanging_indent)) : undefined,
     },
-    children: inlineChildren(node.content ?? [], style, fields),
+    keepNext: Boolean(attrs.keep_with_next),
+    keepLines: Boolean(attrs.keep_together),
+    widowControl: Number(attrs.widow_orphans || 0) > 0,
+    children: inlineChildren(node.content ?? [], style, context),
     ...extra,
   })
 }
@@ -179,7 +223,7 @@ function paragraph(
 function inlineChildren(
   nodes: JSONContent[],
   style: V6Style,
-  fields: Record<string, string>,
+  context: ProjectorContext,
 ): ParagraphChild[] {
   return nodes.map((node) => {
     if (node.type === 'hardBreak') return new TextRun({ break: 1 })
@@ -187,9 +231,23 @@ function inlineChildren(
     if (node.type === 'pageCount') return new TextRun({ children: [PageNumber.TOTAL_PAGES] })
     if (node.type === 'field') {
       const value =
-        fields[String(node.attrs?.key)] ||
+        context.fields[String(node.attrs?.key)] ||
         (node.attrs?.empty_behavior === 'fallback' ? String(node.attrs?.fallback || '') : '')
+      if (!value && node.attrs?.empty_behavior !== 'blank')
+        context.warnings.push({
+          code: 'missing_field',
+          nodeId: String(node.attrs?.id || ''),
+          message: `Field ${String(node.attrs?.key || '')} has no export value.`,
+        })
       return new TextRun({ text: value, ...runStyle(style) })
+    }
+    if (node.type !== 'text') {
+      context.warnings.push({
+        code: 'unsupported_inline',
+        nodeId: String(node.attrs?.id || ''),
+        message: `Unsupported ${node.type || 'unknown'} inline content was omitted from DOCX.`,
+      })
+      return new TextRun('')
     }
     const options: Record<string, unknown> = { text: node.text ?? '', ...runStyle(style) }
     let href = ''
@@ -199,15 +257,29 @@ function inlineChildren(
       if (mark.type === 'underline') options.underline = {}
       if (mark.type === 'strike') options.strike = true
       if (mark.type === 'textStyle') {
-        if (mark.attrs?.fontFamily) options.font = mark.attrs.fontFamily
+        if (mark.attrs?.fontFamily) options.font = docxFont(String(mark.attrs.fontFamily))
         if (mark.attrs?.fontSize) options.size = Math.round(Number(mark.attrs.fontSize) / 50)
         if (mark.attrs?.color) options.color = color(String(mark.attrs.color))
       }
       if (mark.type === 'highlight' && mark.attrs?.color)
         options.shading = { fill: color(String(mark.attrs.color)) }
       if (mark.type === 'link') href = String(mark.attrs?.href ?? '')
+      if (
+        !['bold', 'italic', 'underline', 'strike', 'textStyle', 'highlight', 'link'].includes(
+          mark.type,
+        )
+      )
+        context.warnings.push({
+          code: 'unsupported_mark',
+          message: `Unsupported ${mark.type} formatting was omitted from DOCX.`,
+        })
     }
     const run = new TextRun(options)
+    if (href && !isSafeV6Link(href))
+      context.warnings.push({
+        code: 'unsafe_link',
+        message: 'An unsafe link was exported as plain text.',
+      })
     return isSafeV6Link(href) ? new ExternalHyperlink({ children: [run], link: href }) : run
   })
 }
@@ -215,8 +287,11 @@ function inlineChildren(
 async function table(
   document: V6Document,
   node: JSONContent,
-  fields: Record<string, string>,
+  context: ProjectorContext,
 ): Promise<Table> {
+  const columnWidths = Array.isArray(node.attrs?.column_widths)
+    ? node.attrs.column_widths.map((value: unknown) => twips(Number(value)))
+    : undefined
   return new Table({
     rows: await Promise.all(
       (node.content ?? []).map(
@@ -248,7 +323,7 @@ async function table(
                       cell.attrs?.background && cell.attrs.background !== 'transparent'
                         ? { fill: color(String(cell.attrs.background)) }
                         : undefined,
-                    children: await blocks(document, cell.content ?? [], 0, fields),
+                    children: await blocks(document, cell.content ?? [], 0, context),
                   }),
               ),
             ),
@@ -258,6 +333,9 @@ async function table(
     width: node.attrs?.width
       ? { size: twips(Number(node.attrs.width)), type: WidthType.DXA }
       : { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths,
+    layout: TableLayoutType.FIXED,
+    alignment: alignment(node.attrs?.alignment),
     borders: tableBorders(
       String(node.attrs?.border_preset || 'all'),
       color(String(node.attrs?.border_color || '#D1D5DB')) || 'D1D5DB',
@@ -265,7 +343,8 @@ async function table(
   })
 }
 
-function lineItems(document: V6Document, node: JSONContent): Table {
+function lineItems(document: V6Document, node: JSONContent, context: ProjectorContext): Table {
+  const fields = context.fields
   const rows = Array.isArray(node.attrs?.rows) ? node.attrs.rows : []
   const columns =
     Array.isArray(node.attrs?.columns) && node.attrs.columns.length
@@ -277,23 +356,50 @@ function lineItems(document: V6Document, node: JSONContent): Table {
           { key: 'tax_rate', label: 'Tax' },
           { key: 'amount', label: 'Amount' },
         ]
-  const result = calculateLineItems(rows)
+  const result = calculateAdvisoryTotals(rows)
+  if (rows.length && !fields[`line_item.${rows[0].id}.amount`])
+    context.warnings.push({
+      code: 'unresolved_line_items',
+      nodeId: String(node.attrs?.id || ''),
+      message:
+        'Line-item display used validated source values because authoritative export results were unavailable.',
+    })
   const values = [
     columns.map((column: any) => String(column.label || column.key)),
     ...rows.map((row: any, index: number) =>
-      columns.map((column: any) => lineItemDisplay(column.key, row, result.lines[index])),
+      columns.map((column: any) => lineItemDisplay(column.key, row, result.lines[index], fields)),
     ),
   ]
-  if (node.attrs?.show_subtotal) values.push(totalRow('Subtotal', result.subtotal, columns.length))
-  if (node.attrs?.show_discount) values.push(totalRow('Discount', result.discount, columns.length))
-  if (node.attrs?.show_tax) values.push(totalRow('Tax', result.tax, columns.length))
+  if (node.attrs?.show_subtotal)
+    values.push(
+      totalRow('Subtotal', fields['quotation.subtotal'] || money(result.subtotal), columns.length),
+    )
+  if (node.attrs?.show_discount)
+    values.push(
+      totalRow(
+        'Discount',
+        fields['quotation.discount_total'] || money(result.discount),
+        columns.length,
+      ),
+    )
+  if (node.attrs?.show_tax)
+    values.push(totalRow('Tax', resolvedTax(fields, result.tax), columns.length))
   if (
     node.attrs?.show_grand_total ||
     !(node.attrs?.show_subtotal || node.attrs?.show_discount || node.attrs?.show_tax)
   )
-    values.push(totalRow('Grand total', result.grand, columns.length))
+    values.push(
+      totalRow(
+        'Grand total',
+        fields['quotation.grand_total'] || money(result.grand),
+        columns.length,
+      ),
+    )
+  const widths = columns.map((column: any) => twips(Number(column.width || 0))).filter(Boolean)
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: widths.length === columns.length ? widths : undefined,
+    layout: TableLayoutType.FIXED,
     rows: values.map(
       (values, index) =>
         new TableRow({
@@ -319,10 +425,10 @@ function lineItems(document: V6Document, node: JSONContent): Table {
   })
 }
 
-const totalRow = (label: string, amount: number, columns: number) =>
+const totalRow = (label: string, amount: string, columns: number) =>
   columns === 1
-    ? [`${label}: ${money(amount)}`]
-    : [label, ...Array(Math.max(0, columns - 2)).fill(''), money(amount)]
+    ? [`${label}: ${amount}`]
+    : [label, ...Array(Math.max(0, columns - 2)).fill(''), amount]
 const tableBorders = (preset: string, borderColor: string) => {
   const visible = { style: BorderStyle.SINGLE, size: 4, color: borderColor }
   const hidden = { style: BorderStyle.NONE, size: 0, color: borderColor }
@@ -336,60 +442,94 @@ const tableBorders = (preset: string, borderColor: string) => {
   }
 }
 
-function calculateLineItems(rows: any[]) {
-  let subtotal = 0,
-    discount = 0,
-    tax = 0,
-    grand = 0
-  const lines = rows.map((row) => {
-    const base = Math.round(Number(row.quantity || 0) * Number(row.rate || 0))
-    const discounted = Math.max(0, base - Number(row.discount || 0))
-    const taxable = row.tax_inclusive
-      ? Math.round(discounted / (1 + Number(row.tax_rate || 0) / 100))
-      : discounted
-    const lineTax = row.tax_inclusive
-      ? discounted - taxable
-      : Math.round((taxable * Number(row.tax_rate || 0)) / 100)
-    subtotal += base
-    discount += Number(row.discount || 0)
-    tax += lineTax
-    grand += taxable + lineTax
-    return { taxable, tax: lineTax, amount: taxable + lineTax }
-  })
-  return { subtotal, discount, tax, grand: Math.round(grand / 100) * 100, lines }
-}
 function lineItemDisplay(
   key: string,
   row: any,
   result: { taxable: number; tax: number; amount: number },
+  fields: Record<string, string>,
 ) {
   if (key === 'description') return String(row.description || '')
   if (key === 'quantity') return String(row.quantity || 0)
   if (key === 'rate') return money(Number(row.rate || 0))
   if (key === 'discount') return money(Number(row.discount || 0))
   if (key === 'tax_rate') return `${row.tax_rate || 0}%`
+  const resolved = fields[`line_item.${row.id}.${key}`]
+  if (resolved) return resolved
   return money(key === 'taxable' ? result.taxable : key === 'tax' ? result.tax : result.amount)
 }
 
-async function image(node: JSONContent): Promise<Paragraph> {
-  const dataURI = await GetImageDataURI(String(node.attrs?.source ?? ''))
-  const [header, encoded] = dataURI.split(',', 2)
-  const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0))
+async function image(node: JSONContent, context: ProjectorContext): Promise<Paragraph> {
+  context.signal?.throwIfAborted()
+  const source = String(node.attrs?.source ?? '')
+  let loaded = context.images.get(source)
+  if (!loaded) {
+    loaded = GetImageDataURI(source).then((dataURI) => {
+      const [header, encoded] = dataURI.split(',', 2)
+      if (!encoded || !/^data:image\/(png|jpeg);base64$/i.test(header))
+        throw new Error('Managed image data is invalid')
+      return {
+        bytes: Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)),
+        type: (header.includes('image/jpeg') ? 'jpg' : 'png') as 'jpg' | 'png',
+      }
+    })
+    context.images.set(source, loaded)
+  }
+  const { bytes, type } = await loaded
   const width = Math.max(1, Math.round(Number(node.attrs?.width ?? 7500) / 75))
   const height = Math.max(1, Math.round(Number(node.attrs?.height ?? 7500) / 75))
-  const type = header.includes('image/jpeg') ? 'jpg' : 'png'
+  const alt = String(node.attrs?.alt || '').trim()
+  if (!alt)
+    context.warnings.push({
+      code: 'missing_alt_text',
+      nodeId: String(node.attrs?.id || ''),
+      message: 'An image has no alternative text.',
+    })
   return new Paragraph({
     alignment: alignment(node.attrs?.alignment),
     spacing: {
       before: twips(Number(node.attrs?.space_before || 0)),
       after: twips(Number(node.attrs?.space_after || 0)),
     },
-    children: [new ImageRun({ data: bytes, transformation: { width, height }, type })],
+    children: [
+      new ImageRun({
+        data: bytes,
+        transformation: { width, height },
+        type,
+        altText: { name: alt || 'Quotation image', title: alt, description: alt },
+      }),
+    ],
   })
 }
 
+const resolvedTax = (fields: Record<string, string>, fallback: number) => {
+  const values = ['quotation.cgst_total', 'quotation.sgst_total', 'quotation.igst_total']
+    .map((key) => fields[key])
+    .filter(Boolean)
+  if (!values.length) return money(fallback)
+  const total = values.reduce((sum, value) => sum + Number(value.replace(/[^0-9.-]/g, '')), 0)
+  return `₹${total.toFixed(2)}`
+}
+
+const orderedListReference = (node: JSONContent) =>
+  `v6-numbered-${String(node.attrs?.id || 'list').replace(/[^a-z0-9_-]/gi, '')}`
+
+function orderedListReferences(document: V6Document): string[] {
+  const references = new Set<string>()
+  const visit = (node?: JSONContent) => {
+    if (!node) return
+    if (node.type === 'orderedList') references.add(orderedListReference(node))
+    node.content?.forEach(visit)
+  }
+  visit(document.body)
+  visit(document.header_story)
+  visit(document.footer_story)
+  visit(document.first_page_header_story)
+  visit(document.first_page_footer_story)
+  return [...references]
+}
+
 const runStyle = (style: V6Style) => ({
-  font: style.font_family,
+  font: docxFont(style.font_family),
   size: Math.round(style.font_size / 50),
   bold: style.bold,
   italics: style.italic,
@@ -416,3 +556,9 @@ const alignment = (value: unknown) =>
         ? AlignmentType.JUSTIFIED
         : AlignmentType.LEFT
 const money = (minor: number) => `₹${(minor / 100).toFixed(2)}`
+const docxFont = (family: string) =>
+  family === 'Quotier Serif'
+    ? 'Times New Roman'
+    : family === 'Quotier Mono'
+      ? 'Courier New'
+      : 'Arial'

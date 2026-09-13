@@ -14,7 +14,11 @@ import (
 	"quotierlabs/backend/domain/documentv6"
 )
 
-const duPerMM = 7200.0 / 25.4
+const (
+	// LayoutSchemaVersion is the stable contract shared by page-map preview and PDF painting.
+	LayoutSchemaVersion = 1
+	duPerMM             = 7200.0 / 25.4
+)
 
 type Diagnostic struct {
 	Code    string `json:"code"`
@@ -25,16 +29,19 @@ type Diagnostic struct {
 type SourceRange struct {
 	NodeID string `json:"nodeId"`
 	Page   int    `json:"page"`
+	X      int64  `json:"x"`
 	Y      int64  `json:"y"`
+	Width  int64  `json:"width"`
 	Height int64  `json:"height"`
 }
 
 type PageMap struct {
-	PageWidth   int64         `json:"pageWidth"`
-	PageHeight  int64         `json:"pageHeight"`
-	PageCount   int           `json:"pageCount"`
-	Ranges      []SourceRange `json:"ranges"`
-	Diagnostics []Diagnostic  `json:"diagnostics"`
+	SchemaVersion int           `json:"schemaVersion"`
+	PageWidth     int64         `json:"pageWidth"`
+	PageHeight    int64         `json:"pageHeight"`
+	PageCount     int           `json:"pageCount"`
+	Ranges        []SourceRange `json:"ranges"`
+	Diagnostics   []Diagnostic  `json:"diagnostics"`
 }
 
 type Run struct {
@@ -86,6 +93,8 @@ type Block struct {
 	Columns       []float64
 	Source        string
 	Alt           string
+	OffsetY       float64
+	Layer         string
 	BorderColor   string
 	BorderPreset  string
 	TableFirst    bool
@@ -99,9 +108,10 @@ type Page struct {
 }
 
 type Layout struct {
-	Pages       []Page
-	Ranges      []SourceRange
-	Diagnostics []Diagnostic
+	SchemaVersion int
+	Pages         []Page
+	Ranges        []SourceRange
+	Diagnostics   []Diagnostic
 }
 
 type ResolveInput struct {
@@ -126,7 +136,13 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 	left, right := float64(doc.Settings.Margins.Left)/duPerMM, float64(doc.Settings.Margins.Right)/duPerMM
 	top, bottom := float64(doc.Settings.Margins.Top)/duPerMM, float64(doc.Settings.Margins.Bottom)/duPerMM
 	contentWidth := pageWidth - left - right
-	result := &Layout{Pages: []Page{{Width: pageWidth, Height: pageHeight}}, Ranges: []SourceRange{}, Diagnostics: []Diagnostic{}}
+	// Reserve story space before placing body blocks, so headers/footers cannot
+	// overlap content even when their text wraps.
+	reservedHeader := math.Max(storyHeight(doc, doc.HeaderStory, contentWidth, metrics, input), storyHeight(doc, doc.FirstPageHeaderStory, contentWidth, metrics, input))
+	reservedFooter := math.Max(storyHeight(doc, doc.FooterStory, contentWidth, metrics, input), storyHeight(doc, doc.FirstPageFooterStory, contentWidth, metrics, input))
+	top = math.Max(top, reservedHeader+4)
+	bottom = math.Max(bottom, reservedFooter+4)
+	result := &Layout{SchemaVersion: LayoutSchemaVersion, Pages: []Page{{Width: pageWidth, Height: pageHeight}}, Ranges: []SourceRange{}, Diagnostics: []Diagnostic{}}
 	pageIndex, y := 0, top
 
 	newPage := func() {
@@ -138,9 +154,9 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 		if y+block.Height > pageHeight-bottom && len(result.Pages[pageIndex].Blocks) > 0 {
 			newPage()
 		}
-		block.Y = y
+		block.Y = y + block.OffsetY
 		result.Pages[pageIndex].Blocks = append(result.Pages[pageIndex].Blocks, block)
-		result.Ranges = append(result.Ranges, SourceRange{NodeID: block.ID, Page: pageIndex + 1, Y: int64(math.Round(y * duPerMM)), Height: int64(math.Round(block.Height * duPerMM))})
+		result.Ranges = append(result.Ranges, SourceRange{NodeID: block.ID, Page: pageIndex + 1, X: int64(math.Round(block.X * duPerMM)), Y: int64(math.Round(block.Y * duPerMM)), Width: int64(math.Round(block.Width * duPerMM)), Height: int64(math.Round(block.Height * duPerMM))})
 		y += block.Height
 	}
 
@@ -151,7 +167,7 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 		switch node.Type {
 		case "pageBreak":
 			attrs := decode[documentv6.IDAttrs](node.Attrs)
-			result.Ranges = append(result.Ranges, SourceRange{NodeID: attrs.ID, Page: pageIndex + 1, Y: int64(math.Round(y * duPerMM))})
+			result.Ranges = append(result.Ranges, SourceRange{NodeID: attrs.ID, Page: pageIndex + 1, X: int64(math.Round(left * duPerMM)), Y: int64(math.Round(y * duPerMM)), Width: int64(math.Round(contentWidth * duPerMM))})
 			newPage()
 		case "paragraph":
 			attrs := decode[documentv6.ParagraphAttrs](node.Attrs)
@@ -188,7 +204,7 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 			} else if attrs.Alignment == "right" {
 				x = pageWidth - right - w
 			}
-			place(Block{ID: attrs.ID, Kind: "image", X: x, Width: w, Height: h, TextTop: float64(attrs.SpaceBefore) / duPerMM, ContentHeight: float64(attrs.Height) / duPerMM, Align: attrs.Alignment, Source: attrs.Source, Alt: attrs.Alt})
+			place(Block{ID: attrs.ID, Kind: "image", X: x + float64(attrs.OffsetX)/duPerMM, Width: w, Height: h, TextTop: float64(attrs.SpaceBefore) / duPerMM, ContentHeight: float64(attrs.Height) / duPerMM, Align: attrs.Alignment, Source: attrs.Source, Alt: attrs.Alt, OffsetY: float64(attrs.OffsetY) / duPerMM, Layer: attrs.Layer})
 		case "table":
 			attrs := decode[documentv6.TableAttrs](node.Attrs)
 			rows, sum := layoutTable(doc, node, attrs, contentWidth, input, metrics, &result.Diagnostics)
@@ -197,6 +213,15 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 				x = left + (contentWidth-sum)/2
 			} else if attrs.Alignment == "right" {
 				x = pageWidth - right - sum
+			}
+			if attrs.KeepTogether {
+				totalHeight := 0.0
+				for _, row := range rows {
+					totalHeight += row.Height
+				}
+				if totalHeight <= pageHeight-top-bottom && y+totalHeight > pageHeight-bottom && len(result.Pages[pageIndex].Blocks) > 0 {
+					newPage()
+				}
 			}
 			for rowIndex, row := range rows {
 				row.X, row.Width = x, sum
@@ -274,7 +299,32 @@ func (l *Layout) PageMap(doc *documentv6.Document) PageMap {
 	if doc.Settings.Orientation == "landscape" {
 		w, h = h, w
 	}
-	return PageMap{PageWidth: w, PageHeight: h, PageCount: len(l.Pages), Ranges: l.Ranges, Diagnostics: l.Diagnostics}
+	return PageMap{SchemaVersion: LayoutSchemaVersion, PageWidth: w, PageHeight: h, PageCount: len(l.Pages), Ranges: l.Ranges, Diagnostics: l.Diagnostics}
+}
+
+func storyHeight(doc *documentv6.Document, story *documentv6.Node, width float64, metrics layoutir.Metrics, input ResolveInput) float64 {
+	if story == nil {
+		return 0
+	}
+	height := 0.0
+	for _, node := range flattenBlocks(story.Content, 0) {
+		if node.Type == "horizontalRule" {
+			height += 3
+			continue
+		}
+		if node.Type != "paragraph" {
+			continue
+		}
+		attrs := decode[documentv6.ParagraphAttrs](node.Attrs)
+		style, err := documentv6.ResolveParagraphStyle(doc, attrs)
+		if err != nil {
+			continue
+		}
+		runs := inlineRuns(node.Content, style, input, &[]Diagnostic{}, attrs.ID)
+		lines := wrapRuns(runs, width, metrics)
+		height += float64(style.SpacingBefore+style.SpacingAfter)/duPerMM + math.Max(1, float64(len(lines)))*metrics.LineHeightMM(float64(style.FontSize)/100)*style.LineHeight/1.2
+	}
+	return height
 }
 
 func inlineRuns(nodes []documentv6.Node, base documentv6.ResolvedStyle, input ResolveInput, diagnostics *[]Diagnostic, ownerID string) []Run {

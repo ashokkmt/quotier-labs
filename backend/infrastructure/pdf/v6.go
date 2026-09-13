@@ -23,6 +23,8 @@ import (
 )
 
 func (g *generator) generateV6(ctx context.Context, input document.GeneratorInput) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	doc, err := documentv6.Parse([]byte(input.Quotation.Document))
 	if err != nil {
 		return nil, fmt.Errorf("parse V6 document: %w", err)
@@ -40,33 +42,38 @@ func (g *generator) generateV6(ctx context.Context, input document.GeneratorInpu
 	pdf.SetModificationDate(epoch)
 	for _, page := range layout.Pages {
 		pdf.AddPageFormat("P", fpdf.SizeType{Wd: page.Width, Ht: page.Height})
-		for _, block := range page.Blocks {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			switch block.Kind {
-			case "paragraph":
-				drawV6Paragraph(pdf, block)
-			case "horizontalRule":
-				pdf.SetDrawColor(107, 114, 128)
-				pdf.Line(block.X, block.Y+1.5, block.X+block.Width, block.Y+1.5)
-			case "tableRow":
-				drawV6TableRow(pdf, block)
-			case "image":
-				data, mime, loadErr := g.readManagedImage(block.Source)
-				if loadErr != nil {
-					return nil, fmt.Errorf("render image %s: %w", block.ID, loadErr)
+		for _, behind := range []bool{true, false} {
+			for _, block := range page.Blocks {
+				if (block.Kind == "image" && block.Layer == "behind") != behind {
+					continue
 				}
-				format := "PNG"
-				if mime == "image/jpeg" {
-					format = "JPG"
+				if err := ctx.Err(); err != nil {
+					return nil, err
 				}
-				name := "v6-image-" + block.ID
-				pdf.RegisterImageOptionsReader(name, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, bytes.NewReader(data))
-				if pdf.Error() != nil {
-					return nil, pdf.Error()
+				switch block.Kind {
+				case "paragraph":
+					drawV6Paragraph(pdf, block)
+				case "horizontalRule":
+					pdf.SetDrawColor(107, 114, 128)
+					pdf.Line(block.X, block.Y+1.5, block.X+block.Width, block.Y+1.5)
+				case "tableRow":
+					drawV6TableRow(pdf, block)
+				case "image":
+					data, mime, loadErr := g.readManagedImage(block.Source)
+					if loadErr != nil {
+						return nil, fmt.Errorf("render image %s: %w", block.ID, loadErr)
+					}
+					format := "PNG"
+					if mime == "image/jpeg" {
+						format = "JPG"
+					}
+					name := "v6-image-" + block.ID
+					pdf.RegisterImageOptionsReader(name, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, bytes.NewReader(data))
+					if pdf.Error() != nil {
+						return nil, pdf.Error()
+					}
+					pdf.ImageOptions(name, block.X, block.Y+block.TextTop, block.Width, block.ContentHeight, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
 				}
-				pdf.ImageOptions(name, block.X, block.Y+block.TextTop, block.Width, block.ContentHeight, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
 			}
 		}
 	}
@@ -248,7 +255,9 @@ func drawV6TableCell(pdf *fpdf.Fpdf, cell flowlayout.TableCell, x, y, width floa
 			family, style := v6Font(run)
 			pdf.SetFont(family, style, run.FontSizePt)
 			applyTextColor(pdf, run.Color)
-			text := truncateToWidth(pdf, run.Text, width-(lineX-x))
+			// Flow layout already wrapped this exact run with this PDF font's metrics.
+			// Painting must not independently truncate it or preview and export diverge.
+			text := run.Text
 			textWidth := pdf.GetStringWidth(text)
 			baseline := lineY + lineHeight*.78
 			if run.Highlight != "" {
@@ -267,17 +276,6 @@ func drawV6TableCell(pdf *fpdf.Fpdf, cell flowlayout.TableCell, x, y, width floa
 		}
 		lineY += lineHeight
 	}
-}
-
-func truncateToWidth(pdf *fpdf.Fpdf, text string, width float64) string {
-	if pdf.GetStringWidth(text) <= width {
-		return text
-	}
-	r := []rune(text)
-	for len(r) > 0 && pdf.GetStringWidth(string(r)+"…") > width {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
 }
 
 func (g *generator) readManagedImage(source string) ([]byte, string, error) {

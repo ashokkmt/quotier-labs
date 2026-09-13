@@ -120,7 +120,7 @@ export function UpdateSettings({ appInfo }: { appInfo: wails.AppInfo | null }) {
       if (path)
         toast({
           title: 'Diagnostics exported',
-          description: 'The archive contains logs and build metadata only.',
+          description: 'The archive contains build and capability metadata only.',
         })
     } catch (error) {
       toast({

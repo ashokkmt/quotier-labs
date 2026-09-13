@@ -13,14 +13,24 @@ import (
 )
 
 type CalculationResultDTO struct {
-	Subtotal      int64  `json:"subtotal"`
-	DiscountTotal int64  `json:"discount_total"`
-	TaxableTotal  int64  `json:"taxable_total"`
-	CGSTTotal     int64  `json:"cgst_total"`
-	SGSTTotal     int64  `json:"sgst_total"`
-	IGSTTotal     int64  `json:"igst_total"`
-	GrandTotal    int64  `json:"grand_total"`
-	TaxMode       string `json:"tax_mode"`
+	Subtotal      int64               `json:"subtotal"`
+	DiscountTotal int64               `json:"discount_total"`
+	TaxableTotal  int64               `json:"taxable_total"`
+	CGSTTotal     int64               `json:"cgst_total"`
+	SGSTTotal     int64               `json:"sgst_total"`
+	IGSTTotal     int64               `json:"igst_total"`
+	GrandTotal    int64               `json:"grand_total"`
+	TaxMode       string              `json:"tax_mode"`
+	LineItems     []LineItemResultDTO `json:"line_items"`
+}
+
+type LineItemResultDTO struct {
+	ID         string `json:"id"`
+	Taxable    int64  `json:"taxable"`
+	CGST       int64  `json:"cgst"`
+	SGST       int64  `json:"sgst"`
+	IGST       int64  `json:"igst"`
+	GrandTotal int64  `json:"grand_total"`
 }
 
 func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotationID string) (*CalculationResultDTO, error) {
@@ -105,6 +115,7 @@ func (s *Service) RecalculateQuotation(ctx context.Context, companyID, quotation
 		IGSTTotal:     res.IGSTTotal,
 		GrandTotal:    res.GrandTotal,
 		TaxMode:       string(taxMode),
+		LineItems:     mapLineItemResults(res.LineItems),
 	}, nil
 }
 
@@ -131,7 +142,16 @@ func (s *Service) CalculatePreview(ctx context.Context, companyID string, lines 
 		IGSTTotal:     res.IGSTTotal,
 		GrandTotal:    res.GrandTotal,
 		TaxMode:       string(taxMode),
+		LineItems:     mapLineItemResults(res.LineItems),
 	}, nil
+}
+
+func mapLineItemResults(lines []calculation.LineItemResult) []LineItemResultDTO {
+	result := make([]LineItemResultDTO, len(lines))
+	for index, line := range lines {
+		result[index] = LineItemResultDTO{ID: line.ID, Taxable: line.Taxable, CGST: line.CGST, SGST: line.SGST, IGST: line.IGST, GrandTotal: line.GrandTotal}
+	}
+	return result
 }
 
 func applyV6Totals(q *domain.Quotation, doc *documentv6.Document, company *domain.Company, customer *domain.Customer) {

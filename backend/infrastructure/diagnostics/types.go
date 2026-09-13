@@ -92,6 +92,34 @@ type Summary struct {
 	PeakGoroutines   int       `json:"peak_goroutines"`
 }
 
+// SupportOptions contains explicit, non-sensitive capability state selected at
+// export time. It deliberately excludes document, customer, and filesystem data.
+type SupportOptions struct {
+	V6EditorEnabled bool `json:"v6_editor_enabled"`
+}
+
+type TimingSummary struct {
+	Operation       string  `json:"operation"`
+	ResultCode      string  `json:"result_code"`
+	Count           int     `json:"count"`
+	TotalDurationMS float64 `json:"total_duration_ms"`
+}
+
+// SupportBundle is a compact, PII-safe index included in every user-exported
+// diagnostic recording. The detailed recording remains local unless the user
+// chooses to share the archive.
+type SupportBundle struct {
+	SchemaVersion int             `json:"schema_version"`
+	Version       string          `json:"version"`
+	Channel       string          `json:"channel"`
+	OS            string          `json:"os"`
+	Arch          string          `json:"arch"`
+	Capabilities  Capabilities    `json:"capabilities"`
+	FeatureFlags  SupportOptions  `json:"feature_flags"`
+	ErrorCodes    []string        `json:"error_codes"`
+	Timings       []TimingSummary `json:"timings"`
+}
+
 type Status struct {
 	Available       bool            `json:"available"`
 	Recording       bool            `json:"recording"`

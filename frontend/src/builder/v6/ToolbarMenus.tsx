@@ -717,7 +717,15 @@ const fieldLabel = (key: string) =>
     .map((part) => part.replaceAll('_', ' '))
     .join(' · ')
 
-export function MoreMenu({ editor, onExportDOCX }: { editor: Editor; onExportDOCX: () => void }) {
+export function MoreMenu({
+  editor,
+  onExportDOCX,
+  exportingDOCX,
+}: {
+  editor: Editor
+  onExportDOCX: () => void
+  exportingDOCX: boolean
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -764,7 +772,9 @@ export function MoreMenu({ editor, onExportDOCX }: { editor: Editor; onExportDOC
         >
           Paste as text <span className="ml-auto text-xs text-muted-foreground">⌘⇧V</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onExportDOCX}>Export DOCX</DropdownMenuItem>
+        <DropdownMenuItem disabled={exportingDOCX} onSelect={onExportDOCX}>
+          {exportingDOCX ? 'Exporting DOCX…' : 'Export DOCX'}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="font-normal text-muted-foreground">
           Save ⌘S · Undo ⌘Z · Redo ⌘⇧Z

@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -154,8 +152,10 @@ func (h *AppHandler) ClearRecovery(id string) error {
 }
 
 // ExportDiagnostics creates a user-selected support archive containing only
-// build metadata and bounded diagnostics. It never includes the database,
-// quotation content, managed images, or recovery checkpoints.
+// build metadata and capability flags. Timing/error evidence is exported from
+// an explicit diagnostics recording; raw logs can contain user context and are
+// intentionally excluded. It never includes the database, quotation content,
+// managed images, or recovery checkpoints.
 func (h *AppHandler) ExportDiagnostics() (string, error) {
 	destination, err := wailsRuntime.SaveFileDialog(h.ctx, wailsRuntime.SaveDialogOptions{
 		Title: "Export Quotier Labs Diagnostics", DefaultFilename: "quotier-labs-diagnostics.zip",
@@ -175,24 +175,22 @@ func (h *AppHandler) ExportDiagnostics() (string, error) {
 	info, _ := json.MarshalIndent(h.GetAppInfo(), "", "  ")
 	entry, _ := zw.Create("build-info.json")
 	_, _ = entry.Write(info)
-	for _, root := range []struct{ path, prefix string }{{h.paths.LogRoot, "logs"}, {h.paths.CrashRoot, "crashes"}} {
-		files, _ := os.ReadDir(root.path)
-		for _, file := range files {
-			metadata, statErr := file.Info()
-			if statErr != nil || file.IsDir() || metadata.Size() > 10<<20 {
-				continue
-			}
-			source, openErr := os.Open(filepath.Join(root.path, file.Name()))
-			if openErr != nil {
-				continue
-			}
-			target, createErr := zw.Create(path.Join(root.prefix, filepath.Base(file.Name())))
-			if createErr == nil {
-				_, _ = io.CopyN(target, source, 10<<20)
-			}
-			_ = source.Close()
-		}
+	preferences, preferenceErr := h.preferences.Load()
+	if preferenceErr != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("load support capability flags: %w", preferenceErr)
 	}
+	support, marshalErr := supportBundleMetadata(preferences)
+	if marshalErr != nil {
+		_ = tmp.Close()
+		return "", marshalErr
+	}
+	entry, entryErr := zw.Create("support-bundle.json")
+	if entryErr != nil {
+		_ = tmp.Close()
+		return "", entryErr
+	}
+	_, _ = entry.Write(support)
 	if err := zw.Close(); err != nil {
 		_ = tmp.Close()
 		return "", err
@@ -208,4 +206,11 @@ func (h *AppHandler) ExportDiagnostics() (string, error) {
 		return "", fmt.Errorf("save diagnostics: %w", err)
 	}
 	return destination, nil
+}
+
+func supportBundleMetadata(preferences appconfig.Preferences) ([]byte, error) {
+	return json.MarshalIndent(struct {
+		SchemaVersion int  `json:"schema_version"`
+		V6Enabled     bool `json:"v6_editor_enabled"`
+	}{SchemaVersion: 1, V6Enabled: preferences.V6EditorEnabled}, "", "  ")
 }

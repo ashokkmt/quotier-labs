@@ -241,10 +241,58 @@ export function isV6Document(value: unknown): value is V6Document {
 // Tiptap stores resized columns in first-row cell colwidth values. The backend contract keeps a
 // table-level physical-width vector, so derive it once at the persistence boundary.
 export function normalizeV6Body(body: JSONContent): JSONContent {
+  const ids = new Set<string>()
+  const uniqueID = (value: unknown) => {
+    const id = typeof value === 'string' ? value : ''
+    if (id && !ids.has(id)) {
+      ids.add(id)
+      return id
+    }
+    const next = nodeID()
+    ids.add(next)
+    return next
+  }
+  const nodeWithID = new Set([
+    'paragraph',
+    'table',
+    'imageBlock',
+    'pageBreak',
+    'lineItemTable',
+    'bulletList',
+    'orderedList',
+    'listItem',
+    'horizontalRule',
+    'field',
+  ])
   const visit = (node: JSONContent): JSONContent => {
     const content = node.content?.map(visit)
-    if (node.type !== 'table') return { ...node, ...(content ? { content } : {}) }
-    const firstRow = content?.[0]?.content ?? []
+    const attrs = nodeWithID.has(node.type ?? '')
+      ? { ...node.attrs, id: uniqueID(node.attrs?.id) }
+      : node.attrs
+    if (node.type !== 'table')
+      return { ...node, ...(attrs ? { attrs } : {}), ...(content ? { content } : {}) }
+    const rows = content?.map((row) => ({
+      ...row,
+      attrs: {
+        min_height: Number(row.attrs?.min_height || 0),
+        keep_together: Boolean(row.attrs?.keep_together),
+      },
+      content: row.content?.map((cell) => ({
+        ...cell,
+        attrs: {
+          colspan: Number(cell.attrs?.colspan || 1),
+          rowspan: Number(cell.attrs?.rowspan || 1),
+          colwidth: Array.isArray(cell.attrs?.colwidth)
+            ? cell.attrs.colwidth.map(Number).filter((value) => value > 0)
+            : [],
+          background: cell.attrs?.background || 'transparent',
+          alignment: cell.attrs?.alignment || 'left',
+          vertical_alignment: cell.attrs?.vertical_alignment || 'top',
+          padding: Number(cell.attrs?.padding || 425),
+        },
+      })),
+    }))
+    const firstRow = rows?.[0]?.content ?? []
     const stored = Array.isArray(node.attrs?.column_widths)
       ? node.attrs.column_widths.map(Number)
       : []
@@ -268,7 +316,7 @@ export function normalizeV6Body(body: JSONContent): JSONContent {
     return {
       ...node,
       attrs: {
-        id: node.attrs?.id || nodeID(),
+        ...attrs,
         column_widths: widths,
         width: widths.reduce((sum, value) => sum + value, 0),
         alignment: node.attrs?.alignment || 'left',
@@ -277,13 +325,32 @@ export function normalizeV6Body(body: JSONContent): JSONContent {
         cell_padding: Number(node.attrs?.cell_padding || 425),
         header_rows: headerRows < 0 ? (content?.length ?? 0) : headerRows,
       },
-      content,
+      content: rows,
     }
   }
   return visit(body)
 }
 
 export function normalizeV6Story(story: JSONContent): JSONContent {
+  const ids = new Set<string>()
+  const uniqueID = (value: unknown) => {
+    const id = typeof value === 'string' ? value : ''
+    if (id && !ids.has(id)) {
+      ids.add(id)
+      return id
+    }
+    const next = nodeID()
+    ids.add(next)
+    return next
+  }
+  const nodeWithID = new Set([
+    'paragraph',
+    'bulletList',
+    'orderedList',
+    'listItem',
+    'horizontalRule',
+    'field',
+  ])
   const allowed = (node: JSONContent, parent: string): JSONContent | null => {
     const valid =
       parent === 'doc'
@@ -305,7 +372,10 @@ export function normalizeV6Story(story: JSONContent): JSONContent {
     const content = node.content
       ?.map((child) => allowed(child, nextParent))
       .filter((child): child is JSONContent => child !== null)
-    return { ...node, ...(content ? { content } : {}) }
+    const attrs = nodeWithID.has(node.type ?? '')
+      ? { ...node.attrs, id: uniqueID(node.attrs?.id) }
+      : node.attrs
+    return { ...node, ...(attrs ? { attrs } : {}), ...(content ? { content } : {}) }
   }
   return {
     type: 'doc',

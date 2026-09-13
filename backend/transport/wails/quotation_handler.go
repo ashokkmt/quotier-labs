@@ -151,6 +151,16 @@ func (h *QuotationHandler) SaveAsTemplate(input quotation.SaveAsTemplateDTO) (*t
 	if err != nil {
 		return nil, err
 	}
+	q, err := h.quotationSvc.GetQuotation(h.ctx, compID, input.QuotationID)
+	if err != nil {
+		return nil, err
+	}
+	if q.SchemaVersion == 6 {
+		preferences, preferenceErr := h.preferences.Load()
+		if preferenceErr != nil || !preferences.V6EditorEnabled {
+			return nil, fmt.Errorf("the V6 document editor is not enabled on this device")
+		}
+	}
 	t, err := h.quotationSvc.SaveAsTemplate(h.ctx, compID, input)
 	if err != nil {
 		return nil, err

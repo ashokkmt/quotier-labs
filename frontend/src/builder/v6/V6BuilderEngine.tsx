@@ -8,6 +8,7 @@ import {
 } from '../../../wailsjs/go/wails/CompanyHandler'
 import { GetCustomer } from '../../../wailsjs/go/wails/CustomerHandler'
 import { SaveDOCX } from '../../../wailsjs/go/wails/ExportHandler'
+import { RecalculateQuotation } from '../../../wailsjs/go/wails/QuotationHandler'
 import { useToast } from '@/hooks/use-toast'
 import { v6Extensions } from './extensions'
 import {
@@ -23,11 +24,12 @@ import {
   type V6StoryKey,
 } from './model'
 import { Toolbar } from './Toolbar'
-import { generateV6Docx } from './docx'
+import { generateV6DocxPackage } from './docx'
 import { loadDocumentFonts } from '../v5/documentFonts'
 import { DocumentSettingsPanel } from './DocumentSettingsPanel'
 import { TableControls } from './TableControls'
 import { ContextMenu, type MenuItem } from '../v5/ContextMenu'
+import { ImageInspector } from './ImageInspector'
 
 export type V6EngineHandle = {
   undo: () => void
@@ -61,6 +63,8 @@ export function V6BuilderEngine({
   prepareExport?: (document: V6Document) => Promise<any>
 }) {
   const [settings, setSettings] = useState<V6Settings>(document.settings)
+  const [exportingDOCX, setExportingDOCX] = useState(false)
+  const docxAbortRef = useRef<AbortController | null>(null)
   const [assets, setAssets] = useState<V6Asset[]>(document.assets ?? [])
   const [stories, setStories] = useState<Record<V6StoryKey, any>>(() => ({
     header_story: document.header_story ?? blankStory(),
@@ -71,7 +75,10 @@ export function V6BuilderEngine({
   const [pageMap, setPageMap] = useState<PageMap | null>(null)
   const [pageMapFailed, setPageMapFailed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'document' | 'stories'>('document')
   const [revision, setRevision] = useState(0)
+  const [imageSelected, setImageSelected] = useState(false)
+  const [zoom, setZoom] = useState(1)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -101,6 +108,8 @@ export function V6BuilderEngine({
     )
   }, [toast])
 
+  useEffect(() => () => docxAbortRef.current?.abort(), [])
+
   const emit = (
     body: any,
     nextSettings = settingsRef.current,
@@ -124,7 +133,7 @@ export function V6BuilderEngine({
     immediatelyRender: true,
     editorProps: {
       attributes: {
-        class: 'v6-prosemirror min-h-[850px] outline-none',
+        class: 'v6-prosemirror outline-none',
         'aria-label': 'Quotation document',
       },
     },
@@ -132,7 +141,10 @@ export function V6BuilderEngine({
       setRevision((value) => value + 1)
       emit(editor.getJSON())
     },
-    onSelectionUpdate: () => setRevision((value) => value + 1),
+    onSelectionUpdate: ({ editor }) => {
+      setRevision((value) => value + 1)
+      setImageSelected(editor.isActive('imageBlock'))
+    },
   })
 
   useEffect(() => {
@@ -227,6 +239,11 @@ export function V6BuilderEngine({
     }
   }
   const exportDOCX = async () => {
+    if (exportingDOCX) return
+    const controller = new AbortController()
+    docxAbortRef.current?.abort()
+    docxAbortRef.current = controller
+    setExportingDOCX(true)
     try {
       const current = {
         ...latestRef.current,
@@ -240,15 +257,30 @@ export function V6BuilderEngine({
       const customer = authoritativeQuotation?.customer_id
         ? await GetCustomer(authoritativeQuotation.customer_id)
         : null
-      const buffer = await generateV6Docx(
+      const calculation = authoritativeQuotation?.id
+        ? await RecalculateQuotation(authoritativeQuotation.id)
+        : null
+      const { buffer, warnings } = await generateV6DocxPackage(
         current,
-        fieldValues(company, customer, authoritativeQuotation),
+        fieldValues(company, customer, authoritativeQuotation, calculation),
+        controller.signal,
       )
       const encoded = bytesToBase64(new Uint8Array(buffer))
       const path = await SaveDOCX(encoded, `${safeName(exportName)}.docx`)
-      if (path) toast({ title: 'DOCX saved', description: path })
+      if (path)
+        toast({
+          title: warnings.length
+            ? `DOCX saved with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`
+            : 'DOCX saved',
+          description: warnings.length
+            ? warnings.map((warning) => warning.message).join(' ')
+            : path,
+        })
     } catch (error) {
-      toast({ title: 'DOCX export failed', description: String(error), variant: 'destructive' })
+      if (!controller.signal.aborted)
+        toast({ title: 'DOCX export failed', description: String(error), variant: 'destructive' })
+    } finally {
+      if (!controller.signal.aborted) setExportingDOCX(false)
     }
   }
   const pageWidth = (settings.orientation === 'portrait' ? V6_A4.width : V6_A4.height) / 75
@@ -301,7 +333,17 @@ export function V6BuilderEngine({
         onInsertImage={() => void selectManagedImage()}
         onReplaceImage={() => void selectManagedImage(true)}
         onExportDOCX={() => void exportDOCX()}
-        onOpenSettings={() => setSettingsOpen(true)}
+        exportingDOCX={exportingDOCX}
+        onOpenSettings={() => {
+          setSettingsTab('document')
+          setSettingsOpen(true)
+        }}
+        onOpenHeaders={() => {
+          setSettingsTab('stories')
+          setSettingsOpen(true)
+        }}
+        zoom={zoom}
+        onZoom={(value) => setZoom(Math.max(0.5, Math.min(1.5, Math.round(value * 10) / 10)))}
       />
       <DocumentSettingsPanel
         open={settingsOpen}
@@ -312,6 +354,8 @@ export function V6BuilderEngine({
         onOpenChange={setSettingsOpen}
         onSettingsChange={updateSettings}
         onStoryChange={updateStory}
+        tab={settingsTab}
+        onTabChange={setSettingsTab}
       />
       <div className="v6-editor-scroller min-h-0 flex-1 overflow-auto p-6">
         <div
@@ -319,6 +363,9 @@ export function V6BuilderEngine({
           style={{
             width: pageWidth,
             minHeight: pageHeight * count,
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top center',
+            marginBottom: `${(zoom - 1) * pageHeight * count}px`,
             backgroundImage:
               count > 1
                 ? `repeating-linear-gradient(to bottom, white 0, white ${pageHeight - 12}px, #cbd5e1 ${pageHeight - 12}px, #cbd5e1 ${pageHeight}px)`
@@ -331,24 +378,35 @@ export function V6BuilderEngine({
             style={{
               padding: `${settings.margins.top / 75}px ${settings.margins.right / 75}px ${settings.margins.bottom / 75}px ${settings.margins.left / 75}px`,
             }}
+            onPointerDown={(event) => {
+              if (!(event.target instanceof Element) || event.target.closest('[data-v6-image]'))
+                return
+              if (editor.isActive('imageBlock'))
+                editor.commands.setTextSelection(Math.max(1, editor.state.selection.from - 1))
+              setImageSelected(false)
+            }}
           >
             <div onContextMenu={openContextMenu}>
               <EditorContent editor={editor} />
             </div>
-            <TableControls
-              editor={editor}
-              document={{ ...document, settings, assets, ...stories }}
-              surfaceRef={surfaceRef}
-            />
+            <TableControls editor={editor} surfaceRef={surfaceRef} />
             {contextMenu && <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />}
           </div>
         </div>
+        {imageSelected && (
+          <ImageInspector editor={editor} onReplace={() => void selectManagedImage(true)} />
+        )}
       </div>
     </div>
   )
 }
 
-function fieldValues(company: any, customer: any, quotation: any): Record<string, string> {
+function fieldValues(
+  company: any,
+  customer: any,
+  quotation: any,
+  calculation?: any,
+): Record<string, string> {
   const values: Record<string, string> = {}
   const add = (prefix: string, source: any, keys: string[]) => {
     for (const key of keys)
@@ -404,6 +462,13 @@ function fieldValues(company: any, customer: any, quotation: any): Record<string
     if (quotation?.[key] !== undefined)
       values[`quotation.${key}`] = `₹${(Number(quotation[key]) / 100).toFixed(2)}`
   }
+  for (const line of calculation?.line_items ?? []) {
+    values[`line_item.${line.id}.taxable`] = money(Number(line.taxable))
+    values[`line_item.${line.id}.tax`] = money(
+      Number(line.cgst) + Number(line.sgst) + Number(line.igst),
+    )
+    values[`line_item.${line.id}.amount`] = money(Number(line.grand_total))
+  }
   return values
 }
 
@@ -423,3 +488,4 @@ const bytesToBase64 = (bytes: Uint8Array) => {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
   return btoa(binary)
 }
+const money = (minor: number) => `₹${(minor / 100).toFixed(2)}`

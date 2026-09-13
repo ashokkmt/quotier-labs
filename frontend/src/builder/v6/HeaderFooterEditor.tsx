@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AppSelect } from '@/components/ui/select'
 import { v6Extensions } from './extensions'
-import { nodeID, V6_STYLE_NAMES, type V6StoryKey } from './model'
+import { nodeID, normalizeV6Story, V6_STYLE_NAMES, type V6StoryKey } from './model'
 
 const storyLabels: Record<V6StoryKey, string> = {
   header_story: 'Default header',
@@ -95,7 +95,7 @@ function StoryEditor({
         'aria-label': label,
       },
     },
-    onUpdate: ({ editor }) => onChange(editor.getJSON()),
+    onUpdate: ({ editor }) => onChange(normalizeV6Story(editor.getJSON())),
     onSelectionUpdate: () => setRevision((value) => value + 1),
   })
   if (!editor)

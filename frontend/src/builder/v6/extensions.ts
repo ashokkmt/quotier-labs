@@ -55,6 +55,9 @@ const ParagraphV6 = Paragraph.extend({
       first_line_indent: numericAttr('first-line-indent'),
       hanging_indent: numericAttr('hanging-indent'),
       right_indent: numericAttr('right-indent'),
+      keep_with_next: { default: false },
+      keep_together: { default: false },
+      widow_orphans: { default: 0 },
     }
   },
   renderHTML({ node, HTMLAttributes }) {
@@ -128,6 +131,7 @@ const TableV6 = Table.extend({
       border_color: { default: '#D1D5DB' },
       cell_padding: { default: 425 },
       header_rows: { default: 0 },
+      keep_together: { default: false },
     }
   },
   renderHTML({ node, HTMLAttributes }) {
@@ -164,6 +168,7 @@ const TableRowV6 = TableRow.extend({
               }
             : {},
       },
+      keep_together: { default: false },
     }
   },
 })
@@ -271,6 +276,10 @@ const ImageBlock = Node.create({
     aspect_lock: { default: true },
     space_before: { default: 0 },
     space_after: { default: 0 },
+    positioning: { default: 'inline' },
+    offset_x: { default: 0 },
+    offset_y: { default: 0 },
+    layer: { default: 'front' },
   }),
   parseHTML: () => [{ tag: 'figure[data-v6-image]' }],
   renderHTML: ({ HTMLAttributes }) => [
@@ -359,11 +368,18 @@ const StableIDs = Extension.create({
         appendTransaction: (_transactions, _oldState, state) => {
           let tr = state.tr
           let changed = false
+          const seen = new Set<string>()
           state.doc.descendants((node, pos) => {
-            if (idNodes.includes(node.type.name) && !node.attrs.id) {
-              tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, id: crypto.randomUUID() })
+            if (!idNodes.includes(node.type.name)) return
+            const id = node.attrs.id
+            if (!id || seen.has(id)) {
+              const nextID = crypto.randomUUID()
+              seen.add(nextID)
+              tr = tr.setNodeAttribute(pos, 'id', nextID)
               changed = true
+              return
             }
+            seen.add(id)
           })
           return changed ? tr : null
         },

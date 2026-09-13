@@ -52,6 +52,9 @@ func (h *ExportHandler) SaveDOCX(encoded, defaultFilename string) (string, error
 	if err != nil || len(data) == 0 || len(data) > 32<<20 || !bytes.HasPrefix(data, []byte("PK")) {
 		return "", fmt.Errorf("DOCX output is invalid")
 	}
+	if err := validateDOCXPackage(data); err != nil {
+		return "", err
+	}
 	name := filepath.Base(strings.TrimSpace(defaultFilename))
 	if name == "." || name == "" {
 		name = "quotation.docx"
@@ -68,7 +71,7 @@ func (h *ExportHandler) SaveDOCX(encoded, defaultFilename string) (string, error
 		return "", err
 	}
 	if err := fileutil.AtomicWrite(savePath, data, 0644); err != nil {
-		return "", fmt.Errorf("write DOCX: %w", err)
+		return "", fmt.Errorf("could not save DOCX")
 	}
 	return savePath, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,68 @@ func TestResolvePageBreakAndRuns(t *testing.T) {
 	pageMap := layout.PageMap(doc)
 	if pageMap.PageCount != 2 || len(pageMap.Ranges) != 3 {
 		t.Fatalf("unexpected page map: %+v", pageMap)
+	}
+}
+
+func TestPhase4PageMapContractAndStoryReservation(t *testing.T) {
+	doc := documentv6.NewBlank("body")
+	doc.HeaderStory = &documentv6.Node{Type: "doc", Content: []documentv6.Node{{Type: "paragraph", Attrs: attrs(documentv6.ParagraphAttrs{ID: "header", Style: "Title"}), Content: []documentv6.Node{{Type: "text", Text: strings.Repeat("header ", 30)}}}}}
+	doc.FooterStory = &documentv6.Node{Type: "doc", Content: []documentv6.Node{{Type: "paragraph", Attrs: attrs(documentv6.ParagraphAttrs{ID: "footer"}), Content: []documentv6.Node{{Type: "text", Text: "footer"}}}}}
+	layout, err := Resolve(context.Background(), doc, ResolveInput{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageMap := layout.PageMap(doc)
+	if layout.SchemaVersion != LayoutSchemaVersion || pageMap.SchemaVersion != LayoutSchemaVersion {
+		t.Fatalf("unstable layout version: layout=%d pageMap=%d", layout.SchemaVersion, pageMap.SchemaVersion)
+	}
+	if len(pageMap.Ranges) == 0 || pageMap.Ranges[0].Width <= 0 || pageMap.Ranges[0].X <= 0 {
+		t.Fatalf("page map lacks physical source geometry: %+v", pageMap.Ranges)
+	}
+	if bodyY := layout.Pages[0].Blocks[0].Y; bodyY <= 4 {
+		t.Fatalf("body overlapped header story: y=%f", bodyY)
+	}
+}
+
+func TestFloatingImageOffsetsAreReflectedInThePageMap(t *testing.T) {
+	doc := documentv6.NewBlank("body")
+	doc.Assets = []documentv6.Asset{{Source: "asset:image.png", PixelWidth: 10, PixelHeight: 10}}
+	doc.Body.Content = append(doc.Body.Content, documentv6.Node{Type: "imageBlock", Attrs: attrs(documentv6.ImageAttrs{ID: "image", Source: "asset:image.png", Width: 1000, Height: 1000, PixelWidth: 10, PixelHeight: 10, Positioning: "floating", OffsetX: 720, OffsetY: 1440, Layer: "behind"})})
+	layout, err := Resolve(context.Background(), doc, ResolveInput{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, pageRange := layout.Pages[0].Blocks[1], layout.Ranges[1]
+	if block.Layer != "behind" || pageRange.X != int64(math.Round(block.X*duPerMM)) || pageRange.Y != int64(math.Round(block.Y*duPerMM)) {
+		t.Fatalf("floating image page map did not match layout: %#v %#v", block, pageRange)
+	}
+}
+
+func TestPhase4KeepTogetherMovesTableAsOneBlock(t *testing.T) {
+	doc := documentv6.NewBlank("intro")
+	for i := 0; i < 30; i++ {
+		doc.Body.Content = append(doc.Body.Content, documentv6.Node{Type: "paragraph", Attrs: attrs(documentv6.ParagraphAttrs{ID: fmt.Sprintf("p-%d", i)}), Content: []documentv6.Node{{Type: "text", Text: strings.Repeat("body ", 40)}}})
+	}
+	cell := func(id string) documentv6.Node {
+		return documentv6.Node{Type: "tableCell", Attrs: attrs(documentv6.TableCellAttrs{}), Content: []documentv6.Node{{Type: "paragraph", Attrs: attrs(documentv6.ParagraphAttrs{ID: id}), Content: []documentv6.Node{{Type: "text", Text: "cell"}}}}}
+	}
+	doc.Body.Content = append(doc.Body.Content, documentv6.Node{Type: "table", Attrs: attrs(documentv6.TableAttrs{ID: "kept", ColumnWidths: []int64{18000}, KeepTogether: true}), Content: []documentv6.Node{{Type: "tableRow", Content: []documentv6.Node{cell("c1")}}, {Type: "tableRow", Content: []documentv6.Node{cell("c2")}}}})
+	layout, err := Resolve(context.Background(), doc, ResolveInput{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := -1
+	for pageIndex, current := range layout.Pages {
+		for _, block := range current.Blocks {
+			if strings.HasPrefix(block.ID, "kept-row-") {
+				if page == -1 {
+					page = pageIndex
+				}
+				if page != pageIndex {
+					t.Fatalf("keep-together table split across pages")
+				}
+			}
+		}
 	}
 }
 

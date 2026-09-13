@@ -720,6 +720,28 @@ export namespace legacydata {
 
 export namespace quotation {
 	
+	export class LineItemResultDTO {
+	    id: string;
+	    taxable: number;
+	    cgst: number;
+	    sgst: number;
+	    igst: number;
+	    grand_total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LineItemResultDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.taxable = source["taxable"];
+	        this.cgst = source["cgst"];
+	        this.sgst = source["sgst"];
+	        this.igst = source["igst"];
+	        this.grand_total = source["grand_total"];
+	    }
+	}
 	export class CalculationResultDTO {
 	    subtotal: number;
 	    discount_total: number;
@@ -729,6 +751,7 @@ export namespace quotation {
 	    igst_total: number;
 	    grand_total: number;
 	    tax_mode: string;
+	    line_items: LineItemResultDTO[];
 	
 	    static createFrom(source: any = {}) {
 	        return new CalculationResultDTO(source);
@@ -744,8 +767,28 @@ export namespace quotation {
 	        this.igst_total = source["igst_total"];
 	        this.grand_total = source["grand_total"];
 	        this.tax_mode = source["tax_mode"];
+	        this.line_items = this.convertValues(source["line_items"], LineItemResultDTO);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
+	
 	export class QuotationCreateDTO {
 	    template_id?: string;
 	    customer_id?: string;

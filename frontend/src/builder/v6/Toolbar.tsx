@@ -1,5 +1,16 @@
 import type { Editor } from '@tiptap/react'
-import { Bold, Italic, Redo2, Settings2, Strikethrough, Underline, Undo2 } from 'lucide-react'
+import {
+  Bold,
+  Italic,
+  PanelTop,
+  Redo2,
+  Settings2,
+  Strikethrough,
+  Underline,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { AppSelect } from '@/components/ui/select'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -34,14 +45,22 @@ export function Toolbar({
   onInsertImage,
   onReplaceImage,
   onExportDOCX,
+  exportingDOCX,
   onOpenSettings,
+  onOpenHeaders,
+  zoom,
+  onZoom,
 }: {
   editor: Editor
   document: V6Document
   onInsertImage: () => void
   onReplaceImage: () => void
   onExportDOCX: () => void
+  exportingDOCX: boolean
   onOpenSettings: () => void
+  onOpenHeaders: () => void
+  zoom: number
+  onZoom: (zoom: number) => void
 }) {
   const paragraphStyle = paragraphSelectionValue(editor, 'style', 'Normal')
   const fontFamily = markAttributeSelectionValue(editor, 'textStyle', 'fontFamily', 'Quotier Sans')
@@ -199,8 +218,33 @@ export function Toolbar({
         <ImageSettings editor={editor} onReplace={onReplaceImage} />
         <FieldSettings editor={editor} />
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <MoreMenu editor={editor} onExportDOCX={onExportDOCX} />
+          <MoreMenu editor={editor} onExportDOCX={onExportDOCX} exportingDOCX={exportingDOCX} />
           <Separator orientation="vertical" className="mx-1 h-6" />
+          <ToolbarIconButton
+            label="Zoom out"
+            disabled={zoom <= 0.5}
+            onClick={() => onZoom(zoom - 0.1)}
+          >
+            <ZoomOut className="h-4 w-4" />
+          </ToolbarIconButton>
+          <button
+            type="button"
+            className="hidden text-xs tabular-nums sm:inline"
+            onClick={() => onZoom(1)}
+            aria-label="Reset zoom"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <ToolbarIconButton
+            label="Zoom in"
+            disabled={zoom >= 1.5}
+            onClick={() => onZoom(zoom + 0.1)}
+          >
+            <ZoomIn className="h-4 w-4" />
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Edit headers and footers" onClick={onOpenHeaders}>
+            <PanelTop className="h-4 w-4" />
+          </ToolbarIconButton>
           <ToolbarIconButton
             id="v6-document-settings-trigger"
             label="Document settings"
