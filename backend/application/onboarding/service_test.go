@@ -70,4 +70,11 @@ func TestCompleteOnboarding(t *testing.T) {
 	if len(tmpl) != len(onboarding.BuiltinTemplates) {
 		t.Fatalf("expected %d template builtins, got %d", len(onboarding.BuiltinTemplates), len(tmpl))
 	}
+	foundV6 := false
+	for _, item := range tmpl {
+		foundV6 = foundV6 || item.SchemaVersion == 6
+	}
+	if !foundV6 {
+		t.Fatal("expected a V6 starter quotation template")
+	}
 }

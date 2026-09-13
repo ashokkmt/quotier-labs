@@ -122,9 +122,30 @@ const TableV6 = Table.extend({
       ...this.parent?.(),
       id: { default: null },
       column_widths: { default: [15000, 15000, 15000] },
+      width: { default: 45000 },
       alignment: { default: 'left' },
+      border_preset: { default: 'all' },
       border_color: { default: '#D1D5DB' },
+      cell_padding: { default: 425 },
+      header_rows: { default: 0 },
     }
+  },
+  renderHTML({ node, HTMLAttributes }) {
+    const width = `${Number(node.attrs.width || 45000) / 75}px`
+    const margin =
+      node.attrs.alignment === 'center'
+        ? '0 auto'
+        : node.attrs.alignment === 'right'
+          ? '0 0 0 auto'
+          : '0'
+    return [
+      'table',
+      mergeAttributes(HTMLAttributes, {
+        'data-v6-border': node.attrs.border_preset,
+        style: `width:${width};margin:${margin};border-color:${node.attrs.border_color}`,
+      }),
+      ['tbody', 0],
+    ]
   },
 }).configure({ resizable: true, allowTableNodeSelection: true })
 
@@ -157,6 +178,14 @@ const TableCellV6 = TableCell.extend({
         renderHTML: (attrs) => ({ style: `background:${attrs.background}` }),
       },
       alignment: { default: 'left' },
+      vertical_alignment: {
+        default: 'top',
+        renderHTML: (attrs) => ({ style: `vertical-align:${attrs.vertical_alignment}` }),
+      },
+      padding: {
+        default: 425,
+        renderHTML: (attrs) => ({ style: `padding:${Number(attrs.padding) / 75}px` }),
+      },
     }
   },
 })
@@ -171,6 +200,14 @@ const TableHeaderV6 = TableHeader.extend({
         renderHTML: (attrs) => ({ style: `background:${attrs.background}` }),
       },
       alignment: { default: 'left' },
+      vertical_alignment: {
+        default: 'top',
+        renderHTML: (attrs) => ({ style: `vertical-align:${attrs.vertical_alignment}` }),
+      },
+      padding: {
+        default: 425,
+        renderHTML: (attrs) => ({ style: `padding:${Number(attrs.padding) / 75}px` }),
+      },
     }
   },
 })
@@ -231,6 +268,9 @@ const ImageBlock = Node.create({
     pixel_height: { default: 1 },
     alignment: { default: 'left' },
     alt: { default: '' },
+    aspect_lock: { default: true },
+    space_before: { default: 0 },
+    space_after: { default: 0 },
   }),
   parseHTML: () => [{ tag: 'figure[data-v6-image]' }],
   renderHTML: ({ HTMLAttributes }) => [
@@ -245,13 +285,48 @@ const LineItemTable = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  addAttributes: () => ({ id: { default: null }, rows: { default: [] } }),
+  addAttributes: () => ({
+    id: { default: null },
+    rows: { default: [] },
+    columns: { default: [] },
+    width: { default: 0 },
+    alignment: { default: 'left' },
+    header_background: { default: '#E5E7EB' },
+    show_subtotal: { default: true },
+    show_discount: { default: true },
+    show_tax: { default: true },
+    show_grand_total: { default: true },
+  }),
   parseHTML: () => [{ tag: 'div[data-v6-line-items]' }],
   renderHTML: ({ HTMLAttributes }) => [
     'div',
     mergeAttributes(HTMLAttributes, { 'data-v6-line-items': '' }),
   ],
   addNodeView: () => ReactNodeViewRenderer(LineItemNodeView),
+})
+
+const BusinessField = Node.create({
+  name: 'field',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({
+    id: { default: null },
+    key: { default: 'quotation.number' },
+    fallback: { default: '' },
+    empty_behavior: { default: 'diagnostic' },
+  }),
+  parseHTML: () => [{ tag: 'span[data-v6-business-field]' }],
+  renderHTML: ({ node, HTMLAttributes }) => [
+    'span',
+    mergeAttributes(HTMLAttributes, {
+      'data-v6-business-field': node.attrs.key,
+      class: 'v6-business-field',
+      contenteditable: 'false',
+    }),
+    String(node.attrs.fallback || node.attrs.key),
+  ],
 })
 
 const idNodes = [
@@ -264,6 +339,7 @@ const idNodes = [
   'orderedList',
   'listItem',
   'horizontalRule',
+  'field',
 ]
 
 const StableIDs = Extension.create({
@@ -364,6 +440,7 @@ export const v6Extensions = [
   pageField('pageCount', 'Pages'),
   ImageBlock,
   LineItemTable,
+  BusinessField,
   StableIDs,
   PasteGuard,
   Phase2Commands,

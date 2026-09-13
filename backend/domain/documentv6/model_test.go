@@ -105,3 +105,68 @@ func TestPhase2RejectsUnsafeLinkDeepListAndAlteredStyle(t *testing.T) {
 		}
 	}
 }
+
+func TestPhase3TableSpansFieldsImagesAndLineItemConfig(t *testing.T) {
+	paragraph := func(id string) Node { return Node{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: id})} }
+	cell := func(kind, id string, colspan, rowspan int) Node {
+		return Node{Type: kind, Attrs: mustJSON(TableCellAttrs{Colspan: colspan, Rowspan: rowspan, Padding: 425, VerticalAlignment: "middle"}), Content: []Node{paragraph(id)}}
+	}
+	doc := NewBlank("field-p")
+	doc.Body.Content[0].Content = []Node{{Type: "field", Attrs: mustJSON(FieldAttrs{ID: "customer-field", Key: "customer.name", Fallback: "Customer", EmptyBehavior: "fallback"})}}
+	doc.Body.Content = append(doc.Body.Content,
+		Node{Type: "table", Attrs: mustJSON(TableAttrs{ID: "table", ColumnWidths: []int64{10000, 10000, 10000}, Width: 30000, HeaderRows: 1, BorderPreset: "outer", CellPadding: 425}), Content: []Node{
+			{Type: "tableRow", Content: []Node{cell("tableHeader", "h1", 2, 1), cell("tableHeader", "h2", 1, 1)}},
+			{Type: "tableRow", Content: []Node{cell("tableCell", "a", 1, 2), cell("tableCell", "b", 1, 1), cell("tableCell", "c", 1, 1)}},
+			{Type: "tableRow", Content: []Node{cell("tableCell", "d", 2, 1)}},
+		}},
+		Node{Type: "lineItemTable", Attrs: mustJSON(LineItemTableAttrs{ID: "items", Rows: []LineItem{{ID: "row", Description: "Service", Quantity: 1, Rate: 10000, TaxRate: 18}}, Columns: []LineItemColumn{{Key: "description", Label: "Work"}, {Key: "amount", Label: "Total"}}, ShowGrandTotal: true})},
+	)
+	if err := Validate(doc); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPhase3RejectsMalformedSpansUnknownFieldsAndUnsafeAttributes(t *testing.T) {
+	baseCell := func(id string) Node {
+		return Node{Type: "tableCell", Attrs: mustJSON(TableCellAttrs{Colspan: 1, Rowspan: 1}), Content: []Node{{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: id})}}}
+	}
+	tests := []func(*Document){
+		func(doc *Document) {
+			doc.Body.Content[0].Content = []Node{{Type: "field", Attrs: mustJSON(FieldAttrs{ID: "f", Key: "company.__proto__"})}}
+		},
+		func(doc *Document) {
+			doc.Body.Content = []Node{{Type: "table", Attrs: mustJSON(TableAttrs{ID: "t", ColumnWidths: []int64{10000, 10000}}), Content: []Node{{Type: "tableRow", Content: []Node{baseCell("only-one")}}}}}
+		},
+		func(doc *Document) {
+			doc.Body.Content = []Node{{Type: "lineItemTable", Attrs: mustJSON(LineItemTableAttrs{ID: "items", Columns: []LineItemColumn{{Key: "formula"}}})}}
+		},
+		func(doc *Document) {
+			doc.Assets = []Asset{{Source: "asset:x.png", PixelWidth: 10, PixelHeight: 10}}
+			doc.Body.Content = []Node{{Type: "imageBlock", Attrs: mustJSON(ImageAttrs{ID: "image", Source: "asset:x.png", Width: 1000, Height: 1000, PixelWidth: 10, PixelHeight: 10, SpaceAfter: 7201})}}
+		},
+	}
+	for index, mutate := range tests {
+		doc := NewBlank("body")
+		mutate(doc)
+		if err := Validate(doc); err == nil {
+			t.Fatalf("case %d was accepted", index)
+		}
+	}
+}
+
+func FuzzPhase3TableValidationNeverPanics(f *testing.F) {
+	f.Add(1, 1, 2)
+	f.Add(20, 500, 1)
+	f.Fuzz(func(t *testing.T, colspan, rowspan, cells int) {
+		if cells < 0 || cells > 30 {
+			return
+		}
+		doc := NewBlank("body")
+		row := Node{Type: "tableRow"}
+		for index := 0; index < cells; index++ {
+			row.Content = append(row.Content, Node{Type: "tableCell", Attrs: mustJSON(TableCellAttrs{Colspan: colspan, Rowspan: rowspan}), Content: []Node{{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: fmt.Sprintf("cell-%d", index)})}}})
+		}
+		doc.Body.Content = []Node{{Type: "table", Attrs: mustJSON(TableAttrs{ID: "table", ColumnWidths: []int64{10000, 10000}}), Content: []Node{row}}}
+		_ = Validate(doc)
+	})
+}

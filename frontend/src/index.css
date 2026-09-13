@@ -26,6 +26,29 @@
     vertical-align: top;
   }
 
+  .v6-prosemirror table[data-v6-border='none'] td,
+  .v6-prosemirror table[data-v6-border='none'] th {
+    border-color: transparent;
+  }
+
+  .v6-prosemirror table[data-v6-border='outer'] td,
+  .v6-prosemirror table[data-v6-border='outer'] th {
+    border-color: transparent;
+  }
+
+  .v6-prosemirror table[data-v6-border='outer'] tr:first-child > * {
+    border-top-color: inherit;
+  }
+  .v6-prosemirror table[data-v6-border='outer'] tr:last-child > * {
+    border-bottom-color: inherit;
+  }
+  .v6-prosemirror table[data-v6-border='outer'] tr > *:first-child {
+    border-left-color: inherit;
+  }
+  .v6-prosemirror table[data-v6-border='outer'] tr > *:last-child {
+    border-right-color: inherit;
+  }
+
   .v6-prosemirror .selectedCell::after {
     position: absolute;
     inset: 0;

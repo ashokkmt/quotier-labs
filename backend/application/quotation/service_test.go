@@ -12,6 +12,7 @@ import (
 
 	"quotierlabs/backend/application/quotation"
 	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 	infra_id "quotierlabs/backend/infrastructure/id"
 	infra_sqlite "quotierlabs/backend/infrastructure/sqlite"
@@ -249,6 +250,39 @@ func TestRecalculateQuotation(t *testing.T) {
 		t.Errorf("expected cgst 900, got %v", res.CGSTTotal)
 	}
 }
+
+func TestV6SaveRecalculatesAuthoritativeTotals(t *testing.T) {
+	db := setupTestDB(t)
+	now := time.Now()
+	db.Exec("INSERT INTO companies (id, name, currency, state, created_at, updated_at, version) VALUES ('v6-comp', 'V6 Comp', 'INR', 'Maharashtra', ?, ?, 1)", now, now)
+	db.Exec("INSERT INTO customers (id, company_id, name, state, created_at, updated_at, version) VALUES ('v6-customer', 'v6-comp', 'V6 Customer', 'Maharashtra', ?, ?, 1)", now, now)
+	db.Exec("INSERT INTO customers (id, company_id, name, state, created_at, updated_at, version) VALUES ('v6-interstate', 'v6-comp', 'Interstate Customer', 'Gujarat', ?, ?, 1)", now, now)
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('v6-seq', 'v6-comp', 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", now.Year(), now, now)
+	svc := quotation.NewService(infra_sqlite.NewQuotationRepository(db), infra_sqlite.NewTemplateRepository(db), infra_sqlite.NewCustomerRepository(db), infra_sqlite.NewCompanyRepository(db), infra_sqlite.NewNumberSequenceRepository(db), infra_sqlite.NewGormTxManager(db), infra_id.NewULIDGenerator(), nil)
+	draft, err := svc.CreateQuotationDraft(context.Background(), "v6-comp", quotation.QuotationCreateDTO{CustomerID: "v6-customer", UseV6: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := documentv6.NewBlank("p")
+	doc.Body.Content = append(doc.Body.Content, documentv6.Node{Type: "lineItemTable", Attrs: mustAttrs(documentv6.LineItemTableAttrs{ID: "items", Rows: []documentv6.LineItem{{ID: "line", Description: "Service", Quantity: 2, Rate: 10000, Discount: 1000, TaxRate: 18}}})})
+	raw, _ := json.Marshal(doc)
+	saved, err := svc.UpdateQuotationDocument(context.Background(), "v6-comp", quotation.QuotationUpdateDocumentDTO{ID: draft.ID, Document: string(raw)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Subtotal != 20000 || saved.DiscountTotal != 1000 || saved.CGSTTotal != 1710 || saved.SGSTTotal != 1710 || saved.GrandTotal != 22400 {
+		t.Fatalf("save persisted non-authoritative totals: %+v", saved)
+	}
+	interstate, err := svc.UpdateQuotationCustomer(context.Background(), "v6-comp", quotation.QuotationUpdateCustomerDTO{ID: draft.ID, CustomerID: "v6-interstate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if interstate.CGSTTotal != 0 || interstate.SGSTTotal != 0 || interstate.IGSTTotal != 3420 || interstate.GrandTotal != 22400 {
+		t.Fatalf("customer change did not recalculate the tax mode: %+v", interstate)
+	}
+}
+
+func mustAttrs(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }
 
 func TestFinalizeAndStatusTransitions(t *testing.T) {
 	db := setupTestDB(t)

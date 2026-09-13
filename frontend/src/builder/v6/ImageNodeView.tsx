@@ -18,7 +18,11 @@ export function ImageNodeView({ node, selected }: ReactNodeViewProps) {
     <NodeViewWrapper
       as="figure"
       data-v6-image=""
-      className={`my-3 flex ${node.attrs.alignment === 'center' ? 'justify-center' : node.attrs.alignment === 'right' ? 'justify-end' : 'justify-start'}`}
+      className={`flex ${node.attrs.alignment === 'center' ? 'justify-center' : node.attrs.alignment === 'right' ? 'justify-end' : 'justify-start'}`}
+      style={{
+        marginTop: `${Number(node.attrs.space_before || 0) / 75}px`,
+        marginBottom: `${Number(node.attrs.space_after || 0) / 75}px`,
+      }}
     >
       {failed ? (
         <div

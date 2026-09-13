@@ -290,6 +290,24 @@ func (s *Service) UpdateQuotationDocument(ctx context.Context, companyID string,
 	q.Document = input.Document
 	q.SchemaVersion = version
 	q.UpdatedAt = time.Now().UTC()
+	if version == documentv6.SchemaVersion {
+		doc, parseErr := documentv6.Parse([]byte(input.Document))
+		if parseErr != nil {
+			return nil, &domain.ValidationError{Field: "document", Message: "document must be a valid supported document"}
+		}
+		company, companyErr := s.companyRepo.GetByID(txCtx, companyID)
+		if companyErr != nil {
+			return nil, companyErr
+		}
+		var customer *domain.Customer
+		if q.CustomerID != "" {
+			customer, err = s.customerRepo.GetByID(txCtx, q.CustomerID, companyID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		applyV6Totals(q, doc, company, customer)
+	}
 
 	if err := domain_quotation.ValidateQuotation(q); err != nil {
 		return nil, err
@@ -340,6 +358,17 @@ func (s *Service) UpdateQuotationCustomer(ctx context.Context, companyID string,
 	q.CustomerID = input.CustomerID
 	q.CustomerSnapshot = &custSnapStr
 	q.UpdatedAt = time.Now().UTC()
+	if q.SchemaVersion == documentv6.SchemaVersion {
+		doc, parseErr := documentv6.Parse([]byte(q.Document))
+		if parseErr != nil {
+			return nil, &domain.ValidationError{Field: "document", Message: "document must be a valid supported document"}
+		}
+		company, companyErr := s.companyRepo.GetByID(txCtx, companyID)
+		if companyErr != nil {
+			return nil, companyErr
+		}
+		applyV6Totals(q, doc, company, cust)
+	}
 
 	if err := s.repo.Update(txCtx, q); err != nil {
 		return nil, err

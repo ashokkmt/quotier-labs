@@ -119,8 +119,14 @@ func (s *Service) FinalizeQuotation(ctx context.Context, companyID, quotationID 
 }
 
 func (s *Service) checkV6Finalization(ctx context.Context, doc *documentv6.Document, q *domain.Quotation, comp *domain.Company, cust *domain.Customer) error {
-	if _, err := flowlayout.Resolve(ctx, doc, flowlayout.ResolveInput{Company: comp, Customer: cust, Quotation: q}, s.layoutMetrics); err != nil {
+	layout, err := flowlayout.Resolve(ctx, doc, flowlayout.ResolveInput{Company: comp, Customer: cust, Quotation: q}, s.layoutMetrics)
+	if err != nil {
 		return &domain.ValidationError{Field: "document", Message: "quotation layout is invalid and cannot be finalized"}
+	}
+	for _, diagnostic := range layout.Diagnostics {
+		if diagnostic.Code == "missing_field" || diagnostic.Code == "oversized_table_row" {
+			return &domain.ValidationError{Field: "document", Message: diagnostic.Message + "; resolve it before finalizing"}
+		}
 	}
 	return nil
 }

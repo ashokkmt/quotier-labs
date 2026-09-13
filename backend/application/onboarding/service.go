@@ -69,28 +69,33 @@ func (s *Service) CompleteOnboarding(ctx context.Context, input company.CompanyC
 		return err
 	}
 
-	if len(builtinTmpls) == 0 {
-		for _, tmpl := range BuiltinTemplates {
-			newTmpl := tmpl
-			newTmpl.ID = s.idGen.Generate()
-			newTmpl.CreatedAt = time.Now().UTC()
-			newTmpl.UpdatedAt = time.Now().UTC()
-			newTmpl.Version = 1
-			if err := s.templatesRepo.Create(txCtx, &newTmpl); err != nil {
-				return err
-			}
+	existingBuiltins := make(map[string]bool, len(builtinTmpls))
+	for _, tmpl := range builtinTmpls {
+		existingBuiltins[tmpl.Name] = true
+	}
+	for _, tmpl := range BuiltinTemplates {
+		if existingBuiltins[tmpl.Name] {
+			continue
+		}
+		newTmpl := tmpl
+		newTmpl.ID = s.idGen.Generate()
+		newTmpl.CreatedAt = time.Now().UTC()
+		newTmpl.UpdatedAt = time.Now().UTC()
+		newTmpl.Version = 1
+		if err := s.templatesRepo.Create(txCtx, &newTmpl); err != nil {
+			return err
+		}
 
-			tv := &domain.TemplateVersion{
-				ID:            s.idGen.Generate(),
-				TemplateID:    newTmpl.ID,
-				Version:       newTmpl.CurrentVersion,
-				Layout:        newTmpl.Layout,
-				SchemaVersion: newTmpl.SchemaVersion,
-				CreatedAt:     newTmpl.CreatedAt,
-			}
-			if err := s.templatesRepo.CreateVersion(txCtx, tv); err != nil {
-				return err
-			}
+		tv := &domain.TemplateVersion{
+			ID:            s.idGen.Generate(),
+			TemplateID:    newTmpl.ID,
+			Version:       newTmpl.CurrentVersion,
+			Layout:        newTmpl.Layout,
+			SchemaVersion: newTmpl.SchemaVersion,
+			CreatedAt:     newTmpl.CreatedAt,
+		}
+		if err := s.templatesRepo.CreateVersion(txCtx, tv); err != nil {
+			return err
 		}
 	}
 

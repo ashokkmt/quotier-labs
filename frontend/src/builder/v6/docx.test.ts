@@ -16,22 +16,57 @@ describe('V6 DOCX export', () => {
           { type: 'link', attrs: { href: 'https://quotier.example' } },
         ],
       },
+      { type: 'text', text: ' for ' },
+      {
+        type: 'field',
+        attrs: { id: 'customer-field', key: 'customer.name', empty_behavior: 'diagnostic' },
+      },
     ]
-    const cell = (id: string, text: string) => ({
-      type: 'tableCell',
-      attrs: { colspan: 1, rowspan: 1, background: 'transparent' },
+    const cell = (id: string, text: string, attrs = {}, type = 'tableCell') => ({
+      type,
+      attrs: { colspan: 1, rowspan: 1, background: 'transparent', ...attrs },
       content: [{ type: 'paragraph', attrs: { id }, content: [{ type: 'text', text }] }],
     })
     document.body.content!.push(
       {
         type: 'table',
-        attrs: { id: 'table', column_widths: [20000, 20000] },
+        attrs: { id: 'table', column_widths: [13000, 13000] },
         content: [
           {
             type: 'tableRow',
             attrs: { min_height: 2400 },
-            content: [cell('cell-a', 'A'), cell('cell-b', 'B')],
+            content: [cell('heading', 'Heading', { colspan: 2 }, 'tableHeader')],
           },
+          {
+            type: 'tableRow',
+            content: [
+              cell('cell-a', 'A', { rowspan: 2 }),
+              {
+                type: 'tableCell',
+                attrs: { colspan: 1, rowspan: 1 },
+                content: [
+                  {
+                    type: 'bulletList',
+                    attrs: { id: 'cell-list' },
+                    content: [
+                      {
+                        type: 'listItem',
+                        attrs: { id: 'cell-item' },
+                        content: [
+                          {
+                            type: 'paragraph',
+                            attrs: { id: 'cell-list-paragraph' },
+                            content: [{ type: 'text', text: 'Cell term' }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          { type: 'tableRow', content: [cell('cell-b', 'B')] },
         ],
       },
       { type: 'pageBreak', attrs: { id: 'break' } },
@@ -80,7 +115,7 @@ describe('V6 DOCX export', () => {
         },
       ],
     }
-    const output = new Uint8Array(await generateV6Docx(document))
+    const output = new Uint8Array(await generateV6Docx(document, { 'customer.name': 'A & B' }))
     expect(String.fromCharCode(...output.slice(0, 2))).toBe('PK')
     expect(output.byteLength).toBeGreaterThan(1000)
     expect(new TextDecoder().decode(output)).toContain('word/document.xml')
@@ -94,6 +129,11 @@ describe('V6 DOCX export', () => {
     expect(xml['word/document.xml']).toContain('w:hyperlink')
     expect(xml['word/document.xml']).toContain('w:strike')
     expect(xml['word/document.xml']).toContain('w:hRule="atLeast"')
+    expect(xml['word/document.xml']).toContain('w:tblHeader')
+    expect(xml['word/document.xml']).toContain('w:gridSpan')
+    expect(xml['word/document.xml']).toContain('w:vMerge')
+    expect(xml['word/document.xml']).toContain('Cell term')
+    expect(xml['word/document.xml']).toContain('A &amp; B')
     expect(xml['word/document.xml']).toContain('w:val="480"')
     expect(xml['word/styles.xml']).toContain('QuotierTerms')
     expect(xml['word/header1.xml']).toContain('PAGE')

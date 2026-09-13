@@ -133,3 +133,13 @@ func (s *Service) CalculatePreview(ctx context.Context, companyID string, lines 
 		TaxMode:       string(taxMode),
 	}, nil
 }
+
+func applyV6Totals(q *domain.Quotation, doc *documentv6.Document, company *domain.Company, customer *domain.Customer) {
+	taxMode := calculation.TaxModeIntraState
+	if customer != nil && company != nil && company.State != nil && customer.State != nil && *company.State != *customer.State {
+		taxMode = calculation.TaxModeInterState
+	}
+	result := calculation.NewEngine().Calculate(domain_quotation.ExtractV6LineItems(doc), taxMode)
+	q.Subtotal, q.DiscountTotal, q.TaxableTotal = result.Subtotal, result.DiscountTotal, result.TaxableTotal
+	q.CGSTTotal, q.SGSTTotal, q.IGSTTotal, q.GrandTotal = result.CGSTTotal, result.SGSTTotal, result.IGSTTotal, result.GrandTotal
+}

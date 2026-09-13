@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { Loader2 } from 'lucide-react'
-import { SelectImage, GetImageDataURI } from '../../../wailsjs/go/wails/CompanyHandler'
+import {
+  SelectImage,
+  GetImageDataURI,
+  GetActiveCompany,
+} from '../../../wailsjs/go/wails/CompanyHandler'
+import { GetCustomer } from '../../../wailsjs/go/wails/CustomerHandler'
 import { SaveDOCX } from '../../../wailsjs/go/wails/ExportHandler'
 import { useToast } from '@/hooks/use-toast'
 import { v6Extensions } from './extensions'
@@ -44,12 +49,16 @@ export function V6BuilderEngine({
   onReady,
   resolvePageMap,
   exportName = 'quotation',
+  quotationContext,
+  prepareExport,
 }: {
   document: V6Document
   onChange: (document: V6Document) => void
   onReady?: (handle: V6EngineHandle | null) => void
   resolvePageMap?: (document: V6Document) => Promise<PageMap>
   exportName?: string
+  quotationContext?: any
+  prepareExport?: (document: V6Document) => Promise<any>
 }) {
   const [settings, setSettings] = useState<V6Settings>(document.settings)
   const [assets, setAssets] = useState<V6Asset[]>(document.assets ?? [])
@@ -182,7 +191,7 @@ export function V6BuilderEngine({
     setStories(nextStories)
     emit(editor.getJSON(), settingsRef.current, assetsRef.current, nextStories)
   }
-  const insertImage = async () => {
+  const selectManagedImage = async (replace = false) => {
     try {
       const source = await SelectImage('Insert managed image')
       if (!source) return
@@ -197,23 +206,22 @@ export function V6BuilderEngine({
       ]
       setAssets(nextAssets)
       assetsRef.current = nextAssets
-      editor
-        .chain()
-        .focus()
-        .insertContent({
-          type: 'imageBlock',
-          attrs: {
-            id: nodeID(),
-            source,
-            width,
-            height,
-            pixel_width: dimensions.width,
-            pixel_height: dimensions.height,
-            alignment: 'left',
-            alt: '',
-          },
-        })
-        .run()
+      const attrs = {
+        ...(replace ? editor.getAttributes('imageBlock') : {}),
+        id: replace ? editor.getAttributes('imageBlock').id : nodeID(),
+        source,
+        width,
+        height,
+        pixel_width: dimensions.width,
+        pixel_height: dimensions.height,
+        alignment: replace ? editor.getAttributes('imageBlock').alignment : 'left',
+        alt: replace ? editor.getAttributes('imageBlock').alt : '',
+        aspect_lock: replace ? Boolean(editor.getAttributes('imageBlock').aspect_lock) : true,
+      }
+      const chain = editor.chain().focus()
+      if (replace && editor.isActive('imageBlock'))
+        chain.updateAttributes('imageBlock', attrs).run()
+      else chain.insertContent({ type: 'imageBlock', attrs }).run()
     } catch (error) {
       toast({ title: 'Could not insert image', description: String(error), variant: 'destructive' })
     }
@@ -227,7 +235,15 @@ export function V6BuilderEngine({
         assets,
         ...stories,
       }
-      const buffer = await generateV6Docx(current)
+      const authoritativeQuotation = prepareExport ? await prepareExport(current) : quotationContext
+      const company = authoritativeQuotation ? await GetActiveCompany() : null
+      const customer = authoritativeQuotation?.customer_id
+        ? await GetCustomer(authoritativeQuotation.customer_id)
+        : null
+      const buffer = await generateV6Docx(
+        current,
+        fieldValues(company, customer, authoritativeQuotation),
+      )
       const encoded = bytesToBase64(new Uint8Array(buffer))
       const path = await SaveDOCX(encoded, `${safeName(exportName)}.docx`)
       if (path) toast({ title: 'DOCX saved', description: path })
@@ -282,7 +298,8 @@ export function V6BuilderEngine({
       <Toolbar
         editor={editor}
         document={{ ...document, settings, assets, ...stories }}
-        onInsertImage={() => void insertImage()}
+        onInsertImage={() => void selectManagedImage()}
+        onReplaceImage={() => void selectManagedImage(true)}
         onExportDOCX={() => void exportDOCX()}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -329,6 +346,65 @@ export function V6BuilderEngine({
       </div>
     </div>
   )
+}
+
+function fieldValues(company: any, customer: any, quotation: any): Record<string, string> {
+  const values: Record<string, string> = {}
+  const add = (prefix: string, source: any, keys: string[]) => {
+    for (const key of keys)
+      if (source?.[key] !== null && source?.[key] !== undefined)
+        values[`${prefix}.${key}`] = String(source[key])
+  }
+  add('company', company, [
+    'name',
+    'legal_name',
+    'address',
+    'phone',
+    'email',
+    'website',
+    'gstin',
+    'pan',
+  ])
+  add('customer', customer, [
+    'name',
+    'company_name',
+    'contact_person',
+    'address',
+    'billing_address',
+    'shipping_address',
+    'phone',
+    'email',
+    'gstin',
+    'pan',
+    'state',
+    'country',
+  ])
+  add('quotation', quotation, ['number'])
+  if (quotation?.created_at)
+    values['quotation.date'] = new Date(quotation.created_at).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  if (quotation?.valid_until)
+    values['quotation.valid_until'] = new Date(quotation.valid_until).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  for (const key of [
+    'subtotal',
+    'discount_total',
+    'taxable_total',
+    'cgst_total',
+    'sgst_total',
+    'igst_total',
+    'grand_total',
+  ]) {
+    if (quotation?.[key] !== undefined)
+      values[`quotation.${key}`] = `₹${(Number(quotation[key]) / 100).toFixed(2)}`
+  }
+  return values
 }
 
 const imageDimensions = (src: string) =>

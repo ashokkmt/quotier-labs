@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Fragment } from '@tiptap/pm/model'
-import { TextSelection } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { CellSelection, TableMap } from '@tiptap/pm/tables'
 import { clampV6RowMinHeight } from './model'
 
@@ -49,6 +49,15 @@ export function selectTableRow(editor: Editor, target: TableTarget) {
 
 export function selectTableColumn(editor: Editor, target: TableTarget) {
   return selectCells(editor, target, 0, target.column, target.rows - 1, target.column)
+}
+
+export function selectWholeTable(editor: Editor, target: TableTarget) {
+  const table = editor.state.doc.nodeAt(target.tablePos)
+  if (!table || table.type.name !== 'table') return false
+  editor.view.dispatch(
+    editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, target.tablePos)),
+  )
+  return true
 }
 
 function selectCells(

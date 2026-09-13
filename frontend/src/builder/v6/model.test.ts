@@ -97,4 +97,36 @@ describe('V6 document model', () => {
     })
     expect(body.content?.[0].content?.[0].attrs?.min_height).toBe(4200)
   })
+
+  it('normalizes merged column widths and repeated header rows', () => {
+    const body = normalizeV6Body({
+      type: 'doc',
+      content: [
+        {
+          type: 'table',
+          attrs: { id: 'merged' },
+          content: [
+            {
+              type: 'tableRow',
+              content: [{ type: 'tableHeader', attrs: { colspan: 2, colwidth: [120, 180] } }],
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', attrs: { colspan: 1, colwidth: [120] } },
+                { type: 'tableCell', attrs: { colspan: 1, colwidth: [180] } },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(body.content?.[0].attrs).toMatchObject({
+      column_widths: [9000, 13500],
+      width: 22500,
+      header_rows: 1,
+      border_preset: 'all',
+      cell_padding: 425,
+    })
+  })
 })

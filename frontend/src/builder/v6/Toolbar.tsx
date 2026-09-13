@@ -16,6 +16,7 @@ import {
   CompactFormattingMenu,
   ColorFormattingPopover,
   ImageSettings,
+  FieldSettings,
   InsertMenu,
   LinkPopover,
   LineSpacingMenu,
@@ -31,12 +32,14 @@ export function Toolbar({
   editor,
   document,
   onInsertImage,
+  onReplaceImage,
   onExportDOCX,
   onOpenSettings,
 }: {
   editor: Editor
   document: V6Document
   onInsertImage: () => void
+  onReplaceImage: () => void
   onExportDOCX: () => void
   onOpenSettings: () => void
 }) {
@@ -193,7 +196,8 @@ export function Toolbar({
         </div>
         <CompactFormattingMenu editor={editor} />
         <InsertMenu editor={editor} onInsertImage={onInsertImage} />
-        <ImageSettings editor={editor} />
+        <ImageSettings editor={editor} onReplace={onReplaceImage} />
+        <FieldSettings editor={editor} />
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <MoreMenu editor={editor} onExportDOCX={onExportDOCX} />
           <Separator orientation="vertical" className="mx-1 h-6" />

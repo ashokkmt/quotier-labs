@@ -7,6 +7,49 @@ export const clampV6RowMinHeight = (value: number) =>
   Math.max(V6_EMPTY_ROW_MIN_HEIGHT, Math.min(V6_A4.height, Math.round(value)))
 
 export type V6Asset = { source: string; pixel_width: number; pixel_height: number }
+export const V6_FIELD_KEYS = [
+  'company.name',
+  'company.legal_name',
+  'company.address',
+  'company.phone',
+  'company.email',
+  'company.website',
+  'company.gstin',
+  'company.pan',
+  'customer.name',
+  'customer.company_name',
+  'customer.contact_person',
+  'customer.address',
+  'customer.billing_address',
+  'customer.shipping_address',
+  'customer.phone',
+  'customer.email',
+  'customer.gstin',
+  'customer.pan',
+  'customer.state',
+  'customer.country',
+  'quotation.number',
+  'quotation.date',
+  'quotation.valid_until',
+  'quotation.subtotal',
+  'quotation.discount_total',
+  'quotation.taxable_total',
+  'quotation.cgst_total',
+  'quotation.sgst_total',
+  'quotation.igst_total',
+  'quotation.grand_total',
+] as const
+export type V6FieldKey = (typeof V6_FIELD_KEYS)[number]
+export const V6_LINE_ITEM_COLUMNS = [
+  'description',
+  'quantity',
+  'rate',
+  'discount',
+  'tax_rate',
+  'taxable',
+  'tax',
+  'amount',
+] as const
 export type V6Settings = {
   page_size: 'A4'
   orientation: 'portrait' | 'landscape'
@@ -201,18 +244,38 @@ export function normalizeV6Body(body: JSONContent): JSONContent {
   const visit = (node: JSONContent): JSONContent => {
     const content = node.content?.map(visit)
     if (node.type !== 'table') return { ...node, ...(content ? { content } : {}) }
-    const columns = content?.[0]?.content?.length ?? 0
-    const widths = content?.[0]?.content?.map((cell) => {
-      const px = Array.isArray(cell.attrs?.colwidth) ? Number(cell.attrs?.colwidth[0]) : 0
-      return px > 0 ? Math.round(px * 75) : Math.floor(45128 / Math.max(1, columns))
+    const firstRow = content?.[0]?.content ?? []
+    const stored = Array.isArray(node.attrs?.column_widths)
+      ? node.attrs.column_widths.map(Number)
+      : []
+    const columns = firstRow.reduce((sum, cell) => sum + Number(cell.attrs?.colspan || 1), 0)
+    const widths = firstRow.flatMap((cell) => {
+      const span = Number(cell.attrs?.colspan || 1)
+      const values = Array.isArray(cell.attrs?.colwidth) ? cell.attrs.colwidth.map(Number) : []
+      return Array.from({ length: span }, (_, index) => {
+        const px = values[index]
+        const storedIndex =
+          firstRow
+            .slice(0, firstRow.indexOf(cell))
+            .reduce((sum, item) => sum + Number(item.attrs?.colspan || 1), 0) + index
+        return px > 0
+          ? Math.round(px * 75)
+          : Number(stored[storedIndex] || Math.floor(45128 / Math.max(1, columns)))
+      })
     })
+    const headerRows =
+      content?.findIndex((row) => row.content?.some((cell) => cell.type !== 'tableHeader')) ?? 0
     return {
       ...node,
       attrs: {
         id: node.attrs?.id || nodeID(),
         column_widths: widths,
+        width: widths.reduce((sum, value) => sum + value, 0),
         alignment: node.attrs?.alignment || 'left',
+        border_preset: node.attrs?.border_preset || 'all',
         border_color: node.attrs?.border_color || '#D1D5DB',
+        cell_padding: Number(node.attrs?.cell_padding || 425),
+        header_rows: headerRows < 0 ? (content?.length ?? 0) : headerRows,
       },
       content,
     }
@@ -229,7 +292,7 @@ export function normalizeV6Story(story: JSONContent): JSONContent {
           ? node.type === 'listItem'
           : parent === 'listItem'
             ? ['paragraph', 'bulletList', 'orderedList'].includes(node.type ?? '')
-            : ['text', 'hardBreak', 'pageNumber', 'pageCount'].includes(node.type ?? '')
+            : ['text', 'hardBreak', 'pageNumber', 'pageCount', 'field'].includes(node.type ?? '')
     if (!valid) return null
     const nextParent =
       node.type === 'bulletList' || node.type === 'orderedList'

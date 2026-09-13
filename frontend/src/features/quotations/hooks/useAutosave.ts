@@ -3,8 +3,8 @@ import { useToast } from '@/hooks/use-toast'
 
 export type SaveState = 'Saved' | 'Saving…' | 'Save failed — retrying' | 'Unsaved changes'
 
-export function createSerialTask<T>(task: (value: T) => Promise<void>) {
-  let tail = Promise.resolve()
+export function createSerialTask<T, R>(task: (value: T) => Promise<R>) {
+  let tail: Promise<unknown> = Promise.resolve()
   return (value: T) => {
     const current = tail.catch(() => undefined).then(() => task(value))
     tail = current.catch(() => undefined)
@@ -12,7 +12,7 @@ export function createSerialTask<T>(task: (value: T) => Promise<void>) {
   }
 }
 
-export function useSerialSave<T>(save: (value: T) => Promise<void>) {
+export function useSerialSave<T, R>(save: (value: T) => Promise<R>) {
   const latest = useRef(save)
   useEffect(() => {
     latest.current = save
@@ -26,7 +26,7 @@ export function useSerialSave<T>(save: (value: T) => Promise<void>) {
 export function useAutosave(
   document: any,
   dirty: boolean,
-  onSave: (doc: any) => Promise<void>,
+  onSave: (doc: any) => Promise<unknown>,
   clearDirty: () => void,
   debounceMs: number = 800,
 ) {

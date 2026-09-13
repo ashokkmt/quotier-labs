@@ -1,7 +1,15 @@
 import { Editor } from '@tiptap/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { v6Extensions } from './extensions'
-import { moveTableColumn, moveTableRow, setTableRowMinHeight, tableTargetAt } from './tableCommands'
+import {
+  moveTableColumn,
+  moveTableRow,
+  selectTableRow,
+  selectWholeTable,
+  setTableRowMinHeight,
+  tableTargetAt,
+} from './tableCommands'
+import { NodeSelection } from '@tiptap/pm/state'
 
 let editor: Editor | null = null
 
@@ -83,5 +91,36 @@ describe('V6 table commands', () => {
     expect(
       table.content.flatMap((row: any) => row.content.map((item: any) => item.attrs.colwidth)),
     ).toEqual(Array(6).fill([200]))
+  })
+
+  it('selects, merges, splits, and selects the complete table with framework primitives', () => {
+    const { editor } = createEditor()
+    let target = tableTargetAt(editor)!
+    expect(selectTableRow(editor, target)).toBe(true)
+    expect(editor.commands.mergeCells()).toBe(true)
+    const mergedTable: any = editor.getJSON().content?.[0]
+    expect(mergedTable.content[0].content[0].attrs.colspan).toBe(2)
+    editor.commands.setTextSelection(target.tablePos + 3)
+    expect(editor.commands.splitCell()).toBe(true)
+    target = tableTargetAt(editor)!
+    expect(selectWholeTable(editor, target)).toBe(true)
+    expect(editor.state.selection).toBeInstanceOf(NodeSelection)
+  })
+
+  it('registers undo/redo while handling edge insertion and deletion', () => {
+    const { editor } = createEditor()
+    expect(editor.commands.addRowBefore()).toBe(true)
+    expect(editor.commands.addColumnBefore()).toBe(true)
+    let table: any = editor.getJSON().content?.[0]
+    expect(table.content).toHaveLength(3)
+    expect(table.content[0].content).toHaveLength(3)
+    expect(editor.extensionManager.extensions.map((extension) => extension.name)).toContain(
+      'undoRedo',
+    )
+    expect(editor.commands.deleteRow()).toBe(true)
+    expect(editor.commands.deleteColumn()).toBe(true)
+    table = editor.getJSON().content?.[0]
+    expect(table.content).toHaveLength(2)
+    expect(table.content[0].content).toHaveLength(2)
   })
 })

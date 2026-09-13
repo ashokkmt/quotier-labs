@@ -11,7 +11,6 @@ import (
 
 	"quotierlabs/backend/application/layoutir"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/calculation"
 	"quotierlabs/backend/domain/documentv6"
 )
 
@@ -59,26 +58,39 @@ type TableRow struct {
 }
 
 type TableCell struct {
-	Lines      []Line
-	Text       string
-	Background string
-	Align      string
+	Lines         []Line
+	Text          string
+	Background    string
+	Align         string
+	VerticalAlign string
+	Column        int
+	Colspan       int
+	Rowspan       int
+	Width         float64
+	Height        float64
+	Padding       float64
 }
 
 type Block struct {
-	ID        string
-	Kind      string
-	X, Y      float64
-	Width     float64
-	Height    float64
-	Align     string
-	FirstLine float64
-	TextTop   float64
-	Lines     []Line
-	TableRows []TableRow
-	Columns   []float64
-	Source    string
-	Alt       string
+	ID            string
+	Kind          string
+	X, Y          float64
+	Width         float64
+	Height        float64
+	Align         string
+	FirstLine     float64
+	TextTop       float64
+	ContentHeight float64
+	Lines         []Line
+	TableRows     []TableRow
+	Columns       []float64
+	Source        string
+	Alt           string
+	BorderColor   string
+	BorderPreset  string
+	TableFirst    bool
+	TableLast     bool
+	TableGroupEnd int
 }
 
 type Page struct {
@@ -105,6 +117,7 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 	if metrics == nil {
 		metrics = layoutir.DefaultMetrics{}
 	}
+	input = withCalculatedTotals(doc, input)
 	widthDU, heightDU := int64(documentv6.A4WidthDU), int64(documentv6.A4HeightDU)
 	if doc.Settings.Orientation == "landscape" {
 		widthDU, heightDU = heightDU, widthDU
@@ -146,7 +159,7 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 			if styleErr != nil {
 				return nil, styleErr
 			}
-			fontRuns := inlineRuns(node.Content, style)
+			fontRuns := inlineRuns(node.Content, style, input, &result.Diagnostics, attrs.ID)
 			available := contentWidth - float64(style.LeftIndent+style.RightIndent)/duPerMM
 			if available < 10 {
 				available = 10
@@ -168,67 +181,75 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 			place(Block{ID: attrs.ID, Kind: "horizontalRule", X: left, Width: contentWidth, Height: 3})
 		case "imageBlock":
 			attrs := decode[documentv6.ImageAttrs](node.Attrs)
-			w, h := float64(attrs.Width)/duPerMM, float64(attrs.Height)/duPerMM
+			w, h := float64(attrs.Width)/duPerMM, float64(attrs.Height+attrs.SpaceBefore+attrs.SpaceAfter)/duPerMM
 			x := left
 			if attrs.Alignment == "center" {
 				x = left + (contentWidth-w)/2
 			} else if attrs.Alignment == "right" {
 				x = pageWidth - right - w
 			}
-			place(Block{ID: attrs.ID, Kind: "image", X: x, Width: w, Height: h, Align: attrs.Alignment, Source: attrs.Source, Alt: attrs.Alt})
+			place(Block{ID: attrs.ID, Kind: "image", X: x, Width: w, Height: h, TextTop: float64(attrs.SpaceBefore) / duPerMM, ContentHeight: float64(attrs.Height) / duPerMM, Align: attrs.Alignment, Source: attrs.Source, Alt: attrs.Alt})
 		case "table":
 			attrs := decode[documentv6.TableAttrs](node.Attrs)
-			columns := make([]float64, len(attrs.ColumnWidths))
-			var sum float64
-			for i, w := range attrs.ColumnWidths {
-				columns[i] = float64(w) / duPerMM
-				sum += columns[i]
-			}
-			if sum > contentWidth {
-				scale := contentWidth / sum
-				sum = 0
-				for i := range columns {
-					columns[i] *= scale
-					sum += columns[i]
-				}
-			}
+			rows, sum := layoutTable(doc, node, attrs, contentWidth, input, metrics, &result.Diagnostics)
 			x := left
 			if attrs.Alignment == "center" {
 				x = left + (contentWidth-sum)/2
 			} else if attrs.Alignment == "right" {
 				x = pageWidth - right - sum
 			}
-			for rowIndex, rowNode := range node.Content {
-				rowAttrs := decode[documentv6.TableRowAttrs](rowNode.Attrs)
-				cells := make([]TableCell, len(rowNode.Content))
-				rowHeight := math.Max(8, float64(rowAttrs.MinHeight)/duPerMM)
-				for i, cell := range rowNode.Content {
-					ca := decode[documentv6.TableCellAttrs](cell.Attrs)
-					runs := cellRuns(doc, cell)
-					lines := wrapRuns(runs, math.Max(1, columns[i]-3), metrics)
-					cells[i] = TableCell{Lines: lines, Text: plainText(cell), Background: defaultString(ca.Background, "transparent"), Align: defaultString(ca.Alignment, "left")}
-					rowHeight = math.Max(rowHeight, tableLinesHeight(lines, metrics)+2)
+			for rowIndex, row := range rows {
+				row.X, row.Width = x, sum
+				groupHeight := 0.0
+				for index := rowIndex; index <= row.TableGroupEnd; index++ {
+					groupHeight += rows[index].Height
 				}
-				place(Block{ID: fmt.Sprintf("%s-row-%d", attrs.ID, rowIndex), Kind: "tableRow", X: x, Width: sum, Height: rowHeight, Columns: columns, TableRows: []TableRow{{Cells: cells}}})
+				if groupHeight > pageHeight-top-bottom {
+					result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: "oversized_table_row", NodeID: row.ID, Message: "A table row or merged span is taller than the printable page"})
+				}
+				if rowIndex == 0 || rows[rowIndex-1].TableGroupEnd < rowIndex {
+					if y+groupHeight > pageHeight-bottom && len(result.Pages[pageIndex].Blocks) > 0 {
+						newPage()
+						if rowIndex >= attrs.HeaderRows {
+							for headerIndex := 0; headerIndex < attrs.HeaderRows; headerIndex++ {
+								header := rows[headerIndex]
+								header.ID = fmt.Sprintf("%s-repeat-%d-%d", attrs.ID, pageIndex+1, headerIndex)
+								header.X, header.Width = x, sum
+								place(header)
+							}
+						}
+					}
+				}
+				place(row)
 			}
 		case "lineItemTable":
 			attrs := decode[documentv6.LineItemTableAttrs](node.Attrs)
-			columns := []float64{contentWidth * .46, contentWidth * .12, contentWidth * .18, contentWidth * .12, contentWidth * .12}
-			head := textTableRow(doc, "Table Header", []string{"Description", "Qty", "Rate", "Tax", "Amount"}, "#e5e7eb")
-			place(Block{ID: attrs.ID + "-header", Kind: "tableRow", X: left, Width: contentWidth, Height: 8, Columns: columns, TableRows: []TableRow{head}})
-			items := make([]calculation.LineItemInput, 0, len(attrs.Rows))
-			for _, row := range attrs.Rows {
-				items = append(items, calculation.LineItemInput{ID: row.ID, QuantityFloat: row.Quantity, Rate: row.Rate, Discount: row.Discount, TaxRateFloat: row.TaxRate, TaxInclusive: row.TaxInclusive})
-				amount := int64(math.Round(row.Quantity*float64(row.Rate))) - row.Discount
-				cells := []string{row.Description, strconv.FormatFloat(row.Quantity, 'f', -1, 64), money(row.Rate), strconv.FormatFloat(row.TaxRate, 'f', -1, 64) + "%", money(amount)}
-				place(Block{ID: attrs.ID + "-" + row.ID, Kind: "tableRow", X: left, Width: contentWidth, Height: 8, Columns: columns, TableRows: []TableRow{textTableRow(doc, "Table Body", cells, "transparent")}})
+			header, rows, totals := layoutLineItems(doc, attrs, input, contentWidth, metrics)
+			x := left
+			if attrs.Alignment == "center" {
+				x = left + (contentWidth-header.Width)/2
+			} else if attrs.Alignment == "right" {
+				x = pageWidth - right - header.Width
 			}
-			taxMode := calculation.TaxModeIntraState
-			if input.Company != nil && input.Customer != nil && input.Company.State != nil && input.Customer.State != nil && *input.Company.State != *input.Customer.State {
-				taxMode = calculation.TaxModeInterState
+			header.X = x
+			place(header)
+			for _, row := range rows {
+				row.X = x
+				if row.Height > pageHeight-top-bottom {
+					result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: "oversized_table_row", NodeID: row.ID, Message: "A line-item row is taller than the printable page"})
+				}
+				if y+row.Height > pageHeight-bottom && len(result.Pages[pageIndex].Blocks) > 0 {
+					newPage()
+					repeated := header
+					repeated.ID = fmt.Sprintf("%s-repeat-%d", attrs.ID, pageIndex+1)
+					place(repeated)
+				}
+				place(row)
 			}
-			total := calculation.NewEngine().Calculate(items, taxMode)
-			place(Block{ID: attrs.ID + "-total", Kind: "tableRow", X: left, Width: contentWidth, Height: 9, Columns: []float64{contentWidth * .7, contentWidth * .3}, TableRows: []TableRow{textTableRow(doc, "Total", []string{"Grand total", money(total.GrandTotal)}, "#f3f4f6")}})
+			for _, total := range totals {
+				total.X = x
+				place(total)
+			}
 		}
 	}
 	for pageIndex := range result.Pages {
@@ -241,8 +262,8 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 				footer = doc.FirstPageFooterStory
 			}
 		}
-		appendStory(doc, &result.Pages[pageIndex], header, left, 4, contentWidth, metrics, pageIndex+1, "header")
-		appendStory(doc, &result.Pages[pageIndex], footer, left, pageHeight-bottom+2, contentWidth, metrics, pageIndex+1, "footer")
+		appendStory(doc, &result.Pages[pageIndex], header, left, 4, contentWidth, metrics, input, &result.Diagnostics, pageIndex+1, "header")
+		appendStory(doc, &result.Pages[pageIndex], footer, left, pageHeight-bottom+2, contentWidth, metrics, input, &result.Diagnostics, pageIndex+1, "footer")
 		resolveFields(result.Pages[pageIndex].Blocks, pageIndex+1, len(result.Pages))
 	}
 	return result, nil
@@ -256,7 +277,7 @@ func (l *Layout) PageMap(doc *documentv6.Document) PageMap {
 	return PageMap{PageWidth: w, PageHeight: h, PageCount: len(l.Pages), Ranges: l.Ranges, Diagnostics: l.Diagnostics}
 }
 
-func inlineRuns(nodes []documentv6.Node, base documentv6.ResolvedStyle) []Run {
+func inlineRuns(nodes []documentv6.Node, base documentv6.ResolvedStyle, input ResolveInput, diagnostics *[]Diagnostic, ownerID string) []Run {
 	result := []Run{}
 	for _, node := range nodes {
 		if node.Type == "hardBreak" {
@@ -265,6 +286,20 @@ func inlineRuns(nodes []documentv6.Node, base documentv6.ResolvedStyle) []Run {
 		}
 		if node.Type == "pageNumber" || node.Type == "pageCount" {
 			result = append(result, Run{Text: "8", FontFamily: base.FontFamily, FontSizePt: float64(base.FontSize) / 100, Bold: base.Bold, Italic: base.Italic, Underline: base.Underline, Strike: base.Strike, Color: base.Color, Highlight: base.Highlight, Field: node.Type})
+			continue
+		}
+		if node.Type == "field" {
+			attrs := decode[documentv6.FieldAttrs](node.Attrs)
+			value, ok := resolveBusinessField(attrs.Key, input)
+			if !ok || value == "" {
+				switch defaultString(attrs.EmptyBehavior, "diagnostic") {
+				case "fallback":
+					value = attrs.Fallback
+				case "diagnostic":
+					*diagnostics = append(*diagnostics, Diagnostic{Code: "missing_field", NodeID: attrs.ID, Message: "Required field " + attrs.Key + " has no value"})
+				}
+			}
+			result = append(result, Run{Text: value, FontFamily: base.FontFamily, FontSizePt: float64(base.FontSize) / 100, Bold: base.Bold, Italic: base.Italic, Underline: base.Underline, Strike: base.Strike, Color: base.Color, Highlight: base.Highlight, Field: attrs.Key})
 			continue
 		}
 		r := Run{Text: node.Text, FontFamily: base.FontFamily, FontSizePt: float64(base.FontSize) / 100, Bold: base.Bold, Italic: base.Italic, Underline: base.Underline, Strike: base.Strike, Color: base.Color, Highlight: base.Highlight}
@@ -302,15 +337,18 @@ func inlineRuns(nodes []documentv6.Node, base documentv6.ResolvedStyle) []Run {
 	return result
 }
 
-func cellRuns(doc *documentv6.Document, cell documentv6.Node) []Run {
+func cellRuns(doc *documentv6.Document, cell documentv6.Node, input ResolveInput, diagnostics *[]Diagnostic) []Run {
 	var runs []Run
-	for i, paragraph := range cell.Content {
+	for i, paragraph := range flattenBlocks(cell.Content, 0) {
+		if paragraph.Type != "paragraph" {
+			continue
+		}
 		attrs := decode[documentv6.ParagraphAttrs](paragraph.Attrs)
 		style, _ := documentv6.ResolveParagraphStyle(doc, attrs)
 		if i > 0 {
 			runs = append(runs, Run{Text: "\n", FontFamily: "Quotier Sans", FontSizePt: 10, Color: "#111827"})
 		}
-		runs = append(runs, inlineRuns(paragraph.Content, style)...)
+		runs = append(runs, inlineRuns(paragraph.Content, style, input, diagnostics, attrs.ID)...)
 	}
 	return runs
 }
@@ -349,7 +387,7 @@ func flattenBlocks(nodes []documentv6.Node, depth int) []documentv6.Node {
 	return result
 }
 
-func appendStory(doc *documentv6.Document, page *Page, story *documentv6.Node, x, y, width float64, metrics layoutir.Metrics, pageNumber int, kind string) {
+func appendStory(doc *documentv6.Document, page *Page, story *documentv6.Node, x, y, width float64, metrics layoutir.Metrics, input ResolveInput, diagnostics *[]Diagnostic, pageNumber int, kind string) {
 	if story == nil {
 		return
 	}
@@ -361,7 +399,7 @@ func appendStory(doc *documentv6.Document, page *Page, story *documentv6.Node, x
 			if err != nil {
 				continue
 			}
-			runs := inlineRuns(node.Content, style)
+			runs := inlineRuns(node.Content, style, input, diagnostics, attrs.ID)
 			lines := wrapRuns(runs, width, metrics)
 			height := math.Max(1, float64(len(lines))) * metrics.LineHeightMM(float64(style.FontSize)/100)
 			page.Blocks = append(page.Blocks, Block{ID: fmt.Sprintf("%s-%d-%s", kind, pageNumber, attrs.ID), Kind: "paragraph", X: x, Y: y, Width: width, Height: height, Align: style.Alignment, Lines: lines})
@@ -394,7 +432,8 @@ func textTableRow(doc *documentv6.Document, styleName string, values []string, b
 	style, _ := documentv6.ResolveParagraphStyle(doc, documentv6.ParagraphAttrs{Style: styleName})
 	cells := make([]TableCell, len(values))
 	for i, value := range values {
-		cells[i] = TableCell{Text: value, Lines: []Line{{Runs: inlineRuns([]documentv6.Node{{Type: "text", Text: value}}, style)}}, Background: background, Align: style.Alignment}
+		diagnostics := []Diagnostic{}
+		cells[i] = TableCell{Text: value, Lines: []Line{{Runs: inlineRuns([]documentv6.Node{{Type: "text", Text: value}}, style, ResolveInput{}, &diagnostics, "")}}, Background: background, Align: style.Alignment, Colspan: 1, Rowspan: 1}
 	}
 	return TableRow{Cells: cells}
 }

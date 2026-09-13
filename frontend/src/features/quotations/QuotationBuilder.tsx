@@ -114,6 +114,7 @@ export function QuotationBuilder({
       v5?.acknowledgeSave(revision)
       setQuotation(res)
       clearRecovery()
+      return res
     } catch (err) {
       v5?.failSave()
       throw err
@@ -293,6 +294,8 @@ export function QuotationBuilder({
             <V6BuilderEngine
               document={document as V6Document}
               exportName={quotation.number || 'quotation'}
+              quotationContext={quotation}
+              prepareExport={executeSave}
               onReady={(handle) => {
                 v6EngineRef.current = handle
               }}

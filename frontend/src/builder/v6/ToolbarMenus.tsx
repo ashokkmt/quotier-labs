@@ -17,14 +17,19 @@ import {
   SlidersHorizontal,
   Strikethrough,
   Underline,
+  Braces,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -33,7 +38,7 @@ import { AppSelect } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ControlledColorPicker } from '../v5/ColorPicker'
 import { colorValueToCSS } from '../v5/tokens'
-import { isSafeV6Link, nodeID, usedColorsForV6, type V6Document } from './model'
+import { isSafeV6Link, nodeID, usedColorsForV6, V6_FIELD_KEYS, type V6Document } from './model'
 import { paragraphSelectionValue, setTextStyleAttribute } from './selectionState'
 import { Ruler } from './Ruler'
 import { BoundedNumberInput } from './BoundedNumberInput'
@@ -446,8 +451,27 @@ export function InsertMenu({
         >
           Line items
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Business field</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="max-h-80 overflow-auto">
+            {V6_FIELD_KEYS.map((key) => (
+              <DropdownMenuItem
+                key={key}
+                onSelect={() =>
+                  insert({
+                    type: 'field',
+                    attrs: { id: nodeID(), key, fallback: '', empty_behavior: 'diagnostic' },
+                  })
+                }
+              >
+                {fieldLabel(key)}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          disabled={editor.isActive('table')}
           onSelect={() => insert({ type: 'horizontalRule', attrs: { id: nodeID() } })}
         >
           Horizontal rule
@@ -466,7 +490,7 @@ export function InsertMenu({
   )
 }
 
-export function ImageSettings({ editor }: { editor: Editor }) {
+export function ImageSettings({ editor, onReplace }: { editor: Editor; onReplace: () => void }) {
   const image = editor.getAttributes('imageBlock')
   if (!editor.isActive('imageBlock')) return null
   return (
@@ -492,7 +516,9 @@ export function ImageSettings({ editor }: { editor: Editor }) {
             value={Math.round(Number(image.width || 7500) / 283.465)}
             onCommit={(value) => {
               const width = Math.round(value * 283.465)
-              const ratio = Number(image.pixel_height || 1) / Number(image.pixel_width || 1)
+              const ratio = image.aspect_lock
+                ? Number(image.pixel_height || 1) / Number(image.pixel_width || 1)
+                : Number(image.height || 1) / Number(image.width || 1)
               editor
                 .chain()
                 .focus()
@@ -500,6 +526,40 @@ export function ImageSettings({ editor }: { editor: Editor }) {
                 .run()
             }}
           />
+        </label>
+        <label className="grid gap-1 text-xs">
+          Height (mm)
+          <BoundedNumberInput
+            label="Image height in millimetres"
+            min={5}
+            max={270}
+            value={Math.round(Number(image.height || 7500) / 283.465)}
+            onCommit={(value) => {
+              const height = Math.round(value * 283.465)
+              const ratio = Number(image.pixel_width || 1) / Number(image.pixel_height || 1)
+              editor
+                .chain()
+                .focus()
+                .updateAttributes(
+                  'imageBlock',
+                  image.aspect_lock ? { height, width: Math.round(height * ratio) } : { height },
+                )
+                .run()
+            }}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <Checkbox
+            checked={Boolean(image.aspect_lock)}
+            onCheckedChange={(checked) =>
+              editor
+                .chain()
+                .focus()
+                .updateAttributes('imageBlock', { aspect_lock: checked === true })
+                .run()
+            }
+          />
+          Lock aspect ratio
         </label>
         <label className="grid gap-1 text-xs">
           Alignment
@@ -530,10 +590,132 @@ export function ImageSettings({ editor }: { editor: Editor }) {
             }
           />
         </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="grid gap-1 text-xs">
+            Space before (pt)
+            <BoundedNumberInput
+              label="Image space before in points"
+              min={0}
+              max={72}
+              value={Number(image.space_before || 0) / 100}
+              onCommit={(value) =>
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes('imageBlock', { space_before: Math.round(value * 100) })
+                  .run()
+              }
+            />
+          </label>
+          <label className="grid gap-1 text-xs">
+            Space after (pt)
+            <BoundedNumberInput
+              label="Image space after in points"
+              min={0}
+              max={72}
+              value={Number(image.space_after || 0) / 100}
+              onCommit={(value) =>
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes('imageBlock', { space_after: Math.round(value * 100) })
+                  .run()
+              }
+            />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={onReplace}>
+            Replace
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => editor.chain().focus().deleteSelection().run()}
+          >
+            Delete
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   )
 }
+
+export function FieldSettings({ editor }: { editor: Editor }) {
+  if (!editor.isActive('field')) return null
+  const field = editor.getAttributes('field')
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          className="h-8 w-8 shrink-0"
+          aria-label="Business field settings"
+        >
+          <Braces className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="grid w-80 gap-3 p-3" align="start">
+        <label className="grid gap-1 text-xs">
+          Field
+          <AppSelect
+            label="Business field"
+            value={field.key}
+            options={V6_FIELD_KEYS.map((value) => ({ value, label: fieldLabel(value) }))}
+            onValueChange={(key) => editor.chain().focus().updateAttributes('field', { key }).run()}
+          />
+        </label>
+        <label className="grid gap-1 text-xs">
+          When empty
+          <AppSelect
+            label="Empty field behavior"
+            value={field.empty_behavior || 'diagnostic'}
+            options={[
+              { value: 'diagnostic', label: 'Require a value' },
+              { value: 'fallback', label: 'Show fallback' },
+              { value: 'blank', label: 'Leave blank' },
+            ]}
+            onValueChange={(empty_behavior) =>
+              editor.chain().focus().updateAttributes('field', { empty_behavior }).run()
+            }
+          />
+        </label>
+        <label className="grid gap-1 text-xs">
+          Fallback text
+          <Input
+            maxLength={300}
+            disabled={field.empty_behavior !== 'fallback'}
+            value={field.fallback || ''}
+            onChange={(event) =>
+              editor
+                .chain()
+                .focus()
+                .updateAttributes('field', { fallback: event.target.value })
+                .run()
+            }
+          />
+        </label>
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          onClick={() => editor.chain().focus().deleteSelection().run()}
+        >
+          Delete field
+        </Button>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+const fieldLabel = (key: string) =>
+  key
+    .split('.')
+    .map((part) => part.replaceAll('_', ' '))
+    .join(' · ')
 
 export function MoreMenu({ editor, onExportDOCX }: { editor: Editor; onExportDOCX: () => void }) {
   return (

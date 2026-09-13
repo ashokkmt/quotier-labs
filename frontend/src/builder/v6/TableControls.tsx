@@ -34,6 +34,7 @@ import {
   moveTableRow,
   selectTableColumn,
   selectTableRow,
+  selectWholeTable,
   setTableRowMinHeight,
   tableTargetAt,
   type TableTarget,
@@ -481,6 +482,8 @@ function CellToolbar({
       {label[0]}
     </Button>
   )
+  const target = tableTargetAt(editor)
+  const tableAttrs = editor.getAttributes('table')
   return (
     <div
       className="pointer-events-auto absolute flex items-center gap-1 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
@@ -491,6 +494,26 @@ function CellToolbar({
       {button('Bold', 'bold')}
       {button('Italic', 'italic')}
       {button('Underline', 'underline')}
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2 text-xs"
+        disabled={!editor.can().mergeCells()}
+        onClick={() => editor.chain().focus().mergeCells().run()}
+      >
+        Merge
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2 text-xs"
+        disabled={!editor.can().splitCell()}
+        onClick={() => editor.chain().focus().splitCell().run()}
+      >
+        Split
+      </Button>
       <ControlledColorPicker
         compact
         label="Text color"
@@ -535,6 +558,86 @@ function CellToolbar({
         ]}
         onValueChange={(value) => editor.chain().focus().setCellAttribute('alignment', value).run()}
       />
+      <AppSelect
+        label="Cell vertical alignment"
+        className="h-7 w-24 px-2 text-xs"
+        value={
+          editor.getAttributes('tableCell').vertical_alignment ||
+          editor.getAttributes('tableHeader').vertical_alignment ||
+          'top'
+        }
+        options={[
+          { value: 'top', label: 'Top' },
+          { value: 'middle', label: 'Middle' },
+          { value: 'bottom', label: 'Bottom' },
+        ]}
+        onValueChange={(value) =>
+          editor.chain().focus().setCellAttribute('vertical_alignment', value).run()
+        }
+      />
+      <AppSelect
+        label="Cell padding"
+        className="h-7 w-24 px-2 text-xs"
+        value={String(editor.getAttributes('tableCell').padding || 425)}
+        options={[
+          { value: '200', label: 'Compact' },
+          { value: '425', label: 'Normal' },
+          { value: '700', label: 'Roomy' },
+        ]}
+        onValueChange={(value) =>
+          editor.chain().focus().setCellAttribute('padding', Number(value)).run()
+        }
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs">
+            Table
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuLabel>Table properties</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => editor.chain().focus().toggleHeaderRow().run()}>
+            Toggle header row
+          </DropdownMenuItem>
+          {(['left', 'center', 'right'] as const).map((alignment) => (
+            <DropdownMenuItem
+              key={alignment}
+              onSelect={() => editor.chain().focus().updateAttributes('table', { alignment }).run()}
+            >
+              Align table {alignment}
+              {tableAttrs.alignment === alignment ? ' ✓' : ''}
+            </DropdownMenuItem>
+          ))}
+          {(['all', 'outer', 'none'] as const).map((preset) => (
+            <DropdownMenuItem
+              key={preset}
+              onSelect={() =>
+                editor.chain().focus().updateAttributes('table', { border_preset: preset }).run()
+              }
+            >
+              {preset === 'all'
+                ? 'All borders'
+                : preset === 'outer'
+                  ? 'Outer border'
+                  : 'No borders'}
+              {tableAttrs.border_preset === preset ? ' ✓' : ''}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={!target}
+            onSelect={() => target && selectWholeTable(editor, target)}
+          >
+            Select table
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={() => editor.chain().focus().deleteTable().run()}
+          >
+            Delete table
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,7 +66,7 @@ func (g *generator) generateV6(ctx context.Context, input document.GeneratorInpu
 				if pdf.Error() != nil {
 					return nil, pdf.Error()
 				}
-				pdf.ImageOptions(name, block.X, block.Y, block.Width, block.Height, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
+				pdf.ImageOptions(name, block.X, block.Y+block.TextTop, block.Width, block.ContentHeight, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
 			}
 		}
 	}
@@ -165,22 +166,65 @@ func drawV6TableRow(pdf *fpdf.Fpdf, block flowlayout.Block) {
 		return
 	}
 	row := block.TableRows[0]
-	x := block.X
-	for i, cell := range row.Cells {
-		w := block.Width / float64(len(row.Cells))
-		if i < len(block.Columns) {
-			w = block.Columns[i]
+	for _, cell := range row.Cells {
+		x := block.X
+		for index := 0; index < cell.Column && index < len(block.Columns); index++ {
+			x += block.Columns[index]
+		}
+		w := cell.Width
+		if w <= 0 {
+			w = block.Width / float64(len(row.Cells))
+		}
+		h := cell.Height
+		if h <= 0 {
+			h = block.Height
 		}
 		if cell.Background != "" && cell.Background != "transparent" {
 			rgb, _ := resolveColor(cell.Background)
 			pdf.SetFillColor(rgb[0], rgb[1], rgb[2])
-			pdf.Rect(x, block.Y, w, block.Height, "F")
+			pdf.Rect(x, block.Y, w, h, "F")
 		}
-		pdf.SetDrawColor(209, 213, 219)
-		pdf.Rect(x, block.Y, w, block.Height, "D")
-		drawV6TableCell(pdf, cell, x+1.5, block.Y+1, w-3)
-		x += w
+		if block.BorderPreset != "none" {
+			rgb, _ := resolveColor(block.BorderColor)
+			pdf.SetDrawColor(rgb[0], rgb[1], rgb[2])
+			if block.BorderPreset == "all" {
+				pdf.Rect(x, block.Y, w, h, "D")
+			} else {
+				if block.TableFirst {
+					pdf.Line(x, block.Y, x+w, block.Y)
+				}
+				if block.TableLast {
+					pdf.Line(x, block.Y+h, x+w, block.Y+h)
+				}
+				if cell.Column == 0 {
+					pdf.Line(x, block.Y, x, block.Y+h)
+				}
+				if cell.Column+cell.Colspan == len(block.Columns) {
+					pdf.Line(x+w, block.Y, x+w, block.Y+h)
+				}
+			}
+		}
+		contentHeight := tableCellContentHeight(cell)
+		cellY := block.Y + cell.Padding
+		if cell.VerticalAlign == "middle" {
+			cellY += math.Max(0, (h-2*cell.Padding-contentHeight)/2)
+		} else if cell.VerticalAlign == "bottom" {
+			cellY += math.Max(0, h-2*cell.Padding-contentHeight)
+		}
+		drawV6TableCell(pdf, cell, x+cell.Padding, cellY, w-2*cell.Padding)
 	}
+}
+
+func tableCellContentHeight(cell flowlayout.TableCell) float64 {
+	height := 0.0
+	for _, line := range cell.Lines {
+		lineHeight := 4.3
+		for _, run := range line.Runs {
+			lineHeight = max(lineHeight, run.FontSizePt*25.4/72*1.2)
+		}
+		height += lineHeight
+	}
+	return height
 }
 
 func drawV6TableCell(pdf *fpdf.Fpdf, cell flowlayout.TableCell, x, y, width float64) {
