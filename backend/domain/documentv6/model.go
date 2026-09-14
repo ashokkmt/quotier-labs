@@ -111,31 +111,50 @@ type TableRowAttrs struct {
 }
 
 type TableCellAttrs struct {
-	Colspan           int     `json:"colspan,omitempty"`
-	Rowspan           int     `json:"rowspan,omitempty"`
-	Colwidth          []int64 `json:"colwidth,omitempty"`
-	Background        string  `json:"background,omitempty"`
-	Alignment         string  `json:"alignment,omitempty"`
-	VerticalAlignment string  `json:"vertical_alignment,omitempty"`
-	Padding           int64   `json:"padding,omitempty"`
+	Colspan           int               `json:"colspan,omitempty"`
+	Rowspan           int               `json:"rowspan,omitempty"`
+	Colwidth          []int64           `json:"colwidth,omitempty"`
+	Background        string            `json:"background,omitempty"`
+	Alignment         string            `json:"alignment,omitempty"`
+	VerticalAlignment string            `json:"vertical_alignment,omitempty"`
+	Padding           int64             `json:"padding,omitempty"`
+	BorderTop         *TableBorderAttrs `json:"border_top,omitempty"`
+	BorderRight       *TableBorderAttrs `json:"border_right,omitempty"`
+	BorderBottom      *TableBorderAttrs `json:"border_bottom,omitempty"`
+	BorderLeft        *TableBorderAttrs `json:"border_left,omitempty"`
+}
+
+type TableBorderAttrs struct {
+	Color string `json:"color"`
+	Width int64  `json:"width"`
+	Style string `json:"style"`
 }
 
 type ImageAttrs struct {
-	ID          string `json:"id"`
-	Source      string `json:"source"`
-	Width       int64  `json:"width"`
-	Height      int64  `json:"height"`
-	PixelWidth  int    `json:"pixel_width"`
-	PixelHeight int    `json:"pixel_height"`
-	Alignment   string `json:"alignment,omitempty"`
-	Alt         string `json:"alt,omitempty"`
-	AspectLock  bool   `json:"aspect_lock,omitempty"`
-	SpaceBefore int64  `json:"space_before,omitempty"`
-	SpaceAfter  int64  `json:"space_after,omitempty"`
-	Positioning string `json:"positioning,omitempty"`
-	OffsetX     int64  `json:"offset_x,omitempty"`
-	OffsetY     int64  `json:"offset_y,omitempty"`
-	Layer       string `json:"layer,omitempty"`
+	ID           string  `json:"id"`
+	Source       string  `json:"source"`
+	Width        int64   `json:"width"`
+	Height       int64   `json:"height"`
+	PixelWidth   int     `json:"pixel_width"`
+	PixelHeight  int     `json:"pixel_height"`
+	Alignment    string  `json:"alignment,omitempty"`
+	Alt          string  `json:"alt,omitempty"`
+	AspectLock   bool    `json:"aspect_lock,omitempty"`
+	SpaceBefore  int64   `json:"space_before,omitempty"`
+	SpaceAfter   int64   `json:"space_after,omitempty"`
+	Positioning  string  `json:"positioning,omitempty"`
+	OffsetX      int64   `json:"offset_x,omitempty"`
+	OffsetY      int64   `json:"offset_y,omitempty"`
+	Layer        string  `json:"layer,omitempty"`
+	LayoutMode   string  `json:"layout_mode,omitempty"`
+	PositionMode string  `json:"position_mode,omitempty"`
+	AnchorNodeID string  `json:"anchor_node_id,omitempty"`
+	WrapMargin   int64   `json:"wrap_margin,omitempty"`
+	CropLeft     float64 `json:"crop_left,omitempty"`
+	CropTop      float64 `json:"crop_top,omitempty"`
+	CropRight    float64 `json:"crop_right,omitempty"`
+	CropBottom   float64 `json:"crop_bottom,omitempty"`
+	Rotation     float64 `json:"rotation,omitempty"`
 }
 
 type IDAttrs struct {
@@ -465,7 +484,7 @@ func validateNode(n Node, depth int, state *validationState, parent string, list
 			return invalid("table cell has invalid parent")
 		}
 		attrs, err := decodeAttrs[TableCellAttrs](n.Attrs)
-		if err != nil || defaultInt(attrs.Colspan, 1) < 1 || defaultInt(attrs.Colspan, 1) > MaxColumns || defaultInt(attrs.Rowspan, 1) < 1 || defaultInt(attrs.Rowspan, 1) > MaxRows || (len(attrs.Colwidth) != 0 && len(attrs.Colwidth) != defaultInt(attrs.Colspan, 1)) || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right") || !oneOf(defaultString(attrs.VerticalAlignment, "top"), "top", "middle", "bottom") || attrs.Padding < 0 || attrs.Padding > 3600 || !validColor(defaultString(attrs.Background, "transparent"), true) {
+		if err != nil || defaultInt(attrs.Colspan, 1) < 1 || defaultInt(attrs.Colspan, 1) > MaxColumns || defaultInt(attrs.Rowspan, 1) < 1 || defaultInt(attrs.Rowspan, 1) > MaxRows || (len(attrs.Colwidth) != 0 && len(attrs.Colwidth) != defaultInt(attrs.Colspan, 1)) || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right") || !oneOf(defaultString(attrs.VerticalAlignment, "top"), "top", "middle", "bottom") || attrs.Padding < 0 || attrs.Padding > 3600 || !validColor(defaultString(attrs.Background, "transparent"), true) || !validTableBorder(attrs.BorderTop) || !validTableBorder(attrs.BorderRight) || !validTableBorder(attrs.BorderBottom) || !validTableBorder(attrs.BorderLeft) {
 			return invalid("invalid table cell attributes")
 		}
 		if len(n.Content) == 0 {
@@ -484,7 +503,7 @@ func validateNode(n Node, depth int, state *validationState, parent string, list
 			return invalid("image has invalid parent")
 		}
 		attrs, err := decodeAttrs[ImageAttrs](n.Attrs)
-		if err != nil || attrs.ID == "" || attrs.Width < 100 || attrs.Height < 100 || attrs.Width > A4HeightDU || attrs.Height > A4HeightDU || attrs.PixelWidth <= 0 || attrs.PixelHeight <= 0 || len([]rune(attrs.Alt)) > 300 || attrs.SpaceBefore < 0 || attrs.SpaceAfter < 0 || attrs.SpaceBefore > 7200 || attrs.SpaceAfter > 7200 || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right") || !oneOf(defaultString(attrs.Positioning, "inline"), "inline", "floating") || !oneOf(defaultString(attrs.Layer, "front"), "front", "behind") || attrs.OffsetX < -A4WidthDU || attrs.OffsetX > A4WidthDU || attrs.OffsetY < -A4HeightDU || attrs.OffsetY > A4HeightDU || len(n.Content) != 0 {
+		if err != nil || attrs.ID == "" || attrs.Width < 100 || attrs.Height < 100 || attrs.Width > A4HeightDU || attrs.Height > A4HeightDU || attrs.PixelWidth <= 0 || attrs.PixelHeight <= 0 || len([]rune(attrs.Alt)) > 300 || len([]rune(attrs.AnchorNodeID)) > 100 || attrs.SpaceBefore < 0 || attrs.SpaceAfter < 0 || attrs.SpaceBefore > 7200 || attrs.SpaceAfter > 7200 || attrs.WrapMargin < 0 || attrs.WrapMargin > 7200 || !oneOf(defaultString(attrs.Alignment, "left"), "left", "center", "right") || !oneOf(defaultString(attrs.Positioning, "inline"), "inline", "floating") || !oneOf(defaultString(attrs.Layer, "front"), "front", "behind") || !oneOf(defaultString(attrs.LayoutMode, defaultString(attrs.Positioning, "inline")), "inline", "wrap", "break", "behind", "front", "floating") || !oneOf(defaultString(attrs.PositionMode, "move_with_text"), "move_with_text", "fixed_on_page") || attrs.CropLeft < 0 || attrs.CropTop < 0 || attrs.CropRight < 0 || attrs.CropBottom < 0 || attrs.CropLeft+attrs.CropRight >= 0.99 || attrs.CropTop+attrs.CropBottom >= 0.99 || attrs.Rotation < -180 || attrs.Rotation > 180 || attrs.OffsetX < -A4WidthDU || attrs.OffsetX > A4WidthDU || attrs.OffsetY < -A4HeightDU || attrs.OffsetY > A4HeightDU || len(n.Content) != 0 {
 			return invalid("invalid image attributes")
 		}
 		if err := state.addID(attrs.ID); err != nil {
@@ -705,6 +724,10 @@ func validColor(value string, transparent bool) bool {
 		}
 	}
 	return true
+}
+
+func validTableBorder(border *TableBorderAttrs) bool {
+	return border == nil || (validColor(border.Color, false) && border.Width >= 0 && border.Width <= 720 && oneOf(border.Style, "solid", "dashed", "dotted", "double"))
 }
 
 func oneOf[T comparable](value T, allowed ...T) bool { return slices.Contains(allowed, value) }

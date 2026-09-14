@@ -20,6 +20,13 @@ const numericAttr = (name: string) => ({
   },
 })
 
+const cellBorderStyle = (value: unknown) => {
+  const border = value as { color?: unknown; width?: unknown; style?: unknown } | null
+  if (!border || typeof border.color !== 'string') return ''
+  const width = Math.max(0, Math.min(10, Number(border.width || 0) / 100))
+  return width ? `${width}pt ${['solid', 'dashed', 'dotted', 'double'].includes(String(border.style)) ? border.style : 'solid'} ${border.color}` : '0'
+}
+
 const ParagraphV6 = Paragraph.extend({
   addAttributes() {
     return {
@@ -72,7 +79,7 @@ const ParagraphV6 = Paragraph.extend({
     ].filter(Boolean)
     return [
       'p',
-      mergeAttributes(HTMLAttributes, styles.length ? { style: styles.join(';') } : {}),
+      mergeAttributes(HTMLAttributes, { 'data-v6-node-id': attrs.id || '' }, styles.length ? { style: styles.join(';') } : {}),
       0,
     ]
   },
@@ -145,13 +152,14 @@ const TableV6 = Table.extend({
     return [
       'table',
       mergeAttributes(HTMLAttributes, {
+        'data-v6-node-id': node.attrs.id || '',
         'data-v6-border': node.attrs.border_preset,
         style: `width:${width};margin:${margin};border-color:${node.attrs.border_color}`,
       }),
       ['tbody', 0],
     ]
   },
-}).configure({ resizable: true, allowTableNodeSelection: true })
+}).configure({ resizable: false, allowTableNodeSelection: true })
 
 const TableRowV6 = TableRow.extend({
   addAttributes() {
@@ -191,7 +199,15 @@ const TableCellV6 = TableCell.extend({
         default: 425,
         renderHTML: (attrs) => ({ style: `padding:${Number(attrs.padding) / 75}px` }),
       },
+      border_top: { default: null },
+      border_right: { default: null },
+      border_bottom: { default: null },
+      border_left: { default: null },
     }
+  },
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs = node.attrs
+    return ['td', mergeAttributes(HTMLAttributes, { style: [`background:${attrs.background}`, `vertical-align:${attrs.vertical_alignment}`, `padding:${Number(attrs.padding) / 75}px`, cellBorderStyle(attrs.border_top) && `border-top:${cellBorderStyle(attrs.border_top)}`, cellBorderStyle(attrs.border_right) && `border-right:${cellBorderStyle(attrs.border_right)}`, cellBorderStyle(attrs.border_bottom) && `border-bottom:${cellBorderStyle(attrs.border_bottom)}`, cellBorderStyle(attrs.border_left) && `border-left:${cellBorderStyle(attrs.border_left)}`].filter(Boolean).join(';') }), 0]
   },
 })
 
@@ -213,7 +229,15 @@ const TableHeaderV6 = TableHeader.extend({
         default: 425,
         renderHTML: (attrs) => ({ style: `padding:${Number(attrs.padding) / 75}px` }),
       },
+      border_top: { default: null },
+      border_right: { default: null },
+      border_bottom: { default: null },
+      border_left: { default: null },
     }
+  },
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs = node.attrs
+    return ['th', mergeAttributes(HTMLAttributes, { style: [`background:${attrs.background}`, `vertical-align:${attrs.vertical_alignment}`, `padding:${Number(attrs.padding) / 75}px`, cellBorderStyle(attrs.border_top) && `border-top:${cellBorderStyle(attrs.border_top)}`, cellBorderStyle(attrs.border_right) && `border-right:${cellBorderStyle(attrs.border_right)}`, cellBorderStyle(attrs.border_bottom) && `border-bottom:${cellBorderStyle(attrs.border_bottom)}`, cellBorderStyle(attrs.border_left) && `border-left:${cellBorderStyle(attrs.border_left)}`].filter(Boolean).join(';') }), 0]
   },
 })
 
@@ -280,11 +304,19 @@ const ImageBlock = Node.create({
     offset_x: { default: 0 },
     offset_y: { default: 0 },
     layer: { default: 'front' },
+    layout_mode: { default: 'inline' },
+    position_mode: { default: 'move_with_text' },
+    wrap_margin: { default: 0 },
+    crop_left: { default: 0 },
+    crop_top: { default: 0 },
+    crop_right: { default: 0 },
+    crop_bottom: { default: 0 },
+    rotation: { default: 0 },
   }),
   parseHTML: () => [{ tag: 'figure[data-v6-image]' }],
-  renderHTML: ({ HTMLAttributes }) => [
+  renderHTML: ({ node, HTMLAttributes }) => [
     'figure',
-    mergeAttributes(HTMLAttributes, { 'data-v6-image': '' }),
+    mergeAttributes(HTMLAttributes, { 'data-v6-image': '', 'data-v6-node-id': node.attrs.id || '' }),
   ],
   addNodeView: () => ReactNodeViewRenderer(ImageNodeView),
 })
@@ -307,9 +339,9 @@ const LineItemTable = Node.create({
     show_grand_total: { default: true },
   }),
   parseHTML: () => [{ tag: 'div[data-v6-line-items]' }],
-  renderHTML: ({ HTMLAttributes }) => [
+  renderHTML: ({ node, HTMLAttributes }) => [
     'div',
-    mergeAttributes(HTMLAttributes, { 'data-v6-line-items': '' }),
+    mergeAttributes(HTMLAttributes, { 'data-v6-line-items': '', 'data-v6-node-id': node.attrs.id || '' }),
   ],
   addNodeView: () => ReactNodeViewRenderer(LineItemNodeView),
 })

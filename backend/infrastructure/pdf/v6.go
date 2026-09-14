@@ -72,7 +72,17 @@ func (g *generator) generateV6(ctx context.Context, input document.GeneratorInpu
 					if pdf.Error() != nil {
 						return nil, pdf.Error()
 					}
-					pdf.ImageOptions(name, block.X, block.Y+block.TextTop, block.Width, block.ContentHeight, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
+					x, y := block.X, block.Y+block.TextTop
+					visibleW, visibleH := 1-block.CropLeft-block.CropRight, 1-block.CropTop-block.CropBottom
+					imageW, imageH := block.Width/visibleW, block.ContentHeight/visibleH
+					pdf.TransformBegin()
+					if block.Rotation != 0 {
+						pdf.TransformRotate(block.Rotation, x+block.Width/2, y+block.ContentHeight/2)
+					}
+					pdf.ClipRect(x, y, block.Width, block.ContentHeight, false)
+					pdf.ImageOptions(name, x-block.CropLeft*imageW, y-block.CropTop*imageH, imageW, imageH, false, fpdf.ImageOptions{ImageType: format, ReadDpi: true}, 0, "")
+					pdf.ClipEnd()
+					pdf.TransformEnd()
 				}
 			}
 		}
@@ -211,6 +221,10 @@ func drawV6TableRow(pdf *fpdf.Fpdf, block flowlayout.Block) {
 				}
 			}
 		}
+		drawV6CellBorder(pdf, cell.BorderTop, x, block.Y, x+w, block.Y)
+		drawV6CellBorder(pdf, cell.BorderRight, x+w, block.Y, x+w, block.Y+h)
+		drawV6CellBorder(pdf, cell.BorderBottom, x, block.Y+h, x+w, block.Y+h)
+		drawV6CellBorder(pdf, cell.BorderLeft, x, block.Y, x, block.Y+h)
 		contentHeight := tableCellContentHeight(cell)
 		cellY := block.Y + cell.Padding
 		if cell.VerticalAlign == "middle" {
@@ -220,6 +234,31 @@ func drawV6TableRow(pdf *fpdf.Fpdf, block flowlayout.Block) {
 		}
 		drawV6TableCell(pdf, cell, x+cell.Padding, cellY, w-2*cell.Padding)
 	}
+}
+
+func drawV6CellBorder(pdf *fpdf.Fpdf, border *documentv6.TableBorderAttrs, x1, y1, x2, y2 float64) {
+	if border == nil || border.Width == 0 {
+		return
+	}
+	rgb, _ := resolveColor(border.Color)
+	pdf.SetDrawColor(rgb[0], rgb[1], rgb[2])
+	pdf.SetLineWidth(float64(border.Width) * 25.4 / 7200)
+	if border.Style == "dashed" {
+		pdf.SetDashPattern([]float64{1.5, 1.5}, 0)
+	}
+	if border.Style == "dotted" {
+		pdf.SetDashPattern([]float64{0.4, 1.2}, 0)
+	}
+	pdf.Line(x1, y1, x2, y2)
+	if border.Style == "double" {
+		if x1 == x2 {
+			pdf.Line(x1+0.6, y1, x2+0.6, y2)
+		} else {
+			pdf.Line(x1, y1+0.6, x2, y2+0.6)
+		}
+	}
+	pdf.SetDashPattern([]float64{}, 0)
+	pdf.SetLineWidth(0.2)
 }
 
 func tableCellContentHeight(cell flowlayout.TableCell) float64 {

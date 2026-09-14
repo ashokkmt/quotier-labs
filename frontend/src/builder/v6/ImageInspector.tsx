@@ -17,6 +17,16 @@ export function ImageInspector({ editor, onReplace }: { editor: Editor; onReplac
           : { [axis]: next },
     )
   }
+  const layout = image.layout_mode || (image.positioning === 'floating' ? image.layer === 'behind' ? 'behind' : 'front' : 'inline')
+  const setLayout = (layout_mode: string) =>
+    set({
+      layout_mode,
+      positioning: layout_mode === 'inline' ? 'inline' : 'floating',
+      layer: layout_mode === 'behind' ? 'behind' : 'front',
+      ...(layout_mode === 'inline' ? { offset_x: 0, offset_y: 0 } : {}),
+    })
+  const crop = (edge: 'crop_left' | 'crop_top' | 'crop_right' | 'crop_bottom', value: number) =>
+    set({ [edge]: Math.max(0, Math.min(0.8, value / 100)) })
   return (
     <aside
       className="fixed right-6 top-16 z-40 w-64 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
@@ -50,33 +60,40 @@ export function ImageInspector({ editor, onReplace }: { editor: Editor; onReplac
         Text flow
         <AppSelect
           label="Image text flow"
-          value={image.positioning || 'inline'}
-          options={[
-            { value: 'inline', label: 'In line with text' },
-            { value: 'floating', label: 'Top and bottom (movable)' },
-          ]}
-          onValueChange={(positioning) =>
-            set({ positioning, ...(positioning === 'inline' ? { offset_x: 0, offset_y: 0 } : {}) })
-          }
+        value={layout}
+        options={[
+          { value: 'inline', label: 'In line with text' },
+          { value: 'wrap', label: 'Wrap text' },
+          { value: 'break', label: 'Break text' },
+          { value: 'behind', label: 'Behind text' },
+          { value: 'front', label: 'In front of text' },
+        ]}
+        onValueChange={setLayout}
         />
       </label>
-      {image.positioning === 'floating' && (
+      {layout !== 'inline' && (
         <>
           <label className="mt-2 grid gap-1 text-xs">
-            Layer
+            Position
             <AppSelect
-              label="Image overlap layer"
-              value={image.layer || 'front'}
+              label="Image position"
+              value={image.position_mode || 'move_with_text'}
               options={[
-                { value: 'front', label: 'In front of text' },
-                { value: 'behind', label: 'Behind text' },
+                { value: 'move_with_text', label: 'Move with text' },
+                { value: 'fixed_on_page', label: 'Fix on page' },
               ]}
-              onValueChange={(layer) => set({ layer })}
+              onValueChange={(position_mode) => set({ position_mode })}
             />
           </label>
+          {layout === 'wrap' && <label className="mt-2 grid gap-1 text-xs">Wrap margin: {Math.round(Number(image.wrap_margin || 0) / 283.465)} mm<input aria-label="Image wrap margin" type="range" min="0" max="20" value={Math.round(Number(image.wrap_margin || 0) / 283.465)} onChange={(event) => set({ wrap_margin: Math.round(Number(event.target.value) * 283.465) })} /></label>}
           <p className="mt-2 text-xs text-muted-foreground">Drag the selected image to move it.</p>
         </>
       )}
+      <label className="mt-3 grid gap-1 text-xs">Rotation: {Math.round(Number(image.rotation || 0))}°<input aria-label="Image rotation" type="range" min="-180" max="180" value={Number(image.rotation || 0)} onChange={(event) => set({ rotation: Number(event.target.value) })} /></label>
+      <fieldset className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <legend className="col-span-2 mb-1 font-medium">Crop</legend>
+        {(['crop_left', 'crop_top', 'crop_right', 'crop_bottom'] as const).map((edge) => <label key={edge} className="grid gap-1 capitalize">{edge.replace('crop_', '')}<input aria-label={`Crop ${edge.replace('crop_', '')}`} type="range" min="0" max="80" value={Math.round(Number(image[edge] || 0) * 100)} onChange={(event) => crop(edge, Number(event.target.value))} /></label>)}
+      </fieldset>
       <div className="mt-3 flex justify-end gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onReplace}>
           Replace

@@ -18,6 +18,30 @@
     border-radius: 9999px;
     background: white;
   }
+
+  .v6-image-node {
+    position: relative;
+    display: inline-flex;
+    max-width: 100%;
+  }
+  .v6-image-node.v6-image-wrap {
+    float: left;
+    margin-right: 12px;
+  }
+  .v6-image-frame {
+    box-sizing: border-box;
+    outline: 2px solid transparent;
+    outline-offset: 0;
+  }
+  .v6-image-frame.v6-image-selected {
+    outline-color: #2563eb;
+  }
+  .v6-image-node[data-v6-image-layout='behind'] .v6-image-frame {
+    pointer-events: none;
+  }
+  .v6-image-node[data-v6-image-layout='behind'].ProseMirror-selectednode .v6-image-frame {
+    pointer-events: auto;
+  }
   .v6-image-handle-n {
     top: -5px;
     left: calc(50% - 5px);

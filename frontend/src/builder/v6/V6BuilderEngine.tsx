@@ -41,7 +41,7 @@ type PageMap = {
   pageWidth: number
   pageHeight: number
   pageCount: number
-  ranges: unknown[]
+  ranges: Array<{ nodeId: string; page: number; y: number; height: number }>
   diagnostics: Array<{ code: string; nodeId: string; message: string }>
 }
 
@@ -186,6 +186,31 @@ export function V6BuilderEngine({
       window.clearTimeout(timer)
     }
   }, [editor, resolvePageMap, revision, settings, assets, stories])
+
+  // The editor remains one semantic ProseMirror document. Page gaps are derived from the
+  // authoritative Go page map, so header/footer reservations never enter saved document JSON.
+  useEffect(() => {
+    if (!editor || !surfaceRef.current) return
+    const nodes = surfaceRef.current.querySelectorAll<HTMLElement>('[data-v6-node-id]')
+    nodes.forEach((node) => { node.style.marginBottom = '' })
+    if (!pageMap || pageMap.pageCount < 2) return
+    const byPage = new Map<number, { nodeId: string; y: number; height: number }>()
+    for (const range of pageMap.ranges) {
+      const current = byPage.get(range.page)
+      if (!current || range.y + range.height > current.y + current.height) byPage.set(range.page, range)
+    }
+    for (const [page, range] of byPage) {
+      if (page >= pageMap.pageCount) continue
+      const node = [...nodes].find((candidate) => {
+        const id = candidate.dataset.v6NodeId || ''
+        return id === range.nodeId || range.nodeId.startsWith(`${id}-`)
+      })
+      if (!node) continue
+      const remaining = Math.max(0, pageMap.pageHeight - range.y - range.height)
+      const nextTop = settings.margins.top
+      node.style.marginBottom = `${(remaining + nextTop) / 75 + 12}px`
+    }
+  }, [editor, pageMap, settings.margins.top])
 
   if (!editor)
     return (
@@ -389,7 +414,7 @@ export function V6BuilderEngine({
             <div onContextMenu={openContextMenu}>
               <EditorContent editor={editor} />
             </div>
-            <TableControls editor={editor} surfaceRef={surfaceRef} />
+            <TableControls editor={editor} surfaceRef={surfaceRef} zoom={zoom} />
             {contextMenu && <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />}
           </div>
         </div>

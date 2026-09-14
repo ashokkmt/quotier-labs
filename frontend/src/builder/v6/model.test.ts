@@ -133,6 +133,18 @@ describe('V6 document model', () => {
     expect(body.content?.[0].content?.[0].attrs?.min_height).toBe(4200)
   })
 
+  it('keeps per-cell fill and border overrides while stripping unknown table state', () => {
+    const body = normalizeV6Body({
+      type: 'doc',
+      content: [{ type: 'table', attrs: { id: 't' }, content: [{ type: 'tableRow', content: [{ type: 'tableCell', attrs: { background: '#DBEAFE', border_top: { color: '#2563EB', width: 100, style: 'dashed' }, ignored: true }, content: [{ type: 'paragraph', attrs: { id: 'p' } }] }] }] }],
+    })
+    expect(body.content?.[0].content?.[0].content?.[0].attrs).toMatchObject({
+      background: '#DBEAFE',
+      border_top: { color: '#2563EB', width: 100, style: 'dashed' },
+    })
+    expect(body.content?.[0].content?.[0].content?.[0].attrs).not.toHaveProperty('ignored')
+  })
+
   it('normalizes merged column widths and repeated header rows', () => {
     const body = normalizeV6Body({
       type: 'doc',
@@ -162,6 +174,21 @@ describe('V6 document model', () => {
       header_rows: 1,
       border_preset: 'all',
       cell_padding: 425,
+    })
+  })
+
+  it('preserves controlled image crop and layout attributes for autosave', () => {
+    const body = normalizeV6Body({
+      type: 'doc',
+      content: [{ type: 'imageBlock', attrs: { id: 'image', source: 'asset:image.png', width: 12000, height: 9000, pixel_width: 120, pixel_height: 90, layout_mode: 'behind', crop_left: 0.1, crop_right: 0.2, rotation: 15 } }],
+    })
+    expect(body.content?.[0].attrs).toMatchObject({
+      layout_mode: 'behind',
+      positioning: 'floating',
+      layer: 'behind',
+      crop_left: 0.1,
+      crop_right: 0.2,
+      rotation: 15,
     })
   })
 })

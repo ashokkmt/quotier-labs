@@ -6,6 +6,7 @@ import {
   Footer,
   Header,
   HeightRule,
+  HorizontalPositionRelativeFrom,
   ImageRun,
   LevelFormat,
   Packer,
@@ -19,6 +20,8 @@ import {
   TextRun,
   WidthType,
   VerticalAlign,
+  VerticalPositionRelativeFrom,
+  TextWrappingType,
   type ParagraphChild,
 } from 'docx'
 import { GetImageDataURI } from '../../../wailsjs/go/wails/CompanyHandler'
@@ -323,6 +326,7 @@ async function table(
                       cell.attrs?.background && cell.attrs.background !== 'transparent'
                         ? { fill: color(String(cell.attrs.background)) }
                         : undefined,
+                    borders: cellBorders(cell.attrs),
                     children: await blocks(document, cell.content ?? [], 0, context),
                   }),
               ),
@@ -478,6 +482,9 @@ async function image(node: JSONContent, context: ProjectorContext): Promise<Para
   const width = Math.max(1, Math.round(Number(node.attrs?.width ?? 7500) / 75))
   const height = Math.max(1, Math.round(Number(node.attrs?.height ?? 7500) / 75))
   const alt = String(node.attrs?.alt || '').trim()
+  const layout = String(node.attrs?.layout_mode || node.attrs?.positioning || 'inline')
+  const floating = layout !== 'inline'
+  const wrap = layout === 'wrap' ? TextWrappingType.SQUARE : layout === 'break' ? TextWrappingType.TOP_AND_BOTTOM : TextWrappingType.NONE
   if (!alt)
     context.warnings.push({
       code: 'missing_alt_text',
@@ -493,12 +500,39 @@ async function image(node: JSONContent, context: ProjectorContext): Promise<Para
     children: [
       new ImageRun({
         data: bytes,
-        transformation: { width, height },
+        transformation: { width, height, rotation: Number(node.attrs?.rotation || 0) },
         type,
+        floating: floating
+          ? {
+              horizontalPosition: { relative: node.attrs?.position_mode === 'fixed_on_page' ? HorizontalPositionRelativeFrom.PAGE : HorizontalPositionRelativeFrom.COLUMN, offset: Math.round(Number(node.attrs?.offset_x || 0) / 75) },
+              verticalPosition: { relative: node.attrs?.position_mode === 'fixed_on_page' ? VerticalPositionRelativeFrom.PAGE : VerticalPositionRelativeFrom.PARAGRAPH, offset: Math.round(Number(node.attrs?.offset_y || 0) / 75) },
+              behindDocument: layout === 'behind',
+              allowOverlap: true,
+              wrap: { type: wrap },
+            }
+          : undefined,
         altText: { name: alt || 'Quotation image', title: alt, description: alt },
       }),
     ],
   })
+}
+
+function cellBorders(attrs: Record<string, unknown> | undefined) {
+  const border = (value: unknown) => {
+    const item = value as { color?: unknown; width?: unknown; style?: unknown } | null
+    if (!item || !Number(item.width)) return undefined
+    const style = String(item.style || 'solid')
+    return {
+      color: color(String(item.color || '#D1D5DB')),
+      size: Math.max(1, Math.round(Number(item.width) / 12.5)),
+      style: style === 'dashed' ? BorderStyle.DASHED : style === 'dotted' ? BorderStyle.DOTTED : style === 'double' ? BorderStyle.DOUBLE : BorderStyle.SINGLE,
+    }
+  }
+  const top = border(attrs?.border_top)
+  const right = border(attrs?.border_right)
+  const bottom = border(attrs?.border_bottom)
+  const left = border(attrs?.border_left)
+  return top || right || bottom || left ? { top, right, bottom, left } : undefined
 }
 
 const resolvedTax = (fields: Record<string, string>, fallback: number) => {

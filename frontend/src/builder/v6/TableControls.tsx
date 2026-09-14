@@ -26,7 +26,8 @@ import {
   moveTableRow,
   selectTableColumn,
   selectTableRow,
-  setTableRowMinHeight,
+  resizeTableColumnBoundary,
+  resizeTableRowBoundary,
   tableTargetAt,
   type TableTarget,
 } from './tableCommands'
@@ -50,9 +51,11 @@ type Geometry = {
 export function TableControls({
   editor,
   surfaceRef,
+  zoom = 1,
 }: {
   editor: Editor
   surfaceRef: RefObject<HTMLDivElement | null>
+  zoom?: number
 }) {
   const [geometry, setGeometry] = useState<Geometry | null>(null)
   const geometryRef = useRef<Geometry | null>(null)
@@ -92,20 +95,20 @@ export function TableControls({
         table,
         row,
         cell: cellElement,
-        tableLeft: tableRect.left - root.left,
-        tableTop: tableRect.top - root.top,
-        tableWidth: tableRect.width,
-        tableHeight: tableRect.height,
-        rowTop: rowRect.top - root.top,
-        rowHeight: rowRect.height,
-        cellLeft: cellRect.left - root.left,
-        cellWidth: cellRect.width,
-        cellBottom: cellRect.bottom - root.top,
+        tableLeft: (tableRect.left - root.left) / zoom,
+        tableTop: (tableRect.top - root.top) / zoom,
+        tableWidth: tableRect.width / zoom,
+        tableHeight: tableRect.height / zoom,
+        rowTop: (rowRect.top - root.top) / zoom,
+        rowHeight: rowRect.height / zoom,
+        cellLeft: (cellRect.left - root.left) / zoom,
+        cellWidth: cellRect.width / zoom,
+        cellBottom: (cellRect.bottom - root.top) / zoom,
       }
       geometryRef.current = next
       setGeometry(next)
     },
-    [editor, surfaceRef],
+    [editor, surfaceRef, zoom],
   )
 
   useEffect(() => {
@@ -166,7 +169,7 @@ export function TableControls({
     selectColumn()
     action()
   }
-  const setAxisCellAttribute = (axis: 'row' | 'column', name: string, value: string) => {
+  const setAxisCellAttribute = (axis: 'row' | 'column', name: string, value: unknown) => {
     if (axis === 'row') selectRow()
     else selectColumn()
     editor.chain().focus().setCellAttribute(name, value).run()
@@ -175,17 +178,20 @@ export function TableControls({
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const startY = event.clientY
+    const boundary = target.row + 1
+    const nextRow = geometry.row.nextElementSibling as HTMLTableRowElement | null
     const startHeight = Math.max(
       Number(geometry.row.dataset.v6MinHeight || 0),
-      Math.round(geometry.row.getBoundingClientRect().height * 75),
+      Math.round((geometry.row.getBoundingClientRect().height / zoom) * 75),
     )
     const contentFloor = rowContentHeight(geometry.row)
+    const nextFloor = nextRow ? rowContentHeight(nextRow) : V6_EMPTY_ROW_MIN_HEIGHT
     let proposed = Math.max(startHeight, contentFloor)
     let moved = false
     const move = (pointer: PointerEvent) => {
       moved = true
       proposed = clampV6RowMinHeight(
-        Math.max(contentFloor, startHeight + (pointer.clientY - startY) * 75),
+        Math.max(contentFloor, startHeight + ((pointer.clientY - startY) / zoom) * 75),
       )
       geometry.row.style.height = `${proposed / 75}px`
       setHeightLabel(`${(proposed / 283.465).toFixed(1)} mm`)
@@ -195,7 +201,12 @@ export function TableControls({
       cleanup()
       geometry.row.style.height = ''
       setHeightLabel('')
-      if (moved) setTableRowMinHeight(editor, target, proposed)
+      if (moved) {
+        const minimums = Array.from({ length: target.rows }, () => V6_EMPTY_ROW_MIN_HEIGHT)
+        minimums[target.row] = contentFloor
+        if (target.row + 1 < target.rows) minimums[target.row + 1] = nextFloor
+        resizeTableRowBoundary(editor, target, boundary, proposed - startHeight, minimums)
+      }
       editor.view.focus()
     }
     const cancel = () => {
@@ -213,13 +224,38 @@ export function TableControls({
     window.addEventListener('pointerup', finish, { once: true })
     window.addEventListener('pointercancel', cancel, { once: true })
   }
+  const startColumnResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    const boundary = target.column + 1
+    const startX = event.clientX
+    const startWidth = geometry.cellWidth * 75
+    let delta = 0
+    const move = (pointer: PointerEvent) => {
+      delta = ((pointer.clientX - startX) / zoom) * 75
+      const preview = boundary === target.columns ? startWidth + delta : startWidth + delta
+      geometry.cell.style.width = `${Math.max(48, preview / 75)}px`
+      measure(geometry.cell)
+    }
+    const finish = () => {
+      cleanup()
+      geometry.cell.style.width = ''
+      if (delta) resizeTableColumnBoundary(editor, target, boundary, delta)
+      editor.view.focus()
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish, { once: true })
+    window.addEventListener('pointercancel', finish, { once: true })
+  }
   const resizeByKeyboard = (direction: -1 | 1) => {
     const floor = rowContentHeight(geometry.row)
-    const current = Math.max(
-      Number(geometry.row.dataset.v6MinHeight || 0),
-      Math.round(geometry.row.getBoundingClientRect().height * 75),
-    )
-    setTableRowMinHeight(editor, target, Math.max(floor, current + direction * 300))
+    const minimums = Array.from({ length: target.rows }, () => V6_EMPTY_ROW_MIN_HEIGHT)
+    minimums[target.row] = floor
+    resizeTableRowBoundary(editor, target, target.row + 1, direction * 300, minimums)
   }
 
   return (
@@ -245,6 +281,10 @@ export function TableControls({
           onMoveAfter={() => moveTableColumn(editor, target, 1)}
           onBackground={(value) => setAxisCellAttribute('column', 'background', value)}
           onAlignment={(value) => setAxisCellAttribute('column', 'alignment', value)}
+          onBorder={(edge, value) => {
+            for (const name of edge === 'all' ? ['top', 'right', 'bottom', 'left'] : [edge])
+              setAxisCellAttribute('column', `border_${name}`, value)
+          }}
         />
       </div>
       <div
@@ -264,6 +304,10 @@ export function TableControls({
           onMoveAfter={() => moveTableRow(editor, target, 1)}
           onBackground={(value) => setAxisCellAttribute('row', 'background', value)}
           onAlignment={(value) => setAxisCellAttribute('row', 'alignment', value)}
+          onBorder={(edge, value) => {
+            for (const name of edge === 'all' ? ['top', 'right', 'bottom', 'left'] : [edge])
+              setAxisCellAttribute('row', `border_${name}`, value)
+          }}
         />
       </div>
       <Button
@@ -329,6 +373,13 @@ export function TableControls({
       >
         <span className="mx-auto block h-1 w-12 rounded-full bg-primary/70 opacity-0 transition-opacity hover:opacity-100 focus:opacity-100" />
       </button>
+      <button
+        type="button"
+        className="pointer-events-auto absolute w-3 cursor-ew-resize rounded border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        style={{ left: geometry.cellLeft + geometry.cellWidth - 5, top: geometry.tableTop, height: geometry.tableHeight }}
+        aria-label={`Resize ${target.column === target.columns - 1 ? 'table width' : `columns ${target.column + 1} and ${target.column + 2}`}`}
+        onPointerDown={startColumnResize}
+      />
       {heightLabel && (
         <span
           className="absolute rounded bg-foreground px-2 py-1 text-xs text-background shadow"
@@ -357,6 +408,7 @@ function AxisMenu({
   onMoveAfter,
   onBackground,
   onAlignment,
+  onBorder,
 }: {
   axis: 'row' | 'column'
   index: number
@@ -370,6 +422,7 @@ function AxisMenu({
   onMoveAfter: () => void
   onBackground: (value: string) => void
   onAlignment: (value: string) => void
+  onBorder: (edge: 'all' | 'top' | 'right' | 'bottom' | 'left', value: unknown) => void
 }) {
   const label = `${axis === 'row' ? 'Row' : 'Column'} ${index + 1} options`
   return (
@@ -419,6 +472,23 @@ function AxisMenu({
               Light yellow
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onBackground('#DBEAFE')}>Light blue</DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Borders</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {(['all', 'top', 'right', 'bottom', 'left'] as const).map((edge) => (
+              <DropdownMenuSub key={edge}>
+                <DropdownMenuSubTrigger className="capitalize">{edge}</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#111827', width: 100, style: 'solid' })}>Thin solid</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#2563EB', width: 100, style: 'dashed' })}>Blue dashed</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#6B7280', width: 100, style: 'dotted' })}>Gray dotted</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#111827', width: 150, style: 'double' })}>Double</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onBorder(edge, null)}>Clear</DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>

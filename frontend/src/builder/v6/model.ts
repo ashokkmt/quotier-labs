@@ -5,6 +5,9 @@ export const V6_A4 = { width: 59528, height: 84189 }
 export const V6_EMPTY_ROW_MIN_HEIGHT = 2400
 export const clampV6RowMinHeight = (value: number) =>
   Math.max(V6_EMPTY_ROW_MIN_HEIGHT, Math.min(V6_A4.height, Math.round(value)))
+export const V6_TABLE_TRACK_MIN = 3600
+export const clampV6TableTrack = (value: number) =>
+  Math.max(V6_TABLE_TRACK_MIN, Math.min(V6_A4.height, Math.round(value)))
 
 export type V6Asset = { source: string; pixel_width: number; pixel_height: number }
 export const V6_FIELD_KEYS = [
@@ -270,7 +273,53 @@ export function normalizeV6Body(body: JSONContent): JSONContent {
       ? { ...node.attrs, id: uniqueID(node.attrs?.id) }
       : node.attrs
     if (node.type !== 'table')
-      return { ...node, ...(attrs ? { attrs } : {}), ...(content ? { content } : {}) }
+      return {
+        ...node,
+        ...(attrs
+          ? {
+              attrs:
+                node.type === 'imageBlock'
+                  ? {
+                      id: attrs.id,
+                      source: String(node.attrs?.source || ''),
+                      width: Number(node.attrs?.width || 18000),
+                      height: Number(node.attrs?.height || 10000),
+                      pixel_width: Number(node.attrs?.pixel_width || 1),
+                      pixel_height: Number(node.attrs?.pixel_height || 1),
+                      alignment: node.attrs?.alignment || 'left',
+                      alt: String(node.attrs?.alt || ''),
+                      aspect_lock: Boolean(node.attrs?.aspect_lock),
+                      space_before: Number(node.attrs?.space_before || 0),
+                      space_after: Number(node.attrs?.space_after || 0),
+                      positioning:
+                        node.attrs?.positioning ||
+                        (node.attrs?.layout_mode && node.attrs.layout_mode !== 'inline'
+                          ? 'floating'
+                          : 'inline'),
+                      offset_x: Number(node.attrs?.offset_x || 0),
+                      offset_y: Number(node.attrs?.offset_y || 0),
+                      layer:
+                        node.attrs?.layer ||
+                        (node.attrs?.layout_mode === 'behind' ? 'behind' : 'front'),
+                      layout_mode: node.attrs?.layout_mode ||
+                        (node.attrs?.positioning === 'floating'
+                          ? node.attrs?.layer === 'behind'
+                            ? 'behind'
+                            : 'front'
+                          : 'inline'),
+                      position_mode: node.attrs?.position_mode || 'move_with_text',
+                      wrap_margin: Number(node.attrs?.wrap_margin || 0),
+                      crop_left: Number(node.attrs?.crop_left || 0),
+                      crop_top: Number(node.attrs?.crop_top || 0),
+                      crop_right: Number(node.attrs?.crop_right || 0),
+                      crop_bottom: Number(node.attrs?.crop_bottom || 0),
+                      rotation: Number(node.attrs?.rotation || 0),
+                    }
+                  : attrs,
+            }
+          : {}),
+        ...(content ? { content } : {}),
+      }
     const rows = content?.map((row) => ({
       ...row,
       attrs: {
@@ -289,6 +338,10 @@ export function normalizeV6Body(body: JSONContent): JSONContent {
           alignment: cell.attrs?.alignment || 'left',
           vertical_alignment: cell.attrs?.vertical_alignment || 'top',
           padding: Number(cell.attrs?.padding || 425),
+          border_top: cell.attrs?.border_top || null,
+          border_right: cell.attrs?.border_right || null,
+          border_bottom: cell.attrs?.border_bottom || null,
+          border_left: cell.attrs?.border_left || null,
         },
       })),
     }))
@@ -313,12 +366,16 @@ export function normalizeV6Body(body: JSONContent): JSONContent {
     })
     const headerRows =
       content?.findIndex((row) => row.content?.some((cell) => cell.type !== 'tableHeader')) ?? 0
+    const explicit = Array.isArray(node.attrs?.column_widths)
+      ? node.attrs.column_widths.map((value: unknown) => clampV6TableTrack(Number(value)))
+      : []
+    const physicalWidths = explicit.length === widths.length ? explicit : widths.map(clampV6TableTrack)
     return {
       ...node,
       attrs: {
         ...attrs,
-        column_widths: widths,
-        width: widths.reduce((sum, value) => sum + value, 0),
+        column_widths: physicalWidths,
+        width: physicalWidths.reduce((sum, value) => sum + value, 0),
         alignment: node.attrs?.alignment || 'left',
         border_preset: node.attrs?.border_preset || 'all',
         border_color: node.attrs?.border_color || '#D1D5DB',

@@ -3,7 +3,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Fragment } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { CellSelection, TableMap } from '@tiptap/pm/tables'
-import { clampV6RowMinHeight } from './model'
+import { clampV6RowMinHeight, clampV6TableTrack, V6_EMPTY_ROW_MIN_HEIGHT, V6_TABLE_TRACK_MIN } from './model'
 
 export type TableTarget = {
   tablePos: number
@@ -126,6 +126,62 @@ export function setTableRowMinHeight(editor: Editor, target: TableTarget, value:
   return true
 }
 
+// Internal dividers transfer size between their two neighbouring tracks. Only an outer divider
+// changes the table extent; this is intentionally independent of Tiptap's DOM resizer.
+export function resizeTableColumnBoundary(
+  editor: Editor,
+  target: TableTarget,
+  boundary: number,
+  delta: number,
+) {
+  const table = validRectangularTable(editor, target)
+  if (!table || boundary < 0 || boundary > target.columns) return false
+  const widths = physicalColumnWidths(table)
+  if (boundary === 0) widths[0] = clampV6TableTrack(widths[0] - delta)
+  else if (boundary === widths.length) widths[widths.length - 1] = clampV6TableTrack(widths[widths.length - 1] + delta)
+  else {
+    const left = widths[boundary - 1]
+    const right = widths[boundary]
+    const allowed = Math.max(-(left - V6_TABLE_TRACK_MIN), Math.min(delta, right - V6_TABLE_TRACK_MIN))
+    widths[boundary - 1] = Math.round(left + allowed)
+    widths[boundary] = Math.round(right - allowed)
+  }
+  return replaceTable(editor, target, table, children(table), target.row, Math.min(target.column, widths.length - 1), {
+    ...table.attrs,
+    column_widths: widths,
+    width: widths.reduce((sum, width) => sum + width, 0),
+  }, widths)
+}
+
+export function resizeTableRowBoundary(
+  editor: Editor,
+  target: TableTarget,
+  boundary: number,
+  delta: number,
+  minimums: number[] = [],
+) {
+  const table = validRectangularTable(editor, target)
+  if (!table || boundary < 0 || boundary > table.childCount) return false
+  const heights = children(table).map((row, index) =>
+    Math.max(Number(row.attrs.min_height || 0), minimums[index] || V6_EMPTY_ROW_MIN_HEIGHT),
+  )
+  if (boundary === 0) heights[0] = clampV6RowMinHeight(heights[0] - delta)
+  else if (boundary === heights.length) heights[heights.length - 1] = clampV6RowMinHeight(heights[heights.length - 1] + delta)
+  else {
+    const upper = heights[boundary - 1]
+    const lower = heights[boundary]
+    const upperMin = minimums[boundary - 1] || V6_EMPTY_ROW_MIN_HEIGHT
+    const lowerMin = minimums[boundary] || V6_EMPTY_ROW_MIN_HEIGHT
+    const allowed = Math.max(-(upper - upperMin), Math.min(delta, lower - lowerMin))
+    heights[boundary - 1] = Math.round(upper + allowed)
+    heights[boundary] = Math.round(lower - allowed)
+  }
+  const rows = children(table).map((row, index) =>
+    row.type.create({ ...row.attrs, min_height: clampV6RowMinHeight(heights[index]) }, row.content, row.marks),
+  )
+  return replaceTable(editor, target, table, rows, Math.min(target.row, rows.length - 1), target.column)
+}
+
 function validRectangularTable(editor: Editor, target: TableTarget) {
   const table = editor.state.doc.nodeAt(target.tablePos)
   if (!table || table.type.name !== 'table' || target.row < 0 || target.column < 0) return null
@@ -146,8 +202,26 @@ function replaceTable(
   selectedRow: number,
   selectedColumn: number,
   attrs = table.attrs,
+  widths?: number[],
 ) {
-  const next = table.type.create(attrs, Fragment.fromArray(rows), table.marks)
+  const normalizedRows = widths
+    ? rows.map((row) =>
+        row.type.create(
+          row.attrs,
+          Fragment.fromArray(
+            children(row).map((cell, index) =>
+              cell.type.create(
+                { ...cell.attrs, colwidth: [Math.max(48, Math.round((widths[index] || widths.at(-1) || 15000) / 75))] },
+                cell.content,
+                cell.marks,
+              ),
+            ),
+          ),
+          row.marks,
+        ),
+      )
+    : rows
+  const next = table.type.create(attrs, Fragment.fromArray(normalizedRows), table.marks)
   const tr = editor.state.tr
     .replaceWith(target.tablePos, target.tablePos + table.nodeSize, next)
     .setMeta('addToHistory', true)

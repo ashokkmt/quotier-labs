@@ -76,6 +76,10 @@ type TableCell struct {
 	Width         float64
 	Height        float64
 	Padding       float64
+	BorderTop     *documentv6.TableBorderAttrs
+	BorderRight   *documentv6.TableBorderAttrs
+	BorderBottom  *documentv6.TableBorderAttrs
+	BorderLeft    *documentv6.TableBorderAttrs
 }
 
 type Block struct {
@@ -95,6 +99,12 @@ type Block struct {
 	Alt           string
 	OffsetY       float64
 	Layer         string
+	LayoutMode    string
+	CropLeft      float64
+	CropTop       float64
+	CropRight     float64
+	CropBottom    float64
+	Rotation      float64
 	BorderColor   string
 	BorderPreset  string
 	TableFirst    bool
@@ -204,7 +214,7 @@ func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, 
 			} else if attrs.Alignment == "right" {
 				x = pageWidth - right - w
 			}
-			place(Block{ID: attrs.ID, Kind: "image", X: x + float64(attrs.OffsetX)/duPerMM, Width: w, Height: h, TextTop: float64(attrs.SpaceBefore) / duPerMM, ContentHeight: float64(attrs.Height) / duPerMM, Align: attrs.Alignment, Source: attrs.Source, Alt: attrs.Alt, OffsetY: float64(attrs.OffsetY) / duPerMM, Layer: attrs.Layer})
+			place(Block{ID: attrs.ID, Kind: "image", X: x + float64(attrs.OffsetX)/duPerMM, Width: w, Height: h, TextTop: float64(attrs.SpaceBefore) / duPerMM, ContentHeight: float64(attrs.Height) / duPerMM, Align: attrs.Alignment, Source: attrs.Source, Alt: attrs.Alt, OffsetY: float64(attrs.OffsetY) / duPerMM, Layer: attrs.Layer, LayoutMode: defaultString(attrs.LayoutMode, defaultString(attrs.Positioning, "inline")), CropLeft: attrs.CropLeft, CropTop: attrs.CropTop, CropRight: attrs.CropRight, CropBottom: attrs.CropBottom, Rotation: attrs.Rotation})
 		case "table":
 			attrs := decode[documentv6.TableAttrs](node.Attrs)
 			rows, sum := layoutTable(doc, node, attrs, contentWidth, input, metrics, &result.Diagnostics)

@@ -4,6 +4,8 @@ import { v6Extensions } from './extensions'
 import {
   moveTableColumn,
   moveTableRow,
+  resizeTableColumnBoundary,
+  resizeTableRowBoundary,
   selectTableRow,
   selectWholeTable,
   setTableRowMinHeight,
@@ -34,8 +36,8 @@ function createEditor() {
           type: 'table',
           attrs: { id: 'table', column_widths: [7500, 15000] },
           content: [
-            { type: 'tableRow', content: [cell('a', 'A', 100), cell('b', 'B', 200)] },
-            { type: 'tableRow', content: [cell('c', 'C', 100), cell('d', 'D', 200)] },
+            { type: 'tableRow', attrs: { min_height: 3000 }, content: [cell('a', 'A', 100), cell('b', 'B', 200)] },
+            { type: 'tableRow', attrs: { min_height: 3000 }, content: [cell('c', 'C', 100), cell('d', 'D', 200)] },
           ],
         },
       ],
@@ -79,6 +81,26 @@ describe('V6 table commands', () => {
     expect(setTableRowMinHeight(editor, tableTargetAt(editor)!, 999999)).toBe(true)
     json = editor.getJSON()
     expect(json.content[0].content[0].attrs.min_height).toBe(84189)
+  })
+
+  it('keeps outer table size fixed when an internal divider moves', () => {
+    const { editor } = createEditor()
+    const target = tableTargetAt(editor)!
+    expect(resizeTableColumnBoundary(editor, target, 1, 3000)).toBe(true)
+    const table: any = editor.getJSON().content?.[0]
+    expect(table.attrs.column_widths).toEqual([10500, 12000])
+    expect(table.attrs.width).toBe(22500)
+    expect(resizeTableColumnBoundary(editor, tableTargetAt(editor)!, 2, 3000)).toBe(true)
+    expect((editor.getJSON().content?.[0] as any).attrs.width).toBe(25500)
+  })
+
+  it('keeps total table height fixed when an internal row divider moves', () => {
+    const { editor } = createEditor()
+    const target = tableTargetAt(editor)!
+    expect(resizeTableRowBoundary(editor, target, 1, 600, [2400, 2400])).toBe(true)
+    const rows: any[] = (editor.getJSON().content?.[0] as any).content
+    expect(rows.map((row) => row.attrs.min_height)).toEqual([3600, 2400])
+    expect(rows[0].attrs.min_height + rows[1].attrs.min_height).toBe(6000)
   })
 
   it('gives every inserted column an independent physical width', () => {

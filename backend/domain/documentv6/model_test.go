@@ -139,6 +139,19 @@ func TestFloatingImagePositioningIsBoundedAndValidates(t *testing.T) {
 	}
 }
 
+func TestImageCropAndPerCellBordersUseControlledValues(t *testing.T) {
+	doc := NewBlank("body")
+	doc.Assets = []Asset{{Source: "asset:image.png", PixelWidth: 10, PixelHeight: 10}}
+	doc.Body.Content = append(doc.Body.Content, Node{Type: "imageBlock", Attrs: mustJSON(ImageAttrs{ID: "image", Source: "asset:image.png", Width: 1000, Height: 1000, PixelWidth: 10, PixelHeight: 10, LayoutMode: "behind", Positioning: "floating", Layer: "behind", CropLeft: .1, CropRight: .1, Rotation: 15})})
+	if err := Validate(doc); err != nil {
+		t.Fatal(err)
+	}
+	doc.Body.Content[1].Attrs = mustJSON(ImageAttrs{ID: "image", Source: "asset:image.png", Width: 1000, Height: 1000, PixelWidth: 10, PixelHeight: 10, CropLeft: .8, CropRight: .3})
+	if err := Validate(doc); err == nil {
+		t.Fatal("expected invalid crop rejection")
+	}
+}
+
 func TestPhase3RejectsMalformedSpansUnknownFieldsAndUnsafeAttributes(t *testing.T) {
 	baseCell := func(id string) Node {
 		return Node{Type: "tableCell", Attrs: mustJSON(TableCellAttrs{Colspan: 1, Rowspan: 1}), Content: []Node{{Type: "paragraph", Attrs: mustJSON(ParagraphAttrs{ID: id})}}}

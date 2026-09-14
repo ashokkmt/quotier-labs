@@ -68,7 +68,7 @@ func layoutTable(doc *documentv6.Document, node documentv6.Node, attrs documentv
 				}
 			}
 			placements = append(placements, tableCellPlacement{row: rowIndex, column: column, colspan: colspan, rowspan: rowspan, cell: TableCell{
-				Lines: lines, Text: plainText(cellNode), Background: defaultString(cellAttrs.Background, "transparent"), Align: defaultString(cellAttrs.Alignment, "left"), VerticalAlign: defaultString(cellAttrs.VerticalAlignment, "top"), Column: column, Colspan: colspan, Rowspan: rowspan, Width: cellWidth, Padding: cellPadding,
+				Lines: lines, Text: plainText(cellNode), Background: defaultString(cellAttrs.Background, "transparent"), Align: defaultString(cellAttrs.Alignment, "left"), VerticalAlign: defaultString(cellAttrs.VerticalAlignment, "top"), Column: column, Colspan: colspan, Rowspan: rowspan, Width: cellWidth, Padding: cellPadding, BorderTop: cellAttrs.BorderTop, BorderRight: cellAttrs.BorderRight, BorderBottom: cellAttrs.BorderBottom, BorderLeft: cellAttrs.BorderLeft,
 			}})
 			if rowspan > 1 {
 				current := 0.0
