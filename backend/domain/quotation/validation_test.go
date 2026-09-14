@@ -3,13 +3,13 @@ package quotation_test
 import (
 	"encoding/json"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/domain/quotation"
 	"testing"
 )
 
 func TestValidateQuotation(t *testing.T) {
-	valid, _ := json.Marshal(documentmodel.NewBlank("page"))
+	valid, _ := json.Marshal(documentv6.NewBlank("page"))
 	tests := []struct {
 		name    string
 		q       *domain.Quotation

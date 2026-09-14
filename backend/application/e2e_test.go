@@ -11,13 +11,13 @@ import (
 	app_cust "quotierlabs/backend/application/customer"
 	app_quot "quotierlabs/backend/application/quotation"
 	app_tmpl "quotierlabs/backend/application/template"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/sqlite"
 )
 
 func setupDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite_driver.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite_driver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestE2ECriticalPath(t *testing.T) {
 	}
 
 	// 4. Create Template
-	blank, _ := json.Marshal(documentmodel.NewBlank("template-page"))
+	blank, _ := json.Marshal(documentv6.NewBlank("template-page"))
 	tmplDTO := app_tmpl.TemplateCreateDTO{Name: "Standard Template", Layout: string(blank)}
 	tmpl, err := tmplSvc.CreateTemplate(ctx, compID, tmplDTO)
 	if err != nil {
@@ -78,7 +78,7 @@ func TestE2ECriticalPath(t *testing.T) {
 	}
 
 	// 6. Update Quotation
-	updated, _ := json.Marshal(documentmodel.NewBlank("quotation-page"))
+	updated, _ := json.Marshal(documentv6.NewBlank("quotation-page"))
 	upDTO := app_quot.QuotationUpdateDocumentDTO{ID: qDTO.ID, Document: string(updated)}
 	qDTO, err = quotSvc.UpdateQuotationDocument(ctx, compID, upDTO)
 	if err != nil {

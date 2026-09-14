@@ -1,9 +1,14 @@
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MenuItems } from './ContextToolbar'
 
 export type MenuItem = {
   label: string
@@ -14,7 +19,6 @@ export type MenuItem = {
   menu?: MenuItem[]
 }
 
-/** Radix owns collision, keyboard navigation, submenus, dismissal, and focus restoration. */
 export function ContextMenu({
   menu,
   onClose,
@@ -26,22 +30,19 @@ export function ContextMenu({
     <DropdownMenu
       defaultOpen
       onOpenChange={(open) => {
-        // Radix requests close while dispatching an item's select event. Deferring the parent
-        // unmount by one frame guarantees the selected command runs before the menu
-        // disappears (especially in WebView/Chromium builds).
         if (!open) requestAnimationFrame(onClose)
       }}
     >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Canvas context menu"
+          aria-label="Document context menu"
           className="pointer-events-none fixed h-px w-px opacity-0"
           style={{ left: menu.x, top: menu.y }}
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        data-v5-context-menu
+        data-v6-context-menu
         align="start"
         side="bottom"
         sideOffset={0}
@@ -51,5 +52,29 @@ export function ContextMenu({
         <MenuItems items={menu.items} />
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function MenuItems({ items }: { items: MenuItem[] }) {
+  return items.map((item, index) =>
+    item.separator ? (
+      <DropdownMenuSeparator key={`separator-${index}`} />
+    ) : item.menu ? (
+      <DropdownMenuSub key={`${item.label}-${index}`}>
+        <DropdownMenuSubTrigger>{item.label}</DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          <MenuItems items={item.menu} />
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    ) : (
+      <DropdownMenuItem
+        key={`${item.label}-${index}`}
+        className={item.destructive ? 'text-destructive focus:text-destructive' : undefined}
+        onSelect={() => item.run?.()}
+      >
+        {item.label}
+        {item.shortcut && <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>}
+      </DropdownMenuItem>
+    ),
   )
 }

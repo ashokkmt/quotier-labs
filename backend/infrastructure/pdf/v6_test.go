@@ -1,22 +1,68 @@
 package pdf_test
 
 import (
+	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/infrastructure/pdf"
 )
+
+var (
+	streamRe     = regexp.MustCompile(`(?s)stream\r?\n(.*?)\r?\nendstream`)
+	pdfStringRe  = regexp.MustCompile(`\(((?:[^()\\]|\\.)*)\)\s*Tj`)
+	pageObjectRe = regexp.MustCompile(`/Type\s*/Page[^s]`)
+)
+
+func extractPDFText(t *testing.T, data []byte) string {
+	t.Helper()
+	var text strings.Builder
+	for _, match := range streamRe.FindAllSubmatch(data, -1) {
+		reader, err := zlib.NewReader(bytes.NewReader(match[1]))
+		if err != nil {
+			continue
+		}
+		decompressed, err := io.ReadAll(reader)
+		_ = reader.Close()
+		if err != nil {
+			continue
+		}
+		for _, value := range pdfStringRe.FindAllSubmatch(decompressed, -1) {
+			raw := bytes.ReplaceAll(value[1], []byte(`\(`), []byte("("))
+			raw = bytes.ReplaceAll(raw, []byte(`\)`), []byte(")"))
+			if len(raw)%2 == 0 {
+				units := make([]uint16, 0, len(raw)/2)
+				for index := 0; index < len(raw); index += 2 {
+					units = append(units, uint16(raw[index])<<8|uint16(raw[index+1]))
+				}
+				text.WriteString(string(utf16.Decode(units)))
+			} else {
+				text.Write(raw)
+			}
+		}
+	}
+	return text.String()
+}
+
+func pdfPageCount(t *testing.T, data []byte) int {
+	t.Helper()
+	return len(pageObjectRe.FindAll(data, -1))
+}
 
 func TestV6PDFUsesOnlyAvailableManagedImages(t *testing.T) {
 	root := t.TempDir()

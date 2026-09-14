@@ -4,12 +4,12 @@ import (
 	"math"
 	"strconv"
 
-	"quotierlabs/backend/application/layoutir"
+	"quotierlabs/backend/application/documentlayout"
 	"quotierlabs/backend/domain/calculation"
 	"quotierlabs/backend/domain/documentv6"
 )
 
-func layoutLineItems(doc *documentv6.Document, attrs documentv6.LineItemTableAttrs, input ResolveInput, maxWidth float64, metrics layoutir.Metrics) (Block, []Block, []Block) {
+func layoutLineItems(doc *documentv6.Document, attrs documentv6.LineItemTableAttrs, input ResolveInput, maxWidth float64, metrics documentlayout.Metrics) (Block, []Block, []Block) {
 	columns := attrs.Columns
 	if len(columns) == 0 {
 		columns = documentv6.DefaultLineItemColumns()
@@ -82,7 +82,7 @@ func layoutLineItems(doc *documentv6.Document, attrs documentv6.LineItemTableAtt
 	return header, rows, totals
 }
 
-func sizedTextRow(row TableRow, columns []float64, metrics layoutir.Metrics) (TableRow, float64) {
+func sizedTextRow(row TableRow, columns []float64, metrics documentlayout.Metrics) (TableRow, float64) {
 	height := 8.0
 	for index := range row.Cells {
 		row.Cells[index].Column = index

@@ -1,11 +1,10 @@
-// Package documentformat performs the deliberately small V5/V6 schema switch.
+// Package documentformat validates the permanent V6 document schema.
 package documentformat
 
 import (
 	"encoding/json"
 	"fmt"
 
-	"quotierlabs/backend/domain/documentmodel"
 	"quotierlabs/backend/domain/documentv6"
 )
 
@@ -29,8 +28,6 @@ func Validate(raw []byte) (int, error) {
 		return 0, err
 	}
 	switch version {
-	case documentmodel.SchemaVersion:
-		_, err = documentmodel.Parse(raw)
 	case documentv6.SchemaVersion:
 		_, err = documentv6.Parse(raw)
 	default:

@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"quotierlabs/backend/application/template"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	infra_id "quotierlabs/backend/infrastructure/id"
 	infra_sqlite "quotierlabs/backend/infrastructure/sqlite"
 )
@@ -50,11 +50,11 @@ func TestTemplateService(t *testing.T) {
 	idGen := infra_id.NewULIDGenerator()
 	svc := template.NewService(repo, txManager, idGen)
 	ctx := context.Background()
-	blank, _ := json.Marshal(documentmodel.NewBlank("template-page"))
+	blank, _ := json.Marshal(documentv6.NewBlank("template-page"))
 
 	// 1. Create builtin directly
 	builtinID := idGen.Generate()
-	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES (?, 'BuiltinTmpl', 1, ?, 5, 1, ?, ?, 1)", builtinID, string(blank), time.Now(), time.Now())
+	db.Exec("INSERT INTO templates (id, name, is_builtin, layout, schema_version, current_version, created_at, updated_at, version) VALUES (?, 'BuiltinTmpl', 1, ?, 6, 1, ?, ?, 1)", builtinID, string(blank), time.Now(), time.Now())
 
 	// 2. Duplicate Builtin
 	cloned, err := svc.DuplicateTemplate(ctx, "comp-1", builtinID)
@@ -70,11 +70,14 @@ func TestTemplateService(t *testing.T) {
 
 	// 3. Create Custom
 	custom, err := svc.CreateTemplate(ctx, "comp-1", template.TemplateCreateDTO{
-		Name:   "Custom Tmpl",
-		Layout: string(blank),
+		Name: "Custom Tmpl",
 	})
 	if err != nil {
 		t.Fatalf("failed to create custom: %v", err)
+	}
+	var created documentv6.Document
+	if err := json.Unmarshal([]byte(custom.Layout), &created); err != nil || created.SchemaVersion != documentv6.SchemaVersion {
+		t.Fatalf("blank template was not initialized by the backend: %v", err)
 	}
 
 	// 4. Update Custom (should bump version)

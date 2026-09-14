@@ -94,9 +94,7 @@ type Summary struct {
 
 // SupportOptions contains explicit, non-sensitive capability state selected at
 // export time. It deliberately excludes document, customer, and filesystem data.
-type SupportOptions struct {
-	V6EditorEnabled bool `json:"v6_editor_enabled"`
-}
+type SupportOptions struct{}
 
 type TimingSummary struct {
 	Operation       string  `json:"operation"`

@@ -25,10 +25,10 @@ import {
 } from './model'
 import { Toolbar } from './Toolbar'
 import { generateV6DocxPackage } from './docx'
-import { loadDocumentFonts } from '../v5/documentFonts'
+import { loadDocumentFonts } from './documentFonts'
 import { DocumentSettingsPanel } from './DocumentSettingsPanel'
 import { TableControls } from './TableControls'
-import { ContextMenu, type MenuItem } from '../v5/ContextMenu'
+import { ContextMenu, type MenuItem } from './ContextMenu'
 import { ImageInspector } from './ImageInspector'
 
 export type V6EngineHandle = {

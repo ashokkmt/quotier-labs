@@ -9,7 +9,6 @@ import (
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	appconfig "quotierlabs/backend/infrastructure/config"
 	"quotierlabs/backend/infrastructure/diagnostics"
 	"quotierlabs/backend/infrastructure/fileutil"
 )
@@ -17,13 +16,12 @@ import (
 // DiagnosticsHandler is intentionally narrow: the policy and all persistence
 // remain in the diagnostics manager, never in the WebView.
 type DiagnosticsHandler struct {
-	ctx         context.Context
-	manager     *diagnostics.Manager
-	preferences *appconfig.Store
+	ctx     context.Context
+	manager *diagnostics.Manager
 }
 
-func NewDiagnosticsHandler(manager *diagnostics.Manager, preferences *appconfig.Store) *DiagnosticsHandler {
-	return &DiagnosticsHandler{manager: manager, preferences: preferences}
+func NewDiagnosticsHandler(manager *diagnostics.Manager) *DiagnosticsHandler {
+	return &DiagnosticsHandler{manager: manager}
 }
 func (h *DiagnosticsHandler) Startup(ctx context.Context)              { h.ctx = ctx }
 func (h *DiagnosticsHandler) GetDiagnosticsStatus() diagnostics.Status { return h.manager.Status() }
@@ -68,11 +66,7 @@ func (h *DiagnosticsHandler) ExportDiagnosticsRecording(sessionID string) (strin
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 	_ = tmp.Chmod(0600)
-	preferences, preferenceErr := h.preferences.Load()
-	if preferenceErr != nil {
-		return "", fmt.Errorf("load diagnostic capability flags: %w", preferenceErr)
-	}
-	if err := h.manager.ArchiveSession(sessionID, tmp, diagnostics.SupportOptions{V6EditorEnabled: preferences.V6EditorEnabled}); err != nil {
+	if err := h.manager.ArchiveSession(sessionID, tmp); err != nil {
 		_ = tmp.Close()
 		return "", err
 	}

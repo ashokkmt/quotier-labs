@@ -9,10 +9,9 @@ import (
 	"time"
 
 	appdiagnostics "quotierlabs/backend/application/diagnostics"
-	"quotierlabs/backend/application/layoutir"
+	"quotierlabs/backend/application/documentlayout"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentformat"
-	"quotierlabs/backend/domain/documentmodel"
 	"quotierlabs/backend/domain/documentv6"
 	domain_quotation "quotierlabs/backend/domain/quotation"
 )
@@ -29,7 +28,7 @@ type Service struct {
 	seqRepo       domain.NumberSequenceRepository
 	txManager     domain.TxManager
 	idGen         domain.IDGenerator
-	layoutMetrics layoutir.Metrics
+	layoutMetrics documentlayout.Metrics
 	recorder      appdiagnostics.Recorder
 }
 
@@ -41,11 +40,11 @@ func NewService(
 	seqRepo domain.NumberSequenceRepository,
 	txManager domain.TxManager,
 	idGen domain.IDGenerator,
-	layoutMetrics layoutir.Metrics,
+	layoutMetrics documentlayout.Metrics,
 	recorders ...appdiagnostics.Recorder,
 ) *Service {
 	if layoutMetrics == nil {
-		layoutMetrics = layoutir.DefaultMetrics{}
+		layoutMetrics = documentlayout.DefaultMetrics{}
 	}
 	recorder := appdiagnostics.Recorder(appdiagnostics.NopRecorder{})
 	if len(recorders) > 0 && recorders[0] != nil {
@@ -128,12 +127,8 @@ func (s *Service) CreateQuotationDraft(ctx context.Context, companyID string, in
 	if tmpl != nil {
 		docJSON, docVersion, err = s.resolveDraftDocument(tmpl)
 	} else {
-		blank := any(documentmodel.NewBlank(s.idGen.Generate()))
-		docVersion = documentmodel.SchemaVersion
-		if input.UseV6 {
-			blank = documentv6.NewBlank(s.idGen.Generate())
-			docVersion = documentv6.SchemaVersion
-		}
+		blank := documentv6.NewBlank(s.idGen.Generate())
+		docVersion = documentv6.SchemaVersion
 		raw, marshalErr := json.Marshal(blank)
 		docJSON, err = string(raw), marshalErr
 	}

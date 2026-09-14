@@ -2,12 +2,15 @@ package template
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	appdiagnostics "quotierlabs/backend/application/diagnostics"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentformat"
+	"quotierlabs/backend/domain/documentv6"
 	domain_template "quotierlabs/backend/domain/template"
 )
 
@@ -58,7 +61,15 @@ func (s *Service) CreateTemplate(ctx context.Context, companyID string, input Te
 	}
 	defer func() { _ = s.txManager.Rollback(txCtx) }()
 
-	version, err := documentformat.Validate([]byte(input.Layout))
+	layout := input.Layout
+	if strings.TrimSpace(layout) == "" {
+		raw, marshalErr := json.Marshal(documentv6.NewBlank(s.idGen.Generate()))
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		layout = string(raw)
+	}
+	version, err := documentformat.Validate([]byte(layout))
 	if err != nil {
 		return nil, &domain.ValidationError{Field: "layout", Message: "template layout is invalid"}
 	}
@@ -67,7 +78,7 @@ func (s *Service) CreateTemplate(ctx context.Context, companyID string, input Te
 		CompanyID:      &companyID,
 		Name:           input.Name,
 		Description:    input.Description,
-		Layout:         input.Layout,
+		Layout:         layout,
 		SchemaVersion:  version,
 		IsBuiltin:      false,
 		CurrentVersion: 1,

@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/domain/template"
 )
 
 func TestValidateTemplate(t *testing.T) {
-	valid, _ := json.Marshal(documentmodel.NewBlank("page"))
+	valid, _ := json.Marshal(documentv6.NewBlank("page"))
 	tests := []struct {
 		name    string
 		tmpl    domain.Template
@@ -67,9 +67,9 @@ func TestValidateTemplate(t *testing.T) {
 	}
 }
 
-func TestValidateTemplateRejectsInvalidV5Layout(t *testing.T) {
-	tmpl := domain.Template{Name: "V5", Layout: `{"schema_version":5,"root":{"pages":[]},"settings":{"page_size":"A4","orientation":"portrait"}}`}
+func TestValidateTemplateRejectsRetiredLayout(t *testing.T) {
+	tmpl := domain.Template{Name: "Retired", Layout: `{"schema_version":5,"root":{"pages":[]},"settings":{"page_size":"A4","orientation":"portrait"}}`}
 	if err := template.ValidateTemplate(&tmpl); !errors.Is(err, template.ErrInvalidLayout) {
-		t.Fatalf("expected invalid V5 layout, got %v", err)
+		t.Fatalf("expected invalid retired layout, got %v", err)
 	}
 }

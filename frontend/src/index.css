@@ -250,7 +250,7 @@
     font-size: 0.85em;
   }
 
-  .v5-hue-slider::-webkit-slider-thumb {
+  .document-hue-slider::-webkit-slider-thumb {
     width: 18px;
     height: 18px;
     appearance: none;
@@ -262,7 +262,7 @@
       0 1px 4px rgb(0 0 0 / 45%);
   }
 
-  .v5-hue-slider::-moz-range-thumb {
+  .document-hue-slider::-moz-range-thumb {
     width: 14px;
     height: 14px;
     border: 2px solid white;
@@ -376,11 +376,6 @@
 }
 
 @layer components {
-  [data-v5-canvas],
-  [data-v5-canvas] > .v5-page-stack {
-    background-color: hsl(var(--workspace));
-  }
-
   .dark ::-webkit-scrollbar-thumb {
     background-color: hsl(var(--border));
     border: 3px solid hsl(var(--background));

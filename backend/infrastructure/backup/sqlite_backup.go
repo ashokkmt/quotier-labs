@@ -18,6 +18,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
 	backupdomain "quotierlabs/backend/domain/backup"
+	"quotierlabs/backend/domain/documentformat"
 	"quotierlabs/backend/infrastructure/apppaths"
 	"quotierlabs/backend/infrastructure/fileutil"
 )
@@ -209,7 +210,70 @@ func validateArchive(path string) (*backupdomain.ValidationResult, error) {
 			return &backupdomain.ValidationResult{IsValid: false, Error: "backup integrity check failed"}, nil
 		}
 	}
+	if err := validateArchivedDocuments(dbFile); err != nil {
+		return &backupdomain.ValidationResult{IsValid: false, Error: "backup contains unsupported document data"}, nil
+	}
 	return &backupdomain.ValidationResult{IsValid: true, Info: &backupdomain.BackupInfo{Path: path, Size: int64(dbFile.UncompressedSize64), Metadata: metadata}}, nil
+}
+
+func validateArchivedDocuments(file *zip.File) error {
+	tmp, err := os.CreateTemp("", "quotier-backup-validate-*.sqlite3")
+	if err != nil {
+		return err
+	}
+	path := tmp.Name()
+	defer os.Remove(path)
+	reader, err := file.Open()
+	if err != nil {
+		tmp.Close()
+		return err
+	}
+	_, copyErr := io.Copy(tmp, io.LimitReader(reader, maxBackupBytes+1))
+	closeErr := tmp.Close()
+	_ = reader.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return validateStoredDocuments(path)
+}
+
+func validateStoredDocuments(path string) error {
+	db, err := sql.Open("sqlite3", "file:"+path+"?mode=ro")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	for _, source := range []struct{ table, column string }{{"templates", "layout"}, {"quotations", "document"}} {
+		var exists int
+		if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", source.table).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			continue
+		}
+		rows, err := db.Query("SELECT " + source.column + " FROM " + source.table)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var raw string
+			if err := rows.Scan(&raw); err != nil {
+				rows.Close()
+				return err
+			}
+			if _, err := documentformat.Validate([]byte(raw)); err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *SQLiteBackupService) RestoreBackup(ctx context.Context, path, currentDBPath, assetsRoot string) error {
@@ -251,6 +315,9 @@ func (s *SQLiteBackupService) RestoreBackup(ctx context.Context, path, currentDB
 	}
 	if err := sqliteIntegrity(stageDB); err != nil {
 		return fmt.Errorf("restored database failed integrity check: %w", err)
+	}
+	if err := validateStoredDocuments(stageDB); err != nil {
+		return errors.New("backup contains unsupported document data")
 	}
 	sqlDB, err := s.db.DB()
 	if err != nil {

@@ -1,19 +1,19 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { Check, Pipette } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useV5Session } from './store'
-import { hexToHSV, hsvToHex, usedColorsForDocument } from './color'
 import {
-  V5_COLOR_HEX,
-  V5_COLOR_TOKENS,
+  COLOR_HEX,
+  COLOR_TOKENS,
   colorValueToCSS,
+  hexToHSV,
+  hsvToHex,
   isColorToken,
   normalizeColorValue,
-} from './tokens'
+} from './color'
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value))
 
-export type ColorPickerProps = {
+type Props = {
   label: string
   value: string
   disabled?: boolean
@@ -24,12 +24,7 @@ export type ColorPickerProps = {
   onDragStart?: () => void
   onDismissIntent?: () => void
   onChange: (value: string) => void
-}
-
-// V5 keeps this adapter so existing call sites and behavior remain unchanged.
-export function ColorPicker(props: ColorPickerProps) {
-  const { document } = useV5Session()
-  return <ControlledColorPicker {...props} usedColors={usedColorsForDocument(document)} />
+  usedColors?: string[]
 }
 
 export function ControlledColorPicker({
@@ -44,7 +39,7 @@ export function ControlledColorPicker({
   onDismissIntent,
   onChange,
   usedColors = [],
-}: ColorPickerProps & { usedColors?: string[] }) {
+}: Props) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = (next: boolean) => {
@@ -61,18 +56,10 @@ export function ControlledColorPicker({
   const [hexDraft, setHexDraft] = useState<string | null>(null)
   const hex = hexDraft ?? (css === 'transparent' ? '#000000' : css.toUpperCase())
 
-  const beginDragging = () => {
-    dragging.current = true
-    ignoreDragClose.current = false
-    onDragStart?.()
-  }
   const finishDragging = () => {
     dragging.current = false
-    // A captured palette drag can make Radix request a delayed close after pointerup. Consume that
-    // one request. Genuine trigger, outside-pointer, and Escape closes clear this guard first.
     ignoreDragClose.current = true
   }
-
   const commitHex = () => {
     const normalized = normalizeColorValue(hex)
     if (normalized !== 'black' || /^#?0{6}$/i.test(hex)) onChange(normalized)
@@ -81,9 +68,13 @@ export function ControlledColorPicker({
   }
   const updateSV = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
-    const s = clamp((event.clientX - rect.left) / rect.width)
-    const v = clamp(1 - (event.clientY - rect.top) / rect.height)
-    onChange(hsvToHex({ h: hue, s, v }))
+    onChange(
+      hsvToHex({
+        h: hue,
+        s: clamp((event.clientX - rect.left) / rect.width),
+        v: clamp(1 - (event.clientY - rect.top) / rect.height),
+      }),
+    )
   }
   const onPaletteKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 0.1 : 0.02
@@ -113,7 +104,7 @@ export function ControlledColorPicker({
           type="button"
           disabled={disabled}
           aria-label={`${label}: ${visibleHex}`}
-          data-v5-editor-chrome
+          data-v6-editor-chrome
           onPointerDown={() => {
             ignoreDragClose.current = false
             onDismissIntent?.()
@@ -129,7 +120,7 @@ export function ControlledColorPicker({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        data-v5-editor-chrome
+        data-v6-editor-chrome
         align="start"
         collisionPadding={12}
         className="w-72 space-y-3 rounded-xl p-3"
@@ -157,7 +148,9 @@ export function ControlledColorPicker({
             background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hue} 100% 50%))`,
           }}
           onPointerDown={(event) => {
-            beginDragging()
+            dragging.current = true
+            ignoreDragClose.current = false
+            onDragStart?.()
             event.currentTarget.setPointerCapture(event.pointerId)
             updateSV(event)
           }}
@@ -180,14 +173,16 @@ export function ControlledColorPicker({
           min={0}
           max={359}
           value={Math.round(hue)}
-          className="v5-hue-slider h-3 w-full cursor-pointer appearance-none rounded-full bg-[linear-gradient(to_right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)]"
+          className="document-hue-slider h-3 w-full cursor-pointer appearance-none rounded-full bg-[linear-gradient(to_right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)]"
           onChange={(event) => {
             const h = Number(event.target.value)
             setHueDraft(h)
             onChange(hsvToHex({ h, s: current.s, v: current.v }))
           }}
           onPointerDown={() => {
-            beginDragging()
+            dragging.current = true
+            ignoreDragClose.current = false
+            onDragStart?.()
           }}
           onPointerUp={() => {
             setHueDraft(null)
@@ -216,44 +211,28 @@ export function ControlledColorPicker({
           <Pipette className="h-4 w-4 text-muted-foreground" aria-hidden />
         </div>
         {usedColors.length > 0 && (
-          <section aria-label="Used colors" className="space-y-2 border-t pt-3">
-            <p className="text-xs font-medium text-muted-foreground">Used colors</p>
-            <div className="flex flex-wrap gap-2">
-              {usedColors.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Use document color ${color}`}
-                  title={color}
-                  className="relative h-7 w-7 rounded-md border shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  style={{ background: color }}
-                  onClick={() => onChange(color)}
-                >
-                  {visibleHex === color && (
-                    <Check className="absolute inset-1 h-5 w-5 text-white drop-shadow" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </section>
+          <ColorChoices
+            label="Used colors"
+            colors={usedColors}
+            current={visibleHex}
+            onChange={onChange}
+          />
         )}
         <section aria-label="Theme colors" className="space-y-2 border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">Theme colors</p>
           <div className="grid grid-cols-8 gap-2">
-            {V5_COLOR_TOKENS.map((token) => (
+            {COLOR_TOKENS.map((token) => (
               <button
                 key={token}
                 type="button"
-                aria-label={`${label} ${token} ${V5_COLOR_HEX[token]}`}
+                aria-label={`${label} ${token} ${COLOR_HEX[token]}`}
                 title={token}
                 className="relative h-7 w-7 rounded-md border shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                style={{ background: V5_COLOR_HEX[token] }}
+                style={{ background: COLOR_HEX[token] }}
                 onClick={() => onChange(token)}
               >
                 {isColorToken(value) && value === token && (
-                  <Check
-                    className={`absolute inset-1 h-5 w-5 ${token === 'white' ? 'text-black' : 'text-white'}`}
-                  />
+                  <Check className={`absolute inset-1 h-5 w-5 ${token === 'white' ? 'text-black' : 'text-white'}`} />
                 )}
               </button>
             ))}
@@ -272,6 +251,39 @@ export function ControlledColorPicker({
         </section>
       </PopoverContent>
     </Popover>
+  )
+}
+
+function ColorChoices({
+  label,
+  colors,
+  current,
+  onChange,
+}: {
+  label: string
+  colors: string[]
+  current: string
+  onChange: (color: string) => void
+}) {
+  return (
+    <section aria-label={label} className="space-y-2 border-t pt-3">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {colors.map((color) => (
+          <button
+            key={color}
+            type="button"
+            aria-label={`Use document color ${color}`}
+            title={color}
+            className="relative h-7 w-7 rounded-md border shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            style={{ background: color }}
+            onClick={() => onChange(color)}
+          >
+            {current === color && <Check className="absolute inset-1 h-5 w-5 text-white drop-shadow" />}
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 

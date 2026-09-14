@@ -5,11 +5,8 @@ import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { GetTemplate, UpdateTemplate } from '../../../wailsjs/go/wails/TemplateHandler'
 import {
-  V5BuilderEngine,
   V6BuilderEngine,
-  createBlankV5Document,
-  type V5Document,
-  type V5EngineHandle,
+  createBlankV6Document,
   type V6EngineHandle,
   type V6Document,
 } from '../../builder'
@@ -26,7 +23,7 @@ export function TemplateBuilder({
   templateId: string
   onBack: () => void
 }) {
-  const [document, setDocument] = useState<V5Document | V6Document>(() => createBlankV5Document())
+  const [document, setDocument] = useState<V6Document>(() => createBlankV6Document())
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
@@ -34,10 +31,9 @@ export function TemplateBuilder({
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [leaving, setLeaving] = useState(false)
   const [dirty, setDirty] = useState(false)
-  const [v5UndoRedo, setV5UndoRedo] = useState({ canUndo: false, canRedo: false })
+  const [undoRedo, setUndoRedo] = useState({ canUndo: false, canRedo: false })
   const { toast } = useToast()
-  const v5EngineRef = useRef<V5EngineHandle | null>(null)
-  const v6EngineRef = useRef<V6EngineHandle | null>(null)
+  const engineRef = useRef<V6EngineHandle | null>(null)
 
   const { clearRecovery } = useRecovery(templateId, document)
   useNavigationGuard(dirty)
@@ -52,9 +48,9 @@ export function TemplateBuilder({
         if (cancelled) return
         setName(res.name)
         setDescription(res.description || '')
-        const raw = res.layout || JSON.stringify(createBlankV5Document())
+        const raw = res.layout || JSON.stringify(createBlankV6Document())
         const parsed = JSON.parse(raw)
-        if (parsed?.schema_version !== 5 && parsed?.schema_version !== 6) {
+        if (parsed?.schema_version !== 6) {
           throw new Error('This template uses an unsupported document format.')
         }
         if (!cancelled) setDocument(parsed)
@@ -85,29 +81,13 @@ export function TemplateBuilder({
   const persistTemplate = async (payload: typeof autosavePayload) => {
     const docToSave = payload.document
     if (!docToSave) return
-    const v5 = docToSave?.schema_version === 5 ? v5EngineRef.current : null
-    let revision = 0
-    let layout: string
-    if (v5) {
-      const started = v5.beginSave()
-      revision = started.revision
-      layout = started.document
-    } else {
-      layout = JSON.stringify(docToSave)
-    }
-    try {
-      await UpdateTemplate({
-        id: templateId,
-        name: payload.name,
-        description: payload.description,
-        layout,
-      })
-      v5?.acknowledgeSave(revision)
-      clearRecovery()
-    } catch (err) {
-      v5?.failSave()
-      throw err
-    }
+    await UpdateTemplate({
+      id: templateId,
+      name: payload.name,
+      description: payload.description,
+      layout: JSON.stringify(docToSave),
+    })
+    clearRecovery()
   }
   const save = useSerialSave(persistTemplate)
 
@@ -185,37 +165,25 @@ export function TemplateBuilder({
           <div className="hidden sm:block">
             <UndoRedoControls
               onUndo={() => {
-                ;(document.schema_version === 6 ? v6EngineRef.current : v5EngineRef.current)?.undo()
-                setV5UndoRedo({
+                engineRef.current?.undo()
+                setUndoRedo({
                   canUndo:
-                    (document.schema_version === 6
-                      ? v6EngineRef.current
-                      : v5EngineRef.current
-                    )?.canUndo() ?? false,
+                    engineRef.current?.canUndo() ?? false,
                   canRedo:
-                    (document.schema_version === 6
-                      ? v6EngineRef.current
-                      : v5EngineRef.current
-                    )?.canRedo() ?? false,
+                    engineRef.current?.canRedo() ?? false,
                 })
               }}
               onRedo={() => {
-                ;(document.schema_version === 6 ? v6EngineRef.current : v5EngineRef.current)?.redo()
-                setV5UndoRedo({
+                engineRef.current?.redo()
+                setUndoRedo({
                   canUndo:
-                    (document.schema_version === 6
-                      ? v6EngineRef.current
-                      : v5EngineRef.current
-                    )?.canUndo() ?? false,
+                    engineRef.current?.canUndo() ?? false,
                   canRedo:
-                    (document.schema_version === 6
-                      ? v6EngineRef.current
-                      : v5EngineRef.current
-                    )?.canRedo() ?? false,
+                    engineRef.current?.canRedo() ?? false,
                 })
               }}
-              canUndo={v5UndoRedo.canUndo}
-              canRedo={v5UndoRedo.canRedo}
+              canUndo={undoRedo.canUndo}
+              canRedo={undoRedo.canRedo}
             />
           </div>
           <div className="hidden min-w-0 md:block">
@@ -243,42 +211,21 @@ export function TemplateBuilder({
         </div>
       </header>
       <div className="min-h-0 flex-1 relative overflow-hidden">
-        {document.schema_version === 6 ? (
-          <V6BuilderEngine
+        <V6BuilderEngine
             document={document as V6Document}
             exportName={name || 'template'}
             onReady={(handle) => {
-              v6EngineRef.current = handle
+              engineRef.current = handle
             }}
             onChange={(newDoc) => {
               setDocument(newDoc)
               setDirty(true)
-              setV5UndoRedo({
-                canUndo: v6EngineRef.current?.canUndo() ?? false,
-                canRedo: v6EngineRef.current?.canRedo() ?? false,
+              setUndoRedo({
+                canUndo: engineRef.current?.canUndo() ?? false,
+                canRedo: engineRef.current?.canRedo() ?? false,
               })
             }}
           />
-        ) : (
-          <V5BuilderEngine
-            document={document as V5Document}
-            onReady={(handle) => {
-              v5EngineRef.current = handle
-              setV5UndoRedo({
-                canUndo: handle?.canUndo() ?? false,
-                canRedo: handle?.canRedo() ?? false,
-              })
-            }}
-            onChange={(newDoc) => {
-              setDocument(newDoc)
-              setDirty(true)
-              setV5UndoRedo({
-                canUndo: v5EngineRef.current?.canUndo() ?? false,
-                canRedo: v5EngineRef.current?.canRedo() ?? false,
-              })
-            }}
-          />
-        )}
       </div>
     </div>
   )

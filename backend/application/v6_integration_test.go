@@ -5,15 +5,51 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"gorm.io/gorm"
+	app_cust "quotierlabs/backend/application/customer"
 	app_document "quotierlabs/backend/application/document"
 	"quotierlabs/backend/application/flowlayout"
 	app_quot "quotierlabs/backend/application/quotation"
 	app_tmpl "quotierlabs/backend/application/template"
 	"quotierlabs/backend/domain/documentv6"
+	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/pdf"
 	"quotierlabs/backend/infrastructure/sqlite"
 )
+
+func setupV6Env(t *testing.T) (*gorm.DB, *app_quot.Service, *app_tmpl.Service, *app_cust.Service, string) {
+	t.Helper()
+	db := setupDB(t)
+	sqlDB, _ := db.DB()
+	if err := sqlite.RunMigrations(sqlDB); err != nil {
+		t.Fatal(err)
+	}
+	tx := sqlite.NewGormTxManager(db)
+	companies, customers := sqlite.NewCompanyRepository(db), sqlite.NewCustomerRepository(db)
+	templates, quotations := sqlite.NewTemplateRepository(db), sqlite.NewQuotationRepository(db)
+	ids := id.NewULIDGenerator()
+	quotationService := app_quot.NewService(quotations, templates, customers, companies, sqlite.NewNumberSequenceRepository(db), tx, ids, nil)
+	templateService := app_tmpl.NewService(templates, tx, ids)
+	customerService := app_cust.NewService(customers, ids)
+	companyID := "v6-comp"
+	now := time.Now()
+	db.Exec("INSERT INTO companies (id, name, currency, is_active, created_at, updated_at, version) VALUES (?, 'V6 Company', 'INR', 1, ?, ?, 1)", companyID, now, now)
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('v6-seq', ?, 'QUOTATION', 'QT', 'QT-YYYY-NNNN', 0, ?, ?, ?, 1)", companyID, now.Year(), now, now)
+	return db, quotationService, templateService, customerService, companyID
+}
+
+func attachCustomer(t *testing.T, customers *app_cust.Service, quotations *app_quot.Service, ctx context.Context, companyID, quotationID string) {
+	t.Helper()
+	customer, err := customers.CreateCustomer(ctx, companyID, app_cust.CustomerCreateDTO{Name: "V6 Client"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quotations.UpdateQuotationCustomer(ctx, companyID, app_quot.QuotationUpdateCustomerDTO{ID: quotationID, CustomerID: customer.ID}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func v6Fixture(t *testing.T) string {
 	t.Helper()
@@ -53,9 +89,9 @@ func v6Fixture(t *testing.T) string {
 }
 
 func TestV6QuotationLifecycleAndCalculation(t *testing.T) {
-	db, quotSvc, _, custSvc, compID := setupV5Env(t)
+	db, quotSvc, _, custSvc, compID := setupV6Env(t)
 	ctx := context.Background()
-	draft, err := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{UseV6: true})
+	draft, err := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +131,7 @@ func TestV6QuotationLifecycleAndCalculation(t *testing.T) {
 }
 
 func TestV6TemplateDeepCopyAndSaveAsTemplate(t *testing.T) {
-	_, quotSvc, tmplSvc, _, compID := setupV5Env(t)
+	_, quotSvc, tmplSvc, _, compID := setupV6Env(t)
 	ctx := context.Background()
 	layout := v6Fixture(t)
 	template, err := tmplSvc.CreateTemplate(ctx, compID, app_tmpl.TemplateCreateDTO{Name: "V6", Layout: layout})
@@ -131,9 +167,9 @@ func TestV6TemplateDeepCopyAndSaveAsTemplate(t *testing.T) {
 }
 
 func TestV6PreviewExportParityAndPageMap(t *testing.T) {
-	db, quotSvc, _, _, compID := setupV5Env(t)
+	db, quotSvc, _, _, compID := setupV6Env(t)
 	ctx := context.Background()
-	draft, err := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{UseV6: true})
+	draft, err := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{})
 	if err != nil {
 		t.Fatal(err)
 	}

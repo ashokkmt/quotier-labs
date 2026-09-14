@@ -8,7 +8,7 @@ import (
 
 	"quotierlabs/backend/application/document"
 	"quotierlabs/backend/domain"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/infrastructure/pdf"
 )
 
@@ -40,7 +40,7 @@ func (m *mockCustomerRepo) GetByID(ctx context.Context, id, companyID string) (*
 }
 
 func TestGeneratePDFBytes(t *testing.T) {
-	blank, _ := json.Marshal(documentmodel.NewBlank("page"))
+	blank, _ := json.Marshal(documentv6.NewBlank("page"))
 	docService := document.NewService(
 		&mockQuotationRepo{q: &domain.Quotation{ID: "q1", Number: "QT-001", CustomerID: "c1", Document: string(blank)}},
 		&mockCompanyRepo{c: &domain.Company{ID: "co1", Name: "Test Co"}},

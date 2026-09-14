@@ -366,7 +366,6 @@ export namespace config {
 	    theme: string;
 	    density: string;
 	    automatic_updates: boolean;
-	    v6_editor_enabled: boolean;
 	    skipped_version?: string;
 	    last_update_check_utc?: string;
 	    last_observed_update_version?: string;
@@ -383,7 +382,6 @@ export namespace config {
 	        this.theme = source["theme"];
 	        this.density = source["density"];
 	        this.automatic_updates = source["automatic_updates"];
-	        this.v6_editor_enabled = source["v6_editor_enabled"];
 	        this.skipped_version = source["skipped_version"];
 	        this.last_update_check_utc = source["last_update_check_utc"];
 	        this.last_observed_update_version = source["last_observed_update_version"];
@@ -792,7 +790,6 @@ export namespace quotation {
 	export class QuotationCreateDTO {
 	    template_id?: string;
 	    customer_id?: string;
-	    use_v6?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new QuotationCreateDTO(source);
@@ -802,7 +799,6 @@ export namespace quotation {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.template_id = source["template_id"];
 	        this.customer_id = source["customer_id"];
-	        this.use_v6 = source["use_v6"];
 	    }
 	}
 	export class QuotationDTO {

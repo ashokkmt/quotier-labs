@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"quotierlabs/backend/application/layoutir"
+	"quotierlabs/backend/application/documentlayout"
 	"quotierlabs/backend/domain"
 	"quotierlabs/backend/domain/documentv6"
 )
@@ -130,12 +130,12 @@ type ResolveInput struct {
 	Quotation *domain.Quotation
 }
 
-func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, metrics layoutir.Metrics) (*Layout, error) {
+func Resolve(ctx context.Context, doc *documentv6.Document, input ResolveInput, metrics documentlayout.Metrics) (*Layout, error) {
 	if err := documentv6.Validate(doc); err != nil {
 		return nil, err
 	}
 	if metrics == nil {
-		metrics = layoutir.DefaultMetrics{}
+		metrics = documentlayout.DefaultMetrics{}
 	}
 	input = withCalculatedTotals(doc, input)
 	widthDU, heightDU := int64(documentv6.A4WidthDU), int64(documentv6.A4HeightDU)
@@ -312,7 +312,7 @@ func (l *Layout) PageMap(doc *documentv6.Document) PageMap {
 	return PageMap{SchemaVersion: LayoutSchemaVersion, PageWidth: w, PageHeight: h, PageCount: len(l.Pages), Ranges: l.Ranges, Diagnostics: l.Diagnostics}
 }
 
-func storyHeight(doc *documentv6.Document, story *documentv6.Node, width float64, metrics layoutir.Metrics, input ResolveInput) float64 {
+func storyHeight(doc *documentv6.Document, story *documentv6.Node, width float64, metrics documentlayout.Metrics, input ResolveInput) float64 {
 	if story == nil {
 		return 0
 	}
@@ -447,7 +447,7 @@ func flattenBlocks(nodes []documentv6.Node, depth int) []documentv6.Node {
 	return result
 }
 
-func appendStory(doc *documentv6.Document, page *Page, story *documentv6.Node, x, y, width float64, metrics layoutir.Metrics, input ResolveInput, diagnostics *[]Diagnostic, pageNumber int, kind string) {
+func appendStory(doc *documentv6.Document, page *Page, story *documentv6.Node, x, y, width float64, metrics documentlayout.Metrics, input ResolveInput, diagnostics *[]Diagnostic, pageNumber int, kind string) {
 	if story == nil {
 		return
 	}
@@ -498,11 +498,11 @@ func textTableRow(doc *documentv6.Document, styleName string, values []string, b
 	return TableRow{Cells: cells}
 }
 
-func wrapRuns(runs []Run, maxWidth float64, m layoutir.Metrics) []Line {
+func wrapRuns(runs []Run, maxWidth float64, m documentlayout.Metrics) []Line {
 	lines := []Line{{}}
 	width := 0.0
 	for _, run := range runs {
-		style := layoutir.TextStyle{Family: fontKey(run.FontFamily), Bold: run.Bold, Italic: run.Italic}
+		style := documentlayout.TextStyle{Family: fontKey(run.FontFamily), Bold: run.Bold, Italic: run.Italic}
 		chunk := ""
 		for _, r := range run.Text {
 			if r == '\n' {
@@ -537,7 +537,7 @@ func wrapRuns(runs []Run, maxWidth float64, m layoutir.Metrics) []Line {
 	return lines
 }
 
-func tableLinesHeight(lines []Line, metrics layoutir.Metrics) float64 {
+func tableLinesHeight(lines []Line, metrics documentlayout.Metrics) float64 {
 	if len(lines) == 0 {
 		return metrics.LineHeightMM(10)
 	}

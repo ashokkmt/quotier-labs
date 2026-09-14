@@ -9,7 +9,7 @@ import (
 	app_cust "quotierlabs/backend/application/customer"
 	app_quot "quotierlabs/backend/application/quotation"
 	app_tmpl "quotierlabs/backend/application/template"
-	"quotierlabs/backend/domain/documentmodel"
+	"quotierlabs/backend/domain/documentv6"
 	"quotierlabs/backend/infrastructure/id"
 	"quotierlabs/backend/infrastructure/sqlite"
 )
@@ -40,7 +40,7 @@ func TestTemplateIndependence(t *testing.T) {
 
 	cust, _ := custSvc.CreateCustomer(ctx, compID, app_cust.CustomerCreateDTO{Name: "Client A"})
 
-	originalBytes, _ := json.Marshal(documentmodel.NewBlank("template-page"))
+	originalBytes, _ := json.Marshal(documentv6.NewBlank("template-page"))
 	originalLayout := string(originalBytes)
 	tmpl, _ := tmplSvc.CreateTemplate(ctx, compID, app_tmpl.TemplateCreateDTO{Name: "Standard", Layout: originalLayout})
 
@@ -48,7 +48,7 @@ func TestTemplateIndependence(t *testing.T) {
 	qDTO, _ := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{TemplateID: tmpl.ID, CustomerID: cust.ID})
 
 	// 3. Edit Quotation Document
-	newBytes, _ := json.Marshal(documentmodel.NewBlank("quotation-page"))
+	newBytes, _ := json.Marshal(documentv6.NewBlank("quotation-page"))
 	newDoc := string(newBytes)
 	_, err := quotSvc.UpdateQuotationDocument(ctx, compID, app_quot.QuotationUpdateDocumentDTO{ID: qDTO.ID, Document: newDoc})
 	if err != nil {

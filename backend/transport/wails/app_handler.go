@@ -90,14 +90,6 @@ func (h *AppHandler) SetDensity(value string) error {
 	return err
 }
 
-func (h *AppHandler) SetV6EditorEnabled(value bool) error {
-	_, err := h.preferences.Update(func(p *appconfig.Preferences) error {
-		p.V6EditorEnabled = value
-		return nil
-	})
-	return err
-}
-
 func (h *AppHandler) SetAutomaticUpdates(value bool) error {
 	_, err := h.preferences.Update(func(p *appconfig.Preferences) error {
 		p.AutomaticUpdates = value
@@ -175,12 +167,7 @@ func (h *AppHandler) ExportDiagnostics() (string, error) {
 	info, _ := json.MarshalIndent(h.GetAppInfo(), "", "  ")
 	entry, _ := zw.Create("build-info.json")
 	_, _ = entry.Write(info)
-	preferences, preferenceErr := h.preferences.Load()
-	if preferenceErr != nil {
-		_ = tmp.Close()
-		return "", fmt.Errorf("load support capability flags: %w", preferenceErr)
-	}
-	support, marshalErr := supportBundleMetadata(preferences)
+	support, marshalErr := supportBundleMetadata()
 	if marshalErr != nil {
 		_ = tmp.Close()
 		return "", marshalErr
@@ -208,9 +195,8 @@ func (h *AppHandler) ExportDiagnostics() (string, error) {
 	return destination, nil
 }
 
-func supportBundleMetadata(preferences appconfig.Preferences) ([]byte, error) {
+func supportBundleMetadata() ([]byte, error) {
 	return json.MarshalIndent(struct {
-		SchemaVersion int  `json:"schema_version"`
-		V6Enabled     bool `json:"v6_editor_enabled"`
-	}{SchemaVersion: 1, V6Enabled: preferences.V6EditorEnabled}, "", "  ")
+		SchemaVersion int `json:"schema_version"`
+	}{SchemaVersion: 1}, "", "  ")
 }

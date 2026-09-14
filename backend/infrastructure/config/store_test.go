@@ -13,12 +13,11 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 	value.Theme = "dark"
 	value.Density = "compact"
-	value.V6EditorEnabled = true
 	if err := store.Save(value); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.Load()
-	if err != nil || got.Theme != "dark" || got.Density != "compact" || !got.V6EditorEnabled {
+	if err != nil || got.Theme != "dark" || got.Density != "compact" {
 		t.Fatalf("round trip: %#v %v", got, err)
 	}
 }

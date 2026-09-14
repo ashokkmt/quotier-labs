@@ -9,7 +9,6 @@ type DocumentFontAsset = {
 
 let loading: Promise<void> | null = null
 
-/** Loads the same immutable TTF bytes used by the PDF adapter before the editor first paints. */
 export function loadDocumentFonts(): Promise<void> {
   if (loading) return loading
   loading = (async () => {

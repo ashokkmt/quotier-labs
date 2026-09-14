@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"quotierlabs/backend/application/layoutir"
+	"quotierlabs/backend/application/documentlayout"
 	"quotierlabs/backend/domain/documentv6"
 )
 
@@ -13,7 +13,7 @@ type tableCellPlacement struct {
 	cell                          TableCell
 }
 
-func layoutTable(doc *documentv6.Document, node documentv6.Node, attrs documentv6.TableAttrs, maxWidth float64, input ResolveInput, metrics layoutir.Metrics, diagnostics *[]Diagnostic) ([]Block, float64) {
+func layoutTable(doc *documentv6.Document, node documentv6.Node, attrs documentv6.TableAttrs, maxWidth float64, input ResolveInput, metrics documentlayout.Metrics, diagnostics *[]Diagnostic) ([]Block, float64) {
 	columns := make([]float64, len(attrs.ColumnWidths))
 	width := 0.0
 	for index, value := range attrs.ColumnWidths {

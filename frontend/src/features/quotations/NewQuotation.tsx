@@ -4,21 +4,16 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { CreateQuotationDraft } from '../../../wailsjs/go/wails/QuotationHandler'
 import { ListTemplates } from '../../../wailsjs/go/wails/TemplateHandler'
-import { GetPreferences } from '../../../wailsjs/go/wails/AppHandler'
 
 export function NewQuotation() {
   const navigate = useNavigate()
   const [templates, setTemplates] = useState<any[]>([])
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
-  const [v6Enabled, setV6Enabled] = useState(false)
   useEffect(() => {
     ListTemplates()
       .then(setTemplates)
       .catch(() => setError('Could not load templates. Please retry.'))
-    GetPreferences()
-      .then((value) => setV6Enabled(Boolean(value.v6_editor_enabled)))
-      .catch(() => {})
   }, [])
   const create = async (template_id?: string) => {
     setCreating(true)
@@ -26,7 +21,6 @@ export function NewQuotation() {
     try {
       const q = await CreateQuotationDraft({
         template_id: template_id || '',
-        use_v6: !template_id && v6Enabled,
       })
       navigate(`/quotations/${q.id}/edit`)
     } catch {
@@ -52,7 +46,7 @@ export function NewQuotation() {
         <Card className="space-y-3 p-4 sm:p-6">
           <h2 className="font-semibold text-lg">Start From Scratch</h2>
           <p className="text-sm text-muted-foreground">
-            Start with a clean A4 {v6Enabled ? 'document' : 'canvas'} and add quotation text,
+            Start with a clean A4 document and add quotation text,
             tables, and images.
           </p>
           <Button className="w-full sm:w-auto" onClick={() => create()} disabled={creating}>
@@ -68,20 +62,12 @@ export function NewQuotation() {
               <div key={t.id} className="flex items-center justify-between gap-3 border-b py-2">
                 <span className="min-w-0 truncate">
                   {t.name}
-                  {t.schema_version === 6 && (
-                    <span className="ml-2 text-xs text-muted-foreground">V6</span>
-                  )}
                 </span>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => create(t.id)}
-                  disabled={creating || (t.schema_version === 6 && !v6Enabled)}
-                  title={
-                    t.schema_version === 6 && !v6Enabled
-                      ? 'Enable the V6 document editor preview to create a new V6 quotation.'
-                      : undefined
-                  }
+                  disabled={creating}
                 >
                   Use
                 </Button>

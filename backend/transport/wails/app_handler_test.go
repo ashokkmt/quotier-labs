@@ -3,17 +3,15 @@ package wails
 import (
 	"bytes"
 	"testing"
-
-	appconfig "quotierlabs/backend/infrastructure/config"
 )
 
 func TestSupportBundleMetadataContainsOnlyCapabilityState(t *testing.T) {
-	raw, err := supportBundleMetadata(appconfig.Preferences{V6EditorEnabled: true})
+	raw, err := supportBundleMetadata()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(raw, []byte(`"v6_editor_enabled": true`)) {
-		t.Fatalf("missing V6 capability state: %s", raw)
+	if bytes.Contains(raw, []byte("v6_editor_enabled")) {
+		t.Fatalf("obsolete V6 preview flag leaked: %s", raw)
 	}
 	for _, forbidden := range [][]byte{[]byte("document"), []byte("customer"), []byte("path"), []byte("gstin")} {
 		if bytes.Contains(bytes.ToLower(raw), forbidden) {

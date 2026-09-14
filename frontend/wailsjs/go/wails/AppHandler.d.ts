@@ -29,6 +29,4 @@ export function SetDensity(arg1:string):Promise<void>;
 
 export function SetTheme(arg1:string):Promise<void>;
 
-export function SetV6EditorEnabled(arg1:boolean):Promise<void>;
-
 export function Startup(arg1:context.Context):Promise<void>;
