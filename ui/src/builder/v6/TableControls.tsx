@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { Editor } from '@tiptap/react'
+import { CellSelection } from '@tiptap/pm/tables'
 import {
   AlignCenter,
   AlignLeft,
@@ -25,16 +26,18 @@ import {
   moveTableColumn,
   moveTableRow,
   selectTableColumn,
+  selectTableCell,
   selectTableRow,
   resizeTableColumnBoundary,
   resizeTableRowBoundary,
+  setSelectedCellBorder,
   tableTargetAt,
   type TableTarget,
 } from './tableCommands'
 
 type Geometry = {
   target: TableTarget
-  table: HTMLElement
+  table: HTMLTableElement
   row: HTMLTableRowElement
   cell: HTMLTableCellElement
   tableLeft: number
@@ -84,7 +87,7 @@ export function TableControls({
             ? node.closest<HTMLTableCellElement>('td,th')
             : null)
       const row = cellElement?.closest<HTMLTableRowElement>('tr')
-      const table = cellElement?.closest<HTMLElement>('table')
+      const table = cellElement?.closest<HTMLTableElement>('table')
       if (!cellElement || !row || !table) return
       const root = surface.getBoundingClientRect()
       const tableRect = table.getBoundingClientRect()
@@ -174,44 +177,46 @@ export function TableControls({
     else selectColumn()
     editor.chain().focus().setCellAttribute(name, value).run()
   }
-  const startRowResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const startRowResize = (event: React.PointerEvent<HTMLButtonElement>, boundary: number) => {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const startY = event.clientY
-    const boundary = target.row + 1
-    const nextRow = geometry.row.nextElementSibling as HTMLTableRowElement | null
+    const rowIndex = boundary === 0 ? 0 : boundary - 1
+    const resizedRow = geometry.table.rows[rowIndex]
+    if (!resizedRow) return
+    const nextRow = boundary < target.rows ? geometry.table.rows[boundary] : null
     const startHeight = Math.max(
-      Number(geometry.row.dataset.v6MinHeight || 0),
-      Math.round((geometry.row.getBoundingClientRect().height / zoom) * 75),
+      Number(resizedRow.dataset.v6MinHeight || 0),
+      Math.round((resizedRow.getBoundingClientRect().height / zoom) * 75),
     )
-    const contentFloor = rowContentHeight(geometry.row)
+    const contentFloor = rowContentHeight(resizedRow)
     const nextFloor = nextRow ? rowContentHeight(nextRow) : V6_EMPTY_ROW_MIN_HEIGHT
-    let proposed = Math.max(startHeight, contentFloor)
+    const sign = boundary === 0 ? -1 : 1
+    let delta = 0
     let moved = false
     const move = (pointer: PointerEvent) => {
       moved = true
-      proposed = clampV6RowMinHeight(
-        Math.max(contentFloor, startHeight + ((pointer.clientY - startY) / zoom) * 75),
-      )
-      geometry.row.style.height = `${proposed / 75}px`
-      setHeightLabel(`${(proposed / 283.465).toFixed(1)} mm`)
+      delta = ((pointer.clientY - startY) / zoom) * 75
+      const preview = clampV6RowMinHeight(Math.max(contentFloor, startHeight + sign * delta))
+      resizedRow.style.height = `${preview / 75}px`
+      setHeightLabel(`${(preview / 283.465).toFixed(1)} mm`)
       measure(geometry.cell)
     }
     const finish = () => {
       cleanup()
-      geometry.row.style.height = ''
+      resizedRow.style.height = ''
       setHeightLabel('')
       if (moved) {
         const minimums = Array.from({ length: target.rows }, () => V6_EMPTY_ROW_MIN_HEIGHT)
-        minimums[target.row] = contentFloor
-        if (target.row + 1 < target.rows) minimums[target.row + 1] = nextFloor
-        resizeTableRowBoundary(editor, target, boundary, proposed - startHeight, minimums)
+        minimums[rowIndex] = contentFloor
+        if (boundary < target.rows) minimums[boundary] = nextFloor
+        resizeTableRowBoundary(editor, target, boundary, delta, minimums)
       }
       editor.view.focus()
     }
     const cancel = () => {
       cleanup()
-      geometry.row.style.height = ''
+      resizedRow.style.height = ''
       setHeightLabel('')
       measure(geometry.cell)
     }
@@ -224,15 +229,15 @@ export function TableControls({
     window.addEventListener('pointerup', finish, { once: true })
     window.addEventListener('pointercancel', cancel, { once: true })
   }
-  const startColumnResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const startColumnResize = (event: React.PointerEvent<HTMLButtonElement>, boundary: number) => {
     event.preventDefault()
-    const boundary = target.column + 1
     const startX = event.clientX
     const startWidth = geometry.cellWidth * 75
     let delta = 0
     const move = (pointer: PointerEvent) => {
       delta = ((pointer.clientX - startX) / zoom) * 75
-      const preview = boundary === target.columns ? startWidth + delta : startWidth + delta
+      const preview =
+        boundary === 0 || boundary === target.column ? startWidth - delta : startWidth + delta
       geometry.cell.style.width = `${Math.max(48, preview / 75)}px`
       measure(geometry.cell)
     }
@@ -283,7 +288,7 @@ export function TableControls({
           onAlignment={(value) => setAxisCellAttribute('column', 'alignment', value)}
           onBorder={(edge, value) => {
             for (const name of edge === 'all' ? ['top', 'right', 'bottom', 'left'] : [edge])
-              setAxisCellAttribute('column', `border_${name}`, value)
+              setSelectedCellBorder(editor, name as 'top' | 'right' | 'bottom' | 'left', value)
           }}
         />
       </div>
@@ -306,7 +311,7 @@ export function TableControls({
           onAlignment={(value) => setAxisCellAttribute('row', 'alignment', value)}
           onBorder={(edge, value) => {
             for (const name of edge === 'all' ? ['top', 'right', 'bottom', 'left'] : [edge])
-              setAxisCellAttribute('row', `border_${name}`, value)
+              setSelectedCellBorder(editor, name as 'top' | 'right' | 'bottom' | 'left', value)
           }}
         />
       </div>
@@ -344,6 +349,21 @@ export function TableControls({
       >
         <Plus className="h-4 w-4" />
       </Button>
+      <CellFormatMenu editor={editor} target={target} geometry={geometry} />
+      <button
+        type="button"
+        className="pointer-events-auto absolute h-3 cursor-ns-resize rounded border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        style={{ left: geometry.tableLeft, top: geometry.rowTop - 5, width: geometry.tableWidth }}
+        role="slider"
+        aria-label={`Resize row boundary ${target.row}`}
+        onPointerDown={(event) => startRowResize(event, target.row)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            event.preventDefault()
+            resizeByKeyboard(event.key === 'ArrowUp' ? -1 : 1)
+          }
+        }}
+      />
       <button
         type="button"
         className="pointer-events-auto absolute h-3 cursor-ns-resize rounded border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -363,7 +383,7 @@ export function TableControls({
           heightLabel ||
           `${(Math.max(V6_EMPTY_ROW_MIN_HEIGHT, Number(geometry.row.dataset.v6MinHeight || 0)) / 283.465).toFixed(1)} mm minimum`
         }
-        onPointerDown={startRowResize}
+        onPointerDown={(event) => startRowResize(event, target.row + 1)}
         onKeyDown={(event) => {
           if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
             event.preventDefault()
@@ -376,9 +396,24 @@ export function TableControls({
       <button
         type="button"
         className="pointer-events-auto absolute w-3 cursor-ew-resize rounded border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        style={{ left: geometry.cellLeft + geometry.cellWidth - 5, top: geometry.tableTop, height: geometry.tableHeight }}
+        style={{
+          left: geometry.cellLeft - 5,
+          top: geometry.tableTop,
+          height: geometry.tableHeight,
+        }}
+        aria-label={`Resize column boundary ${target.column}`}
+        onPointerDown={(event) => startColumnResize(event, target.column)}
+      />
+      <button
+        type="button"
+        className="pointer-events-auto absolute w-3 cursor-ew-resize rounded border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        style={{
+          left: geometry.cellLeft + geometry.cellWidth - 5,
+          top: geometry.tableTop,
+          height: geometry.tableHeight,
+        }}
         aria-label={`Resize ${target.column === target.columns - 1 ? 'table width' : `columns ${target.column + 1} and ${target.column + 2}`}`}
-        onPointerDown={startColumnResize}
+        onPointerDown={(event) => startColumnResize(event, target.column + 1)}
       />
       {heightLabel && (
         <span
@@ -391,6 +426,119 @@ export function TableControls({
           {heightLabel}
         </span>
       )}
+    </div>
+  )
+}
+
+function CellFormatMenu({
+  editor,
+  target,
+  geometry,
+}: {
+  editor: Editor
+  target: TableTarget
+  geometry: Geometry
+}) {
+  const setAttribute = (name: string, value: unknown) => {
+    editor.chain().focus().setCellAttribute(name, value).run()
+  }
+  return (
+    <div
+      className="pointer-events-auto absolute"
+      style={{ left: geometry.cellLeft + 4, top: geometry.rowTop + 2 }}
+      data-v6-cell-format
+    >
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open && !(editor.state.selection instanceof CellSelection))
+            selectTableCell(editor, target)
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="sm" variant="secondary" className="h-7 px-2 shadow-sm">
+            Cell
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuLabel>Selected cells</DropdownMenuLabel>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Fill</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onSelect={() => setAttribute('background', 'transparent')}>
+                No fill
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setAttribute('background', '#F3F4F6')}>
+                Light gray
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setAttribute('background', '#FEF3C7')}>
+                Light yellow
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setAttribute('background', '#DBEAFE')}>
+                Light blue
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Borders</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
+                <DropdownMenuSub key={edge}>
+                  <DropdownMenuSubTrigger className="capitalize">{edge}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        setSelectedCellBorder(editor, edge, {
+                          color: '#111827',
+                          width: 100,
+                          style: 'solid',
+                        })
+                      }
+                    >
+                      Solid
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        setSelectedCellBorder(editor, edge, {
+                          color: '#2563EB',
+                          width: 100,
+                          style: 'dashed',
+                        })
+                      }
+                    >
+                      Dashed
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        setSelectedCellBorder(editor, edge, {
+                          color: '#6B7280',
+                          width: 100,
+                          style: 'dotted',
+                        })
+                      }
+                    >
+                      Dotted
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        setSelectedCellBorder(editor, edge, {
+                          color: '#111827',
+                          width: 150,
+                          style: 'double',
+                        })
+                      }
+                    >
+                      Double
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSelectedCellBorder(editor, edge, null)}>
+                      Clear
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -481,10 +629,34 @@ function AxisMenu({
               <DropdownMenuSub key={edge}>
                 <DropdownMenuSubTrigger className="capitalize">{edge}</DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#111827', width: 100, style: 'solid' })}>Thin solid</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#2563EB', width: 100, style: 'dashed' })}>Blue dashed</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#6B7280', width: 100, style: 'dotted' })}>Gray dotted</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onBorder(edge, { color: '#111827', width: 150, style: 'double' })}>Double</DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      onBorder(edge, { color: '#111827', width: 100, style: 'solid' })
+                    }
+                  >
+                    Thin solid
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      onBorder(edge, { color: '#2563EB', width: 100, style: 'dashed' })
+                    }
+                  >
+                    Blue dashed
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      onBorder(edge, { color: '#6B7280', width: 100, style: 'dotted' })
+                    }
+                  >
+                    Gray dotted
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      onBorder(edge, { color: '#111827', width: 150, style: 'double' })
+                    }
+                  >
+                    Double
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => onBorder(edge, null)}>Clear</DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

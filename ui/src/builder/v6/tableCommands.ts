@@ -3,7 +3,12 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Fragment } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { CellSelection, TableMap } from '@tiptap/pm/tables'
-import { clampV6RowMinHeight, clampV6TableTrack, V6_EMPTY_ROW_MIN_HEIGHT, V6_TABLE_TRACK_MIN } from './model'
+import {
+  clampV6RowMinHeight,
+  clampV6TableTrack,
+  V6_EMPTY_ROW_MIN_HEIGHT,
+  V6_TABLE_TRACK_MIN,
+} from './model'
 
 export type TableTarget = {
   tablePos: number
@@ -47,6 +52,10 @@ export function selectTableRow(editor: Editor, target: TableTarget) {
   return selectCells(editor, target, target.row, 0, target.row, target.columns - 1)
 }
 
+export function selectTableCell(editor: Editor, target: TableTarget) {
+  return selectCells(editor, target, target.row, target.column, target.row, target.column)
+}
+
 export function selectTableColumn(editor: Editor, target: TableTarget) {
   return selectCells(editor, target, 0, target.column, target.rows - 1, target.column)
 }
@@ -57,6 +66,59 @@ export function selectWholeTable(editor: Editor, target: TableTarget) {
   editor.view.dispatch(
     editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, target.tablePos)),
   )
+  return true
+}
+
+export function setSelectedCellBorder(
+  editor: Editor,
+  side: 'top' | 'right' | 'bottom' | 'left',
+  value: unknown,
+) {
+  const target = tableTargetAt(editor)
+  const table = target && editor.state.doc.nodeAt(target.tablePos)
+  if (!target || !table || table.type.name !== 'table') return false
+  const map = TableMap.get(table)
+  const selection = editor.state.selection
+  const rect =
+    selection instanceof CellSelection
+      ? map.rectBetween(
+          selection.$anchorCell.pos - target.tablePos - 1,
+          selection.$headCell.pos - target.tablePos - 1,
+        )
+      : { top: target.row, bottom: target.row + 1, left: target.column, right: target.column + 1 }
+  const neighborAttributes = {
+    top: { rowDelta: -1, columnDelta: 0, opposite: 'border_bottom' },
+    right: { rowDelta: 0, columnDelta: 1, opposite: 'border_left' },
+    bottom: { rowDelta: 1, columnDelta: 0, opposite: 'border_top' },
+    left: { rowDelta: 0, columnDelta: -1, opposite: 'border_right' },
+  } as const
+  const neighbor = neighborAttributes[side]
+  const updates = new Map<number, Record<string, unknown>>()
+  const includeCell = (row: number, column: number, attr: string, attrValue: unknown) => {
+    if (row < 0 || row >= map.height || column < 0 || column >= map.width) return
+    const offset = map.map[row * map.width + column]
+    const position = target.tablePos + 1 + offset
+    const node = editor.state.doc.nodeAt(position)
+    if (!node || !['tableCell', 'tableHeader'].includes(node.type.name)) return
+    updates.set(position, { ...(updates.get(position) ?? node.attrs), [attr]: attrValue })
+  }
+  const selected = new Set<number>()
+  for (let row = rect.top; row < rect.bottom; row++) {
+    for (let column = rect.left; column < rect.right; column++) {
+      const offset = map.map[row * map.width + column]
+      const position = target.tablePos + 1 + offset
+      if (selected.has(position)) continue
+      selected.add(position)
+      includeCell(row, column, `border_${side}`, value)
+      includeCell(row + neighbor.rowDelta, column + neighbor.columnDelta, neighbor.opposite, value)
+    }
+  }
+  if (!updates.size) return false
+  let tr = editor.state.tr
+  for (const [position, attrs] of [...updates.entries()].sort((a, b) => b[0] - a[0])) {
+    tr = tr.setNodeMarkup(position, undefined, attrs)
+  }
+  editor.view.dispatch(tr.scrollIntoView())
   return true
 }
 
@@ -138,19 +200,32 @@ export function resizeTableColumnBoundary(
   if (!table || boundary < 0 || boundary > target.columns) return false
   const widths = physicalColumnWidths(table)
   if (boundary === 0) widths[0] = clampV6TableTrack(widths[0] - delta)
-  else if (boundary === widths.length) widths[widths.length - 1] = clampV6TableTrack(widths[widths.length - 1] + delta)
+  else if (boundary === widths.length)
+    widths[widths.length - 1] = clampV6TableTrack(widths[widths.length - 1] + delta)
   else {
     const left = widths[boundary - 1]
     const right = widths[boundary]
-    const allowed = Math.max(-(left - V6_TABLE_TRACK_MIN), Math.min(delta, right - V6_TABLE_TRACK_MIN))
+    const allowed = Math.max(
+      -(left - V6_TABLE_TRACK_MIN),
+      Math.min(delta, right - V6_TABLE_TRACK_MIN),
+    )
     widths[boundary - 1] = Math.round(left + allowed)
     widths[boundary] = Math.round(right - allowed)
   }
-  return replaceTable(editor, target, table, children(table), target.row, Math.min(target.column, widths.length - 1), {
-    ...table.attrs,
-    column_widths: widths,
-    width: widths.reduce((sum, width) => sum + width, 0),
-  }, widths)
+  return replaceTable(
+    editor,
+    target,
+    table,
+    children(table),
+    target.row,
+    Math.min(target.column, widths.length - 1),
+    {
+      ...table.attrs,
+      column_widths: widths,
+      width: widths.reduce((sum, width) => sum + width, 0),
+    },
+    widths,
+  )
 }
 
 export function resizeTableRowBoundary(
@@ -166,7 +241,8 @@ export function resizeTableRowBoundary(
     Math.max(Number(row.attrs.min_height || 0), minimums[index] || V6_EMPTY_ROW_MIN_HEIGHT),
   )
   if (boundary === 0) heights[0] = clampV6RowMinHeight(heights[0] - delta)
-  else if (boundary === heights.length) heights[heights.length - 1] = clampV6RowMinHeight(heights[heights.length - 1] + delta)
+  else if (boundary === heights.length)
+    heights[heights.length - 1] = clampV6RowMinHeight(heights[heights.length - 1] + delta)
   else {
     const upper = heights[boundary - 1]
     const lower = heights[boundary]
@@ -177,9 +253,20 @@ export function resizeTableRowBoundary(
     heights[boundary] = Math.round(lower - allowed)
   }
   const rows = children(table).map((row, index) =>
-    row.type.create({ ...row.attrs, min_height: clampV6RowMinHeight(heights[index]) }, row.content, row.marks),
+    row.type.create(
+      { ...row.attrs, min_height: clampV6RowMinHeight(heights[index]) },
+      row.content,
+      row.marks,
+    ),
   )
-  return replaceTable(editor, target, table, rows, Math.min(target.row, rows.length - 1), target.column)
+  return replaceTable(
+    editor,
+    target,
+    table,
+    rows,
+    Math.min(target.row, rows.length - 1),
+    target.column,
+  )
 }
 
 function validRectangularTable(editor: Editor, target: TableTarget) {
@@ -211,7 +298,12 @@ function replaceTable(
           Fragment.fromArray(
             children(row).map((cell, index) =>
               cell.type.create(
-                { ...cell.attrs, colwidth: [Math.max(48, Math.round((widths[index] || widths.at(-1) || 15000) / 75))] },
+                {
+                  ...cell.attrs,
+                  colwidth: [
+                    Math.max(48, Math.round((widths[index] || widths.at(-1) || 15000) / 75)),
+                  ],
+                },
                 cell.content,
                 cell.marks,
               ),
