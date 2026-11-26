@@ -7,7 +7,9 @@ import {
   resizeTableColumnBoundary,
   resizeTableRowBoundary,
   selectTableRow,
+  selectTableCell,
   selectWholeTable,
+  setSelectedCellBorder,
   setTableRowMinHeight,
   tableTargetAt,
 } from './tableCommands'
@@ -36,8 +38,16 @@ function createEditor() {
           type: 'table',
           attrs: { id: 'table', column_widths: [7500, 15000] },
           content: [
-            { type: 'tableRow', attrs: { min_height: 3000 }, content: [cell('a', 'A', 100), cell('b', 'B', 200)] },
-            { type: 'tableRow', attrs: { min_height: 3000 }, content: [cell('c', 'C', 100), cell('d', 'D', 200)] },
+            {
+              type: 'tableRow',
+              attrs: { min_height: 3000 },
+              content: [cell('a', 'A', 100), cell('b', 'B', 200)],
+            },
+            {
+              type: 'tableRow',
+              attrs: { min_height: 3000 },
+              content: [cell('c', 'C', 100), cell('d', 'D', 200)],
+            },
           ],
         },
       ],
@@ -94,6 +104,15 @@ describe('V6 table commands', () => {
     expect((editor.getJSON().content?.[0] as any).attrs.width).toBe(25500)
   })
 
+  it('changes table width only when an outer edge moves', () => {
+    const { editor } = createEditor()
+    const target = tableTargetAt(editor)!
+    expect(resizeTableColumnBoundary(editor, target, 0, 3000)).toBe(true)
+    const table: any = editor.getJSON().content?.[0]
+    expect(table.attrs.column_widths).toEqual([4500, 15000])
+    expect(table.attrs.width).toBe(19500)
+  })
+
   it('keeps total table height fixed when an internal row divider moves', () => {
     const { editor } = createEditor()
     const target = tableTargetAt(editor)!
@@ -101,6 +120,30 @@ describe('V6 table commands', () => {
     const rows: any[] = (editor.getJSON().content?.[0] as any).content
     expect(rows.map((row) => row.attrs.min_height)).toEqual([3600, 2400])
     expect(rows[0].attrs.min_height + rows[1].attrs.min_height).toBe(6000)
+  })
+
+  it('resizes the first and last row at the outer table edges', () => {
+    const { editor } = createEditor()
+    const target = tableTargetAt(editor)!
+    expect(resizeTableRowBoundary(editor, target, 0, 600, [2400, 2400])).toBe(true)
+    expect(
+      (editor.getJSON().content?.[0] as any).content.map((row: any) => row.attrs.min_height),
+    ).toEqual([2400, 3000])
+    expect(resizeTableRowBoundary(editor, tableTargetAt(editor)!, 2, 600, [2400, 2400])).toBe(true)
+    expect(
+      (editor.getJSON().content?.[0] as any).content.map((row: any) => row.attrs.min_height),
+    ).toEqual([2400, 3600])
+  })
+
+  it('writes a shared border to both cells meeting at the selected edge', () => {
+    const { editor } = createEditor()
+    const target = tableTargetAt(editor)!
+    expect(selectTableCell(editor, target)).toBe(true)
+    const border = { color: '#2563EB', width: 100, style: 'dashed' }
+    expect(setSelectedCellBorder(editor, 'right', border)).toBe(true)
+    const cells: any[] = (editor.getJSON().content?.[0] as any).content[0].content
+    expect(cells[0].attrs.border_right).toEqual(border)
+    expect(cells[1].attrs.border_left).toEqual(border)
   })
 
   it('gives every inserted column an independent physical width', () => {

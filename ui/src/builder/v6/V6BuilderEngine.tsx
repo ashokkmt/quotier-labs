@@ -192,12 +192,15 @@ export function V6BuilderEngine({
   useEffect(() => {
     if (!editor || !surfaceRef.current) return
     const nodes = surfaceRef.current.querySelectorAll<HTMLElement>('[data-v6-node-id]')
-    nodes.forEach((node) => { node.style.marginBottom = '' })
+    nodes.forEach((node) => {
+      node.style.marginBottom = ''
+    })
     if (!pageMap || pageMap.pageCount < 2) return
     const byPage = new Map<number, { nodeId: string; y: number; height: number }>()
     for (const range of pageMap.ranges) {
       const current = byPage.get(range.page)
-      if (!current || range.y + range.height > current.y + current.height) byPage.set(range.page, range)
+      if (!current || range.y + range.height > current.y + current.height)
+        byPage.set(range.page, range)
     }
     for (const [page, range] of byPage) {
       if (page >= pageMap.pageCount) continue
@@ -419,7 +422,11 @@ export function V6BuilderEngine({
           </div>
         </div>
         {imageSelected && (
-          <ImageInspector editor={editor} onReplace={() => void selectManagedImage(true)} />
+          <ImageInspector
+            key={String(editor.getAttributes('imageBlock').id || '')}
+            editor={editor}
+            onReplace={() => void selectManagedImage(true)}
+          />
         )}
       </div>
     </div>
