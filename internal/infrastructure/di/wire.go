@@ -1,0 +1,162 @@
+//go:build wireinject
+// +build wireinject
+
+package di
+
+import (
+	"github.com/google/wire"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
+	backup_app "quotierlabs/internal/application/backup"
+	"quotierlabs/internal/application/company"
+	"quotierlabs/internal/application/customer"
+	appdiagnostics "quotierlabs/internal/application/diagnostics"
+	"quotierlabs/internal/application/document"
+	"quotierlabs/internal/application/onboarding"
+	"quotierlabs/internal/application/quotation"
+	"quotierlabs/internal/application/template"
+	update_app "quotierlabs/internal/application/update"
+	"quotierlabs/internal/domain"
+	"quotierlabs/internal/infrastructure/appidentity"
+	"quotierlabs/internal/infrastructure/apppaths"
+	backup_infra "quotierlabs/internal/infrastructure/backup"
+	appconfig "quotierlabs/internal/infrastructure/config"
+	"quotierlabs/internal/infrastructure/diagnostics"
+	"quotierlabs/internal/infrastructure/export"
+	"quotierlabs/internal/infrastructure/id"
+	csvimport "quotierlabs/internal/infrastructure/import"
+	"quotierlabs/internal/infrastructure/legacydata"
+	"quotierlabs/internal/infrastructure/logging"
+	os_infra "quotierlabs/internal/infrastructure/os"
+	"quotierlabs/internal/infrastructure/pdf"
+	"quotierlabs/internal/infrastructure/recovery"
+	"quotierlabs/internal/infrastructure/sqlite"
+	"quotierlabs/internal/transport/wails"
+)
+
+func ProvideDB(paths apppaths.Paths) (*gorm.DB, error) {
+	return sqlite.NewDB(paths.DBPath())
+}
+
+func ProvideCurrentDBPath(paths apppaths.Paths) string {
+	return paths.DBPath()
+}
+
+func ProvideSchemaVersion() (int64, error) { return sqlite.TargetSchemaVersion() }
+
+func ProvidePreferences(paths apppaths.Paths) *appconfig.Store {
+	return appconfig.NewStore(paths.SettingsPath())
+}
+func ProvideRecovery(paths apppaths.Paths) *recovery.Store {
+	return recovery.NewStore(paths.RecoveryRoot())
+}
+
+func ProvidePDFGenerator(paths apppaths.Paths, recorders []appdiagnostics.Recorder) document.PDFGenerator {
+	return pdf.NewGeneratorWithAssetRoot(paths.AssetsRoot(), recorders...)
+}
+
+// ProvideRecorder adapts the infrastructure diagnostics manager to the
+// application-facing Recorder boundary consumed by the application services.
+func ProvideRecorder(manager *diagnostics.Manager) []appdiagnostics.Recorder {
+	return []appdiagnostics.Recorder{manager}
+}
+
+var InfrastructureSet = wire.NewSet(
+	id.NewULIDGenerator,
+	logging.NewSink,
+	logging.NewLogger,
+	diagnostics.NewManager,
+	ProvidePreferences,
+	ProvideRecovery,
+	ProvideDB,
+	ProvideCurrentDBPath,
+	ProvideSchemaVersion,
+	legacydata.NewService,
+	sqlite.NewGormTxManager,
+	sqlite.NewCompanyRepository,
+	sqlite.NewCustomerRepository,
+	sqlite.NewTemplateRepository,
+	sqlite.NewQuotationRepository,
+	sqlite.NewNumberSequenceRepository,
+	sqlite.NewSettingsRepository,
+	ProvidePDFGenerator,
+	pdf.NewLayoutMetrics,
+	os_infra.NewPrintService,
+	os_infra.NewShareService,
+	backup_infra.NewSQLiteBackupService,
+	wire.Bind(new(backup_app.BackupRepo), new(*backup_infra.SQLiteBackupService)),
+	ProvideRecorder,
+	export.NewCSVExportService,
+	csvimport.NewCSVImportService,
+	wire.Bind(new(document.PrintService), new(*os_infra.PrintService)),
+	wire.Bind(new(document.ShareService), new(*os_infra.ShareService)),
+)
+
+var ApplicationSet = wire.NewSet(
+	company.NewService,
+	onboarding.NewService,
+	customer.NewService,
+	template.NewService,
+	quotation.NewService,
+	document.NewService,
+	document.NewExportService,
+	backup_app.NewService,
+	backup_app.NewAutoBackupManager,
+	update_app.NewService,
+)
+
+var TransportSet = wire.NewSet(
+	wails.NewAppHandler,
+	wails.NewDiagnosticsHandler,
+	wails.NewCompanyHandler,
+	wails.NewCustomerHandler,
+	wails.NewTemplateHandler,
+	wails.NewQuotationHandler,
+	wails.NewDocumentHandler,
+	wails.NewExportHandler,
+	wails.NewBackupHandler,
+	wails.NewUpdateHandler,
+	wails.NewLegacyHandler,
+)
+
+type App struct {
+	Logger      *zap.Logger
+	LogSink     *logging.Sink
+	IDGenerator domain.IDGenerator
+	TxManager   domain.TxManager
+	Companies   domain.CompanyRepository
+	Customers   domain.CustomerRepository
+	Templates   domain.TemplateRepository
+	Quotations  domain.QuotationRepository
+	Sequences   domain.NumberSequenceRepository
+
+	CompanyService     *company.Service
+	OnboardService     *onboarding.Service
+	AppHandler         *wails.AppHandler
+	Diagnostics        *diagnostics.Manager
+	DiagnosticsHandler *wails.DiagnosticsHandler
+	CompanyHandler     *wails.CompanyHandler
+	CustomerHandler    *wails.CustomerHandler
+	TemplateHandler    *wails.TemplateHandler
+	QuotationHandler   *wails.QuotationHandler
+	DocumentHandler    *wails.DocumentHandler
+	ExportHandler      *wails.ExportHandler
+	BackupHandler      *wails.BackupHandler
+	AutoBackup         *backup_app.AutoBackupManager
+	UpdateHandler      *wails.UpdateHandler
+	LegacyHandler      *wails.LegacyHandler
+	DB                 *gorm.DB
+	Paths              apppaths.Paths
+	Build              appidentity.BuildInfo
+}
+
+func InitializeApp(paths apppaths.Paths, build appidentity.BuildInfo) (*App, error) {
+	wire.Build(
+		InfrastructureSet,
+		ApplicationSet,
+		TransportSet,
+		wire.Struct(new(App), "*"),
+	)
+	return nil, nil
+}

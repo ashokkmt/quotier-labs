@@ -1,0 +1,67 @@
+package application_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"encoding/json"
+	app_cust "quotierlabs/internal/application/customer"
+	app_quot "quotierlabs/internal/application/quotation"
+	app_tmpl "quotierlabs/internal/application/template"
+	"quotierlabs/internal/domain/documentv6"
+	"quotierlabs/internal/infrastructure/id"
+	"quotierlabs/internal/infrastructure/sqlite"
+)
+
+func TestTemplateIndependence(t *testing.T) {
+	db := setupDB(t)
+	sqlDB, _ := db.DB()
+	_ = sqlite.RunMigrations(sqlDB)
+
+	txManager := sqlite.NewGormTxManager(db)
+	compRepo := sqlite.NewCompanyRepository(db)
+	custRepo := sqlite.NewCustomerRepository(db)
+	tmplRepo := sqlite.NewTemplateRepository(db)
+	quotRepo := sqlite.NewQuotationRepository(db)
+	seqRepo := sqlite.NewNumberSequenceRepository(db)
+	idGen := id.NewULIDGenerator()
+
+	custSvc := app_cust.NewService(custRepo, idGen)
+	tmplSvc := app_tmpl.NewService(tmplRepo, txManager, idGen)
+	quotSvc := app_quot.NewService(quotRepo, tmplRepo, custRepo, compRepo, seqRepo, txManager, idGen, nil)
+
+	ctx := context.Background()
+
+	// 1. Setup
+	compID := "comp-1"
+	db.Exec("INSERT INTO companies (id, name, currency, is_active, created_at, updated_at, version) VALUES (?, 'My Company', 'INR', 1, ?, ?, 1)", compID, time.Now(), time.Now())
+	db.Exec("INSERT INTO number_sequences (id, company_id, document_type, prefix, pattern, current_value, year, created_at, updated_at, version) VALUES ('seq-1', 'comp-1', 'QUOTATION', 'QT-', '%04d', 0, ?, ?, ?, 1)", time.Now().Year(), time.Now(), time.Now())
+
+	cust, _ := custSvc.CreateCustomer(ctx, compID, app_cust.CustomerCreateDTO{Name: "Client A"})
+
+	originalBytes, _ := json.Marshal(documentv6.NewBlank("template-page"))
+	originalLayout := string(originalBytes)
+	tmpl, _ := tmplSvc.CreateTemplate(ctx, compID, app_tmpl.TemplateCreateDTO{Name: "Standard", Layout: originalLayout})
+
+	// 2. Create Quotation
+	qDTO, _ := quotSvc.CreateQuotationDraft(ctx, compID, app_quot.QuotationCreateDTO{TemplateID: tmpl.ID, CustomerID: cust.ID})
+
+	// 3. Edit Quotation Document
+	newBytes, _ := json.Marshal(documentv6.NewBlank("quotation-page"))
+	newDoc := string(newBytes)
+	_, err := quotSvc.UpdateQuotationDocument(ctx, compID, app_quot.QuotationUpdateDocumentDTO{ID: qDTO.ID, Document: newDoc})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	// 4. Verify Template is unchanged
+	fetchedTmpl, err := tmplSvc.GetTemplate(ctx, compID, tmpl.ID)
+	if err != nil {
+		t.Fatalf("GetTemplate failed: %v", err)
+	}
+
+	if fetchedTmpl.Layout != originalLayout {
+		t.Fatalf("Template layout was modified! Expected %s, got %s", originalLayout, fetchedTmpl.Layout)
+	}
+}

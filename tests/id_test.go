@@ -2,7 +2,7 @@ package tests
 
 import (
 	"testing"
-	"quotierlabs/backend/infrastructure/id"
+	"quotierlabs/internal/infrastructure/id"
 )
 
 func TestIDGeneration(t *testing.T) {

@@ -12,7 +12,7 @@ command -v makensis >/dev/null || { echo "NSIS is required and makensis must be 
 
 echo "Testing tagged source for $QL_VERSION..."
 (cd "$QL_ROOT" && go test ./...)
-(cd "$QL_ROOT/frontend" && npm ci && npm run test -- --run)
+(cd "$QL_ROOT/ui" && npm ci && npm run test -- --run)
 
 export QL_VERSION QL_PLATFORM_VERSION QL_APP_ID QL_NAME
 export QL_METADATA_VERSION="$QL_WINDOWS_VERSION"

@@ -16,12 +16,12 @@ Quotier Labs is a high-performance, offline-first desktop application designed f
 │   └── desktop/           # Wails application entry point and build configurations
 │       ├── main.go        # App bootstrap and Wails integration
 │       └── build/         # Wails target output (App icons, compiled binaries)
-├── backend/               # Go backend adhering to Clean Architecture
+├── internal/               # Go backend adhering to Clean Architecture
 │   ├── application/       # Application logic, use cases, orchestrations, and DTOs
 │   ├── domain/            # Core entities, value objects, domain logic, and repo interfaces
 │   ├── infrastructure/    # Concrete repository implementations (SQLite), PDF gen, CSV IO
 │   └── transport/wails/   # Transport boundary mappings (Wails handlers for the frontend)
-├── frontend/              # React frontend
+├── ui/              # React frontend
 │   ├── src/
 │   │   ├── components/    # Reusable shadcn/ui and custom primitives
 │   │   ├── features/      # Feature-based module grouping (e.g., quotations, customers, templates)
@@ -73,7 +73,7 @@ This derives a development version from the nearest Git tag, injects BuildInfo, 
 
 Use `make dev-open-data` to inspect it. Use `make dev-reset` for a confirmed, marker-checked reset, or `CONFIRM=1 make dev-reset` in automation. These commands never touch installed beta or production data. Do not run `wails dev` directly: the app deliberately requires the explicit development profile/root.
 
-The Phase 1 document editor is opt-in while V5 remains available. Start with `make dev`, then enable **Settings → Document editor preview**. For a clean builder-design test run:
+The V6 document editor is the permanent editor. Start the desktop app with `make dev`. For a clean local test run:
 
 ```bash
 CONFIRM=1 make dev-reset
@@ -98,7 +98,7 @@ make perf-size                 # after a local build has produced build/bin
 ```
 
 ### Code Generation & Bindings
-If you change any exported Go structs, DTOs, or Wails Handlers (`backend/transport/wails`), run a build or dev loop to regenerate the TypeScript bindings:
+If you change any exported Go structs, DTOs, or Wails Handlers (`internal/transport/wails`), run a build or dev loop to regenerate the TypeScript bindings:
 ```bash
 cd apps/desktop
 wails generate module

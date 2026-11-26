@@ -11,11 +11,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	winoptions "github.com/wailsapp/wails/v2/pkg/options/windows"
 	"go.uber.org/zap"
-	"quotierlabs/backend/infrastructure/appidentity"
-	"quotierlabs/backend/infrastructure/apppaths"
-	"quotierlabs/backend/infrastructure/di"
-	"quotierlabs/backend/infrastructure/lifecycle"
-	"quotierlabs/frontend"
+	"quotierlabs/internal/infrastructure/appidentity"
+	"quotierlabs/internal/infrastructure/apppaths"
+	"quotierlabs/internal/infrastructure/di"
+	"quotierlabs/internal/infrastructure/lifecycle"
+	"quotierlabs/ui"
 )
 
 type DesktopApp struct {
