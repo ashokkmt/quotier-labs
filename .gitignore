@@ -18,9 +18,9 @@ go.work.sum
 # Dependency directories
 vendor/
 node_modules/
-frontend/node_modules/
+ui/node_modules/
 dist/
-frontend/dist/
+ui/dist/
 build/
 apps/desktop/build/bin/
 !apps/desktop/build/

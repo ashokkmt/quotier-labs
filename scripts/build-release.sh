@@ -6,7 +6,7 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/build-info.sh"
 
 echo "Testing exact tagged source for $QL_VERSION..."
 (cd "$QL_ROOT" && go test -race ./...)
-(cd "$QL_ROOT/frontend" && npm ci && npm run test && npm run build)
+(cd "$QL_ROOT/ui" && npm ci && npm run test && npm run build)
 mkdir -p "$QL_ROOT/release-artifacts"
 
 case "$(uname -s)" in

@@ -47,12 +47,12 @@ QL_APP_ID="com.quotierlabs.QuotierLabs"
 if [[ "$QL_CHANNEL" == "beta" ]]; then QL_NAME="Quotier Labs Beta"; QL_APP_ID="${QL_APP_ID}.Beta"; fi
 if [[ "$QL_CHANNEL" == "development" ]]; then QL_NAME="Quotier Labs Dev"; QL_APP_ID="${QL_APP_ID}.Dev"; fi
 
-QL_LDFLAGS="-X quotierlabs/backend/infrastructure/appidentity.Version=${QL_VERSION} -X quotierlabs/backend/infrastructure/appidentity.GitTag=${QL_TAG} -X quotierlabs/backend/infrastructure/appidentity.GitCommit=${QL_COMMIT} -X quotierlabs/backend/infrastructure/appidentity.BuildTime=${QL_BUILD_TIME} -X quotierlabs/backend/infrastructure/appidentity.Channel=${QL_CHANNEL}"
+QL_LDFLAGS="-X quotierlabs/internal/infrastructure/appidentity.Version=${QL_VERSION} -X quotierlabs/internal/infrastructure/appidentity.GitTag=${QL_TAG} -X quotierlabs/internal/infrastructure/appidentity.GitCommit=${QL_COMMIT} -X quotierlabs/internal/infrastructure/appidentity.BuildTime=${QL_BUILD_TIME} -X quotierlabs/internal/infrastructure/appidentity.Channel=${QL_CHANNEL}"
 if [[ -n "$QL_PUBLIC_KEY" ]]; then
-  QL_LDFLAGS+=" -X quotierlabs/backend/infrastructure/appidentity.ReleasePublicKey=${QL_PUBLIC_KEY}"
+  QL_LDFLAGS+=" -X quotierlabs/internal/infrastructure/appidentity.ReleasePublicKey=${QL_PUBLIC_KEY}"
 fi
 if [[ "${QL_UNSIGNED_RELEASE_BUILD:-0}" == "1" ]]; then
-  QL_LDFLAGS+=" -X quotierlabs/backend/infrastructure/appidentity.ManualUpdates=true"
+  QL_LDFLAGS+=" -X quotierlabs/internal/infrastructure/appidentity.ManualUpdates=true"
 fi
 
 # Wails' macOS file dialogs use UTType on current SDKs. Export this explicitly

@@ -16,14 +16,14 @@ test:
 	@echo "Running Go tests..."
 	go test -race ./...
 	@echo "Running frontend tests..."
-	cd frontend && npm run test --if-present
+	cd ui && npm run test --if-present
 
 lint:
 	@./scripts/check-runtime-paths.sh
 	@echo "Running Go linter..."
 	go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run ./...
 	@echo "Running frontend linter..."
-	cd frontend && npm run lint
+	cd ui && npm run lint
 
 generate:
 	@echo "Generating types..."
@@ -47,7 +47,7 @@ unsigned-release-windows:
 	@./scripts/package-unsigned-windows.sh
 
 perf-bench:
-	go test -bench=. -benchmem ./backend/application/layoutir ./backend/infrastructure/pdf
+	go test -bench=. -benchmem ./internal/application/layoutir ./internal/infrastructure/pdf
 
 perf-size:
 	node scripts/perf/report-size.mjs build/bin

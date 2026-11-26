@@ -13,7 +13,7 @@ command -v hdiutil >/dev/null || { echo "hdiutil is required." >&2; exit 1; }
 
 echo "Testing tagged source for $QL_VERSION..."
 (cd "$QL_ROOT" && go test ./...)
-(cd "$QL_ROOT/frontend" && npm ci && npm run test -- --run)
+(cd "$QL_ROOT/ui" && npm ci && npm run test -- --run)
 
 export QL_VERSION QL_PLATFORM_VERSION QL_APP_ID QL_NAME
 export QL_METADATA_VERSION="$QL_PLATFORM_VERSION" QL_MAC_BUILD
