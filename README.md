@@ -16,19 +16,20 @@ Quotier Labs is a high-performance, offline-first desktop application designed f
 │   └── desktop/           # Wails application entry point and build configurations
 │       ├── main.go        # App bootstrap and Wails integration
 │       └── build/         # Wails target output (App icons, compiled binaries)
-├── internal/               # Go backend adhering to Clean Architecture
-│   ├── application/       # Application logic, use cases, orchestrations, and DTOs
-│   ├── domain/            # Core entities, value objects, domain logic, and repo interfaces
-│   ├── infrastructure/    # Concrete repository implementations (SQLite), PDF gen, CSV IO
-│   └── transport/wails/   # Transport boundary mappings (Wails handlers for the frontend)
-├── ui/              # React frontend
+├── internal/              # Go backend adhering to Clean Architecture
+│   ├── application/       # Application logic, use cases, orchestration, and DTOs
+│   ├── domain/            # Core entities, value objects, business logic, and repository interfaces
+│   ├── infrastructure/    # SQLite repositories, PDF generation, and CSV IO
+│   └── transport/wails/   # Wails transport handlers
+├── ui/                    # React frontend
 │   ├── src/
 │   │   ├── components/    # Reusable shadcn/ui and custom primitives
 │   │   ├── features/      # Feature-based module grouping (e.g., quotations, customers, templates)
 │   │   ├── lib/           # Utility functions
 │   │   └── App.tsx        # React application root & routing
 ├── migrations/            # SQLite schema migration scripts (Goose)
-├── plans/                 # Project history, worklogs, and architecture specification
+├── docs/                  # Release runbooks and general technical reference
+├── plans/                 # Product plans, migration phases, worklog, and bug-fix plans
 └── scripts/               # Automation scripts for packaging and release
 ```
 
@@ -90,7 +91,7 @@ On macOS, the in-app report intentionally omits native process-tree CPU/RSS/FD/I
 the embedded WebKit host stable; its Go and frontend measurements remain available. Use Instruments
 for native/WebKit memory or CPU investigation.
 
-Use the repeatable workflow and leak interpretation in [`plans/monitoring.md`](plans/monitoring.md). The report-only baselines are available through:
+Use the repeatable workflow and leak interpretation in [`plans/old/monitoring.md`](plans/old/monitoring.md). The report-only baselines are available through:
 
 ```bash
 make perf-bench
@@ -150,7 +151,7 @@ Losing this private key prevents existing installations from trusting a replacem
 
 The signed GitHub Actions workflow is currently parked as
 `.github/workflows/release.yml.disabled`. GitHub will not execute a file with that suffix. Keep it
-disabled until the Apple and Windows signing credentials in `plans/release-steps.md` are ready;
+disabled until the Apple and Windows signing credentials in `docs/release-steps.md` are ready;
 then rename it back to `release.yml` before creating the release tag.
 
 Release builds must run on the target OS. They reject a dirty tree and require `HEAD` to have an exact annotated SemVer tag.
@@ -178,7 +179,7 @@ QUOTIER_MINIMUM_DB_SCHEMA='10' \
 ./scripts/finalize-release.sh
 ```
 
-When enabled, the GitHub `Signed desktop release` workflow builds on native macOS and Windows runners for a pushed tag, creates a CycloneDX SBOM and provenance attestations, and opens a draft GitHub Release. Configure the repository secrets and variables listed in [`plans/release-steps.md`](plans/release-steps.md) before pushing a release tag. Review the draft and clean-machine evidence before publishing it. Update discovery only sees published releases.
+When enabled, the GitHub `Signed desktop release` workflow builds on native macOS and Windows runners for a pushed tag, creates a CycloneDX SBOM and provenance attestations, and opens a draft GitHub Release. Configure the repository secrets and variables listed in [`docs/release-steps.md`](docs/release-steps.md) before pushing a release tag. Review the draft and clean-machine evidence before publishing it. Update discovery only sees published releases.
 
 ### Native unsigned artifacts (temporary distribution path)
 
@@ -197,7 +198,7 @@ Outputs are isolated under `local-release-artifacts/`, so these scripts cannot o
 signed pipeline's `release-artifacts/`. The macOS script produces an `.app` and `.dmg`; the Windows
 script produces the standalone app `.exe` and per-user NSIS installer `.exe`. These packages are
 versioned release builds but are neither notarized nor code-signed. Follow
-[`plans/release-without-sign.md`](plans/release-without-sign.md) for prerequisites, publishing,
+[`docs/release-without-sign.md`](docs/release-without-sign.md) for prerequisites, publishing,
 checksums, OS warning instructions, manual upgrades, and later migration to signed releases.
 
 For CI, export the Developer ID Application and Developer ID Installer identities separately as `MAC_CERT_P12_B64`/`MAC_CERT_PASSWORD` and `MAC_INSTALLER_CERT_P12_B64`/`MAC_INSTALLER_CERT_PASSWORD`. Beta and production have distinct app IDs and data roots; the signed update manifest is channel-bound, so moving from beta to production is an explicit install plus verified backup/import rather than an automatic in-place channel switch.
